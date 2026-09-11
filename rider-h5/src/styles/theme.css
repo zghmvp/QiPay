@@ -1,0 +1,194 @@
+:root {
+  --ink: #15202b;
+  --ink-2: #243140;
+  --vis: #ff7a1a;
+  --vis-deep: #e65c00;
+  --paper: #f4efe6;
+  --paper-2: #fffdf8;
+  --earn: #1f8a70;
+  --warn: #c45c26;
+  --danger: #c44536;
+  --mute: #6b7380;
+  --line: #e4ddd2;
+  --van-primary-color: #ff7a1a;
+  --van-success-color: #1f8a70;
+  --van-danger-color: #c44536;
+  --van-warning-color: #c45c26;
+  --van-font-family: 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--van-font-family);
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 480px at 50% -120px, rgba(255, 122, 26, 0.16), transparent 60%),
+    linear-gradient(180deg, #1a2734 0 180px, #d9e0e8 180px);
+}
+
+.phone-shell {
+  width: min(100%, 480px);
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--paper);
+  position: relative;
+  box-shadow: 0 0 0 1px rgba(21, 32, 43, 0.06), 0 18px 50px rgba(21, 32, 43, 0.18);
+}
+
+.page-body {
+  padding: 12px 14px 88px;
+}
+
+.page-body.no-tab {
+  padding-bottom: 24px;
+}
+
+.display-num {
+  font-family: 'Barlow Condensed', 'DIN Alternate', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
+}
+
+.section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 16px 2px 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.muted {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.money-pos {
+  color: var(--earn);
+}
+
+.money-neg {
+  color: var(--danger);
+}
+
+.card-block {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.waybill {
+  position: relative;
+  background: var(--paper-2);
+  border: 1px dashed #cbbfae;
+  border-radius: 12px;
+  padding: 16px 16px 14px 22px;
+  overflow: hidden;
+}
+
+.waybill::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  background:
+    radial-gradient(circle at 5px 10px, transparent 4px, #15202b 4.5px) 0 0 / 10px 16px;
+}
+
+.waybill-kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.waybill-amount {
+  font-size: 42px;
+  line-height: 1;
+  margin: 8px 0 4px;
+}
+
+.stamp {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  border: 2px solid var(--vis);
+  color: var(--vis);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  transform: rotate(12deg);
+  border-radius: 2px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+
+.metric-grid .label {
+  display: block;
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.metric-grid .value {
+  font-size: 16px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--mute);
+  padding: 8px 2px 0;
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.dot.gray {
+  background: #9aa3ad;
+}
+
+.dot.red {
+  background: var(--danger);
+}
+
+.dot.green {
+  background: var(--earn);
+}

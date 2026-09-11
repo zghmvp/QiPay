@@ -1,0 +1,15 @@
+[plugin]
+summary = "骑手薪资管理"
+version = "0.1.0"
+description = "面向即时配送站点的骑手薪资管理：公式引擎计薪、结算锁账、日历可视化、预支申请"
+author = "QiPay"
+tags = ["other"]
+database = ["mysql", "postgresql"]
+
+[app]
+router = ["v1"]
+
+[settings]
+RIDER_SALARY_ADVANCE_LIMIT_DEFAULT = 3000
+RIDER_SALARY_IMPORT_MAX_ROWS = 20000
+RIDER_SALARY_TRIAL_MAX_ORDERS = 5000

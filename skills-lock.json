@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "antdv-next": {
+      "source": "antdv-next/skills",
+      "sourceType": "github",
+      "skillPath": "skills/antdv-next/SKILL.md",
+      "computedHash": "4d1dbc04ae7a26043654661d9fe46e6768b77caf04c32355d2d35d278f2a956b"
+    },
+    "fba": {
+      "source": "fastapi-practices/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fastapi-best-architecture/SKILL.md",
+      "computedHash": "dac801c4e8c34f99842bea0cd53a754dd90db7d37c5720c481605bb09a78f79b"
+    }
+  }
+}

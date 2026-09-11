@@ -1,0 +1,6 @@
+[plugin]
+summary = '骑手薪资 UI'
+version = '0.1.0'
+description = '骑手薪资管理插件的前端实现'
+author = 'QiPay'
+tags = ['other']

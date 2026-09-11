@@ -1,0 +1,722 @@
+---
+title: 配置
+---
+
+::: tip
+配置插件或部署参数时，可以让 AI 结合 [fba skills](https://skills.sh/fastapi-practices/skills/fba) 检查
+backend/core/conf.py、.env、插件 [settings] 和配置优先级，减少环境差异导致的问题
+:::
+
+fba 配置文件位于 `backend/core/conf.py`
+，所有应用和插件的配置都应统一放置在此文件内，包含  <Badge type="warning" text="env" /> 标签的配置默认为环境变量配置
+
+## 配置标准
+
+fba 将配置分为**静态配置**和**动态配置**。静态配置在 `Settings` 初始化时解析，动态配置在业务运行期间按需从参数配置插件加载
+
+### 配置优先级
+
+最终生效优先级从高到低为：
+
+```mermaid
+graph LR
+    Dynamic("动态配置") --> System("系统环境变量")
+    System --> DotEnv[".env"]
+    DotEnv --> Plugin["插件 settings 配置项"]
+    Plugin --> Defaults["conf.py 默认值"]
+```
+
+其中，静态配置优先级由 `Settings.settings_customise_sources()` 定义：
+
+```text
+系统环境变量 -> .env -> 插件 settings 配置项 -> conf.py 默认值
+```
+
+越靠前的配置源优先级越高。插件 `plugin.toml` 中的 `[settings]` 仅用于提供可热插拔的默认值，不能覆盖系统环境变量或 `.env`
+
+动态配置不是 Pydantic Settings 的配置源，而是静态配置完成后的**运行时覆盖层**。当业务调用动态配置加载函数后，参数配置插件中的值会覆盖已经解析到 `settings` 单例中的同名值；未配置或未映射的字段不会被本次加载改写
+
+### 使用边界
+
+- 系统环境变量：用于容器、CI/CD 和生产部署注入，适合密钥、连接信息及部署环境差异配置
+- `.env`：用于本地或单机部署的环境配置，不应提交真实密钥
+- 插件 `[settings]`：用于插件非敏感、可公开、可热插拔的基础默认值
+- `conf.py`：用于配置字段声明、类型约束和项目内置默认值，是全局配置契约
+- 动态配置：用于需要在系统运行期间通过管理端调整的业务配置，仅允许覆盖加载函数中显式声明并提供类型转换器的字段
+
+## 环境配置
+
+### `ENVIRONMENT` <Badge type="info" text="Literal['dev', 'prod']" /> <Badge type="warning" text="env" />
+
+指定环境模式，当设置为 `prod` 时，openapi 相关在线文档将被禁止访问
+
+## FastAPI 配置
+
+### `FASTAPI_API_V1_PATH` <Badge type="info" text="str" />
+
+API 版本号配置
+
+### `FASTAPI_TITLE` <Badge type="info" text="str" />
+
+openapi 相关在线文档标头配置
+
+### `FASTAPI_DESCRIPTION` <Badge type="info" text="str" />
+
+openapi 相关在线文档描述信息
+
+### `FASTAPI_DOCS_URL` <Badge type="info" text="str" />
+
+docs 在线文档地址
+
+### `FASTAPI_REDOC_URL` <Badge type="info" text="str" />
+
+redoc 在线文档地址
+
+### `FASTAPI_OPENAPI_URL` <Badge type="info" text="str | None" />
+
+openapi JSON 数据在线地址
+
+### `FASTAPI_STATIC_FILES` <Badge type="info" text="bool" />
+
+是否开启 FastAPI 静态文件服务
+
+## 数据库配置
+
+### `DATABASE_TYPE` <Badge type="info" text="Literal['mysql', 'postgresql']" /> <Badge type="warning" text="env" />
+
+数据库类型，仅支持 `postgresql` 和 `mysql`，需注意第三方插件兼容性
+
+### `DATABASE_HOST` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+数据库的主机地址
+
+### `DATABASE_PORT` <Badge type="info" text="int" /> <Badge type="warning" text="env" />
+
+数据库的端口号
+
+### `DATABASE_USER` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+数据库用户名
+
+### `DATABASE_PASSWORD` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+数据库认证密码
+
+### `DATABASE_ECHO` <Badge type="info" text="bool | Literal['debug']" />
+
+是否输出 sqlalchemy 操作日志
+
+### `DATABASE_POOL_ECHO` <Badge type="info" text="bool | Literal['debug']" />
+
+是否输出 sqlalchemy 线程池操作日志
+
+### `DATABASE_SCHEMA` <Badge type="info" text="str" />
+
+需要连接的数据库
+
+### `DATABASE_CHARSET` <Badge type="info" text="str" />
+
+数据库字符集，仅用于 mysql
+
+### `DATABASE_PK_MODE` <Badge type="info" text="Literal['autoincrement', 'snowflake']" />
+
+数据库主键模式，更多详情：[切换主键](./pk.md)
+
+::: caution
+不要随意更新此配置！！！否则将导致致命问题！！！
+:::
+
+## Redis 配置
+
+### `REDIS_HOST` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+Redis 服务器的主机地址
+
+### `REDIS_PORT` <Badge type="info" text="int" /> <Badge type="warning" text="env" />
+
+Redis 服务器的端口号
+
+### `REDIS_PASSWORD` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+Redis 认证密码
+
+### `REDIS_DATABASE` <Badge type="info" text="int" /> <Badge type="warning" text="env" />
+
+全局默认使用的 Redis 逻辑数据库索引（0 - 15）
+
+### `REDIS_TIMEOUT` <Badge type="info" text="int" />
+
+Socket 读写操作的超时时间和 Redis 建立 TCP 连接时的超时时间
+
+## 缓存配置
+
+### `CACHE_LOCAL_ENABLED` <Badge type="info" text="bool" />
+
+是否启用本地缓存
+
+### `CACHE_LOCAL_MAXSIZE` <Badge type="info" text="int" />
+
+本地缓存最大容量
+
+### `CACHE_LOCAL_TTL` <Badge type="info" text="int" />
+
+本地缓存过期时长（秒）
+
+### `CACHE_REDIS_TTL` <Badge type="info" text="int" />
+
+Redis 缓存过期时长（秒）
+
+### `CACHE_CONFIG_REDIS_PREFIX` <Badge type="info" text="str" />
+
+系统配置缓存存储到 Redis 时的前缀
+
+### `CACHE_DICT_REDIS_PREFIX` <Badge type="info" text="str" />
+
+字典缓存存储到 Redis 时的前缀
+
+### `CACHE_PUBSUB_CHANNEL` <Badge type="info" text="str" />
+
+缓存失效发布订阅频道
+
+### `CACHE_PUBSUB_RECONNECT_DELAY` <Badge type="info" text="int" />
+
+缓存发布订阅重连延迟（秒）
+
+### `CACHE_PUBSUB_MAX_RECONNECT_ATTEMPTS` <Badge type="info" text="int" />
+
+缓存发布订阅最大重连次数
+
+## Snowflake（雪花算法）
+
+### `SNOWFLAKE_ENABLED` <Badge type="info" text="bool" />
+
+是否启用雪花算法作为分布式主键生成方案
+
+### `SNOWFLAKE_DATACENTER_ID` <Badge type="info" text="int | None" /> <Badge type="warning" text="env" />
+
+雪花算法数据中心 ID
+
+### `SNOWFLAKE_WORKER_ID` <Badge type="info" text="int | None" /> <Badge type="warning" text="env" />
+
+雪花算法工作机器 ID
+
+::: warning
+`SNOWFLAKE_DATACENTER_ID` 和 `SNOWFLAKE_WORKER_ID` 仅允许同时非 None 或同时为 None
+
+同时非 None 时，雪花算法将应用此配置（适用于单机单进程场景）
+
+同时为 None 时，雪花算法将自动分配此配置（适用于多线程，多进程，分布式等场景）
+:::
+
+### `SNOWFLAKE_REDIS_PREFIX` <Badge type="info" text="str" />
+
+雪花算法配置存储到 Redis 时的前缀
+
+### `SNOWFLAKE_HEARTBEAT_INTERVAL_SECONDS` <Badge type="info" text="int" />
+
+雪花算法配置存储到 Redis 后的心跳检测间隔时间（秒）
+
+::: warning
+此配置不应大于 `SNOWFLAKE_NODE_TTL_SECONDS`
+:::
+
+### `SNOWFLAKE_NODE_TTL_SECONDS` <Badge type="info" text="int" />
+
+雪花算法配置存储到 Redis 时的生存时间（秒）
+
+## Token 配置
+
+### `TOKEN_SECRET_KEY` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+token 生成和解析密钥，用于防止 token 被恶意篡改，密钥生成：`secrets.token_urlsafe(32)`
+
+::: danger
+请妥善保管此值，以免遭受恶意攻击
+:::
+
+### `TOKEN_ALGORITHM` <Badge type="info" text="str" />
+
+token 加密算法
+
+### `TOKEN_EXPIRE_SECONDS` <Badge type="info" text="int" />
+
+token 过期时长（秒）
+
+### `TOKEN_REFRESH_EXPIRE_SECONDS` <Badge type="info" text="int" />
+
+刷新 token 过期时长（秒）
+
+### `TOKEN_REDIS_PREFIX` <Badge type="info" text="str" />
+
+token 存储到 Redis 时的前缀
+
+### `TOKEN_EXTRA_INFO_REDIS_PREFIX` <Badge type="info" text="str" />
+
+token 扩展信息存储到 Redis 时的前缀
+
+### `TOKEN_ONLINE_REDIS_PREFIX` <Badge type="info" text="str" />
+
+token 在线状态存储到 Redis 时的前缀
+
+### `TOKEN_REFRESH_REDIS_PREFIX` <Badge type="info" text="str" />
+
+刷新 token 存储到 Redis 时的前缀
+
+### `TOKEN_REQUEST_UNDERLYING_SECURITY` <Badge type="info" text="bool" />
+
+是否开启请求底层安全校验
+
+### `TOKEN_REQUEST_PATH_EXCLUDE` <Badge type="info" text="list[str]" />
+
+JWT / RBAC 路由白名单，在此配置内的请求地址将不会校验 token 的真伪性
+
+::: warning
+fba 内通过 JWT 中间件解析 token 获取用户信息，并将用户信息赋值给 FastAPI request 对象，如果路由包含在此配置中，
+`request.user` 将不可用
+:::
+
+### `TOKEN_REQUEST_PATH_EXCLUDE_PATTERN` <Badge type="info" text="list[Pattern[str]]" />
+
+JWT / RBAC 路由白名单正则模式，从路由头部开始匹配，与之匹配的请求地址将不会校验 token 真伪性，注意项同上
+
+## 用户安全配置
+
+### `USER_LOCK_REDIS_PREFIX` <Badge type="info" text="str" />
+
+用户锁定存储到 Redis 时的前缀
+
+### `USER_LOCK_THRESHOLD` <Badge type="info" text="int" />
+
+用户密码错误锁定阈值，0 表示禁用锁定
+
+### `USER_LOCK_SECONDS` <Badge type="info" text="int" />
+
+用户锁定时长（秒）
+
+### `USER_PASSWORD_EXPIRY_DAYS` <Badge type="info" text="int" />
+
+用户密码有效期，0 表示永不过期
+
+### `USER_PASSWORD_REMINDER_DAYS` <Badge type="info" text="int" />
+
+用户密码到期提醒，0 表示不提醒
+
+### `USER_PASSWORD_HISTORY_CHECK_COUNT` <Badge type="info" text="int" />
+
+用户密码历史检查数量，避免重复使用历史密码
+
+### `USER_PASSWORD_MIN_LENGTH` <Badge type="info" text="int" />
+
+用户密码最小长度
+
+### `USER_PASSWORD_MAX_LENGTH` <Badge type="info" text="int" />
+
+用户密码最大长度
+
+### `USER_PASSWORD_REQUIRE_SPECIAL_CHAR` <Badge type="info" text="bool" />
+
+用户密码需要特殊字符
+
+## 登录配置
+
+### `LOGIN_CAPTCHA_ENABLED` <Badge type="info" text="bool" />
+
+是否开启登录验证码
+
+### `LOGIN_CAPTCHA_REDIS_PREFIX` <Badge type="info" text="str" />
+
+登录验证码存储到 Redis 时的前缀
+
+### `LOGIN_CAPTCHA_EXPIRE_SECONDS` <Badge type="info" text="int" />
+
+登录验证码过期时长（秒）
+
+### `LOGIN_FAILURE_PREFIX` <Badge type="info" text="str" />
+
+登录失败存储到 Redis 时的前缀
+
+## JWT 配置
+
+### `JWT_USER_REDIS_PREFIX` <Badge type="info" text="str" />
+
+JWT 中间件存储用户信息到 Redis 时的前缀
+
+## RBAC 配置
+
+[更多详情](./RBAC.md){.read-more}
+
+### `RBAC_ROLE_MENU_MODE` <Badge type="info" text="bool" />
+
+是否开启 RBAC 角色菜单模式
+
+### `RBAC_ROLE_MENU_EXCLUDE` <Badge type="info" text="list[str]" />
+
+开启 RBAC 角色菜单模式时，跳过 RBAC 鉴权的标识（当接口权限标识和用户菜单权限标识相同时）
+
+## Cookie 配置
+
+### `COOKIE_REFRESH_TOKEN_KEY` <Badge type="info" text="str" />
+
+将刷新 token 存储到 cookie 时的键名
+
+### `COOKIE_REFRESH_TOKEN_EXPIRE_SECONDS` <Badge type="info" text="int" />
+
+将刷新 token 存储到 cookie 时的过期时长（秒）
+
+## 数据权限配置
+
+### `DATA_PERMISSION_MODEL_EXCLUDE` <Badge type="info" text="list[str]" />
+
+排除允许进行数据过滤的 SQLA 模型
+
+### `DATA_PERMISSION_COLUMN_EXCLUDE` <Badge type="info" text="list[str]" />
+
+排除允许进行数据过滤的 SQLA 模型列，例如 id, password 等
+
+### `DATA_PERMISSION_MODEL_TEMPLATE_VARIABLES` <Badge type="info" text="list[dict[str, str]]" />
+
+数据规则模型可用模板变量
+
+### `DATA_PERMISSION_COLUMN_TEMPLATE_VARIABLES` <Badge type="info" text="list[dict[str, str]]" />
+
+数据规则字段可用模板变量
+
+### `DATA_PERMISSION_TEMPLATE_VARIABLES` <Badge type="info" text="list[dict[str, str]]" />
+
+数据规则值可用模板变量
+
+## Socket.IO 配置
+
+### `WS_NO_AUTH_MARKER` <Badge type="info" text="str" />
+
+连接 socket.io 服务时跳过用户验证的标记
+
+::: danger
+请妥善保管此值，以免遭受恶意攻击
+:::
+
+## CORS 配置
+
+### `CORS_ALLOWED_ORIGINS` <Badge type="info" text="list[str]" />
+
+跨域请求时允许的来源，末尾不带 `/`，例如：`http//127.0.0.1:8000`
+
+### `CORS_EXPOSE_HEADERS` <Badge type="info" text="list[str]" />
+
+跨域公开标头，允许将此标头添加到请求标头中
+
+## 中间件配置
+
+### `MIDDLEWARE_CORS` <Badge type="info" text="bool" />
+
+是否启用跨域中间件
+
+## 请求限制配置
+
+### `REQUEST_LIMITER_REDIS_PREFIX` <Badge type="info" text="str" />
+
+记录请求频率信息到 Redis 时的前缀
+
+## 时间配置
+
+### `DATETIME_TIMEZONE` <Badge type="info" text="str" />
+
+全局时区
+
+### `DATETIME_FORMAT` <Badge type="info" text="str" />
+
+将时间转为时间字符串的格式
+
+## 文件上传配置
+
+::: warning
+部分配置可能被 nginx 覆盖
+:::
+
+### `UPLOAD_READ_SIZE` <Badge type="info" text="int" />
+
+上传文件时，每次读取文件内容的缓冲大小
+
+### `UPLOAD_IMAGE_EXT_INCLUDE` <Badge type="info" text="list[str]" />
+
+允许上传的图片文件类型
+
+### `UPLOAD_IMAGE_SIZE_MAX` <Badge type="info" text="int" />
+
+允许上传的图片文件最大尺寸
+
+### `UPLOAD_VIDEO_EXT_INCLUDE` <Badge type="info" text="list[str]" />
+
+允许上传的视频文件类型
+
+### `UPLOAD_VIDEO_SIZE_MAX` <Badge type="info" text="int" />
+
+允许上传的视频文件最大尺寸
+
+## 演示模式配置
+
+### `DEMO_MODE` <Badge type="info" text="bool" />
+
+是否开启演示模式，开启时，仅允许访问 `GET` 和 `OPTIONS` 请求
+
+### `DEMO_MODE_EXCLUDE` <Badge type="info" text="set[tuple[str, str]]" />
+
+开启演示模式时，不进行请求限制的接口
+
+## IP 定位配置
+
+### `IP_LOCATION_PARSE` <Badge type="info" text="Literal['online', 'offline', 'false']" />
+
+请求发起者的定位信息获取模式
+
+### `IP_LOCATION_REDIS_PREFIX` <Badge type="info" text="str" />
+
+定位信息存储到 Redis 时的前缀
+
+### `IP_LOCATION_EXPIRE_SECONDS` <Badge type="info" text="int" />
+
+定位信息缓存时长（秒）
+
+## Trace ID
+
+### `TRACE_ID_REQUEST_HEADER_KEY` <Badge type="info" text="str" />
+
+跟踪 ID 请求头键名
+
+### `TRACE_ID_LOG_LENGTH` <Badge type="info" text="int" />
+
+跟踪 ID 日志长度，必须小于等于 32
+
+### `TRACE_ID_LOG_DEFAULT_VALUE` <Badge type="info" text="str" />
+
+跟踪 ID 日志默认值
+
+## 日志
+
+### `LOG_FORMAT` <Badge type="info" text="str" />
+
+日志内容格式（控制台和文件同享）
+
+## 日志（控制台）
+
+### `LOG_STD_LEVEL` <Badge type="info" text="str" />
+
+日志记录级别
+
+## 日志（文件）
+
+### `LOG_FILE_ACCESS_LEVEL` <Badge type="info" text="str" />
+
+访问日志记录级别
+
+### `LOG_FILE_ERROR_LEVEL` <Badge type="info" text="str" />
+
+错误日志记录级别
+
+### `LOG_ACCESS_FILENAME` <Badge type="info" text="str" />
+
+访问日志文件名
+
+### `LOG_ERROR_FILENAME` <Badge type="info" text="str" />
+
+错误日志文件名
+
+## 操作日志
+
+### `OPERA_LOG_PATH_EXCLUDE` <Badge type="info" text="list[str]" />
+
+操作日志路径排除，在此配置内的请求地址不会记录操作日志
+
+### `OPERA_LOG_REDACT_KEYS` <Badge type="info" text="list[str]" />
+
+脱敏操作日志中的接口请求参数
+
+### `OPERA_LOG_QUEUE_MAXSIZE` <Badge type="info" text="int" />
+
+操作日志队列最大容量
+
+### `OPERA_LOG_QUEUE_BATCH_CONSUME_SIZE` <Badge type="info" text="int" />
+
+操作日志队列批量消费大小，达到上限后，操作日志将批量写入数据库
+
+### `OPERA_LOG_QUEUE_TIMEOUT` <Badge type="info" text="int" />
+
+操作日志队列超时时长，达到上限后，操作日志将批量写入数据库
+
+### `OPERA_LOG_BODY_MAX_SIZE` <Badge type="info" text="int" />
+
+操作日志记录请求体内容的最大字节数
+
+## 插件配置
+
+### `PLUGIN_REQUIRED` <Badge type="info" text="list[str]" />
+
+项目启动时必须加载的插件列表
+
+### `PLUGIN_PIP_CHINA` <Badge type="info" text="bool" />
+
+通过 pip 下载插件依赖时，是否使用国内源
+
+### `PLUGIN_PIP_INDEX_URL` <Badge type="info" text="str" />
+
+通过 pip 下载插件依赖时的索引地址
+
+### `PLUGIN_PIP_MAX_RETRY` <Badge type="info" text="int" />
+
+pip 下载最大重试次数
+
+### `PLUGIN_REDIS_PREFIX` <Badge type="info" text="str" />
+
+插件信息存储到 Redis 时的前缀
+
+## I18n 配置
+
+### `I18N_DEFAULT_LANGUAGE` <Badge type="info" text="str" />
+
+国际化响应的默认语言
+
+## Grafana 配置
+
+### `GRAFANA_METRICS_ENABLE` <Badge type="info" text="bool" />
+
+是否启用 Grafana 套件
+
+::: warning
+如果不需要可观测性集成，不建议启用此功能
+:::
+
+### `GRAFANA_OTLP_GRPC_ENDPOINT` <Badge type="info" text="str" />
+
+Grafana OTLP 协议 grpc 地址，用于发送遥测数据
+
+### `GRAFANA_PROMETHEUS_APP_NAME` <Badge type="info" text="str" />
+
+Prometheus 中标识后端服务的应用名称
+
+### `GRAFANA_CELERY_OTEL_SERVICE_NAME` <Badge type="info" text="str" />
+
+Celery Worker 上报 OpenTelemetry 数据时使用的服务名称
+
+### `GRAFANA_METRICS_PATH` <Badge type="info" text="str" />
+
+Prometheus 抓取 FastAPI 指标数据的路径
+
+### `GRAFANA_PROMETHEUS_EXEMPLAR_TRACE_ID_KEY` <Badge type="info" text="str" />
+
+Prometheus exemplar 中关联 Trace ID 的标签键名
+
+## 应用：Task
+
+### `CELERY_BROKER_REDIS_DATABASE` <Badge type="info" text="int" /> <Badge type="warning" text="env" />
+
+Celery 代理使用的 Redis 逻辑数据库
+
+### `CELERY_RABBITMQ_HOST` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+Celery 连接 RabbitMQ 服务的主机地址
+
+### `CELERY_RABBITMQ_PORT` <Badge type="info" text="int" /> <Badge type="warning" text="env" />
+
+Celery 连接 RabbitMQ 服务的主机端口号
+
+### `CELERY_RABBITMQ_USERNAME` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+Celery 连接 RabbitMQ 服务的用户名
+
+### `CELERY_RABBITMQ_PASSWORD` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+Celery 连接 RabbitMQ 服务的密码
+
+### `CELERY_BROKER` <Badge type="info" text="Literal['rabbitmq', 'redis']" />
+
+Celery 代理模式（开发模式默认使用 Redis，生产模式强制切换为 RabbitMQ）
+
+### `CELERY_RABBITMQ_VHOST` <Badge type="info" text="str" />
+
+Celery 连接 RabbitMQ 服务的 vhost
+
+### `CELERY_REDIS_PREFIX` <Badge type="info" text="str" />
+
+Celery 数据存储到 Redis 时的前缀
+
+### `CELERY_TASK_MAX_RETRIES` <Badge type="info" text="int" />
+
+Celery 任务执行失败时的最大重试次数
+
+## 插件：Code Generator
+
+### `CODE_GENERATOR_DOWNLOAD_ZIP_FILENAME` <Badge type="info" text="str" />
+
+下载代码时的 ZIP 压缩包文件名
+
+## 插件：OAuth2
+
+### `OAUTH2_GITHUB_CLIENT_ID` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+GitHub 客户端 ID
+
+### `OAUTH2_GITHUB_CLIENT_SECRET` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+GitHub 客户端密钥
+
+### `OAUTH2_GOOGLE_CLIENT_ID` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+Google 客户端 ID
+
+### `OAUTH2_GOOGLE_CLIENT_SECRET` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+Google 客户端密钥
+
+### `OAUTH2_STATE_REDIS_PREFIX` <Badge type="info" text="str" />
+
+OAuth2 状态信息存储到 Redis 时的前缀
+
+### `OAUTH2_STATE_EXPIRE_SECONDS` <Badge type="info" text="int" />
+
+OAuth2 状态信息存储到 Redis 时的过期时间（秒）
+
+### `OAUTH2_GITHUB_REDIRECT_URI` <Badge type="info" text="str" />
+
+GitHub 重定向地址，必须与 GitHub OAuth Apps 配置保持一致
+
+### `OAUTH2_GOOGLE_REDIRECT_URI` <Badge type="info" text="str" />
+
+Google 重定向地址，必须与 Google OAuth 2.0 客户端配置保持一致
+
+### `OAUTH2_FRONTEND_LOGIN_REDIRECT_URI` <Badge type="info" text="str" />
+
+登陆成功后，重定向到前端的地址
+
+### `OAUTH2_FRONTEND_BINDING_REDIRECT_URI` <Badge type="info" text="str" />
+
+绑定成功后，重定向到前端的地址
+
+## 插件：Email
+
+### `EMAIL_USERNAME` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+电子邮箱发件用户
+
+### `EMAIL_PASSWORD` <Badge type="info" text="str" /> <Badge type="warning" text="env" />
+
+电子邮箱发件用户密码
+
+### `EMAIL_HOST` <Badge type="info" text="str" />
+
+电子邮箱服务主机地址
+
+### `EMAIL_PORT` <Badge type="info" text="int" />
+
+电子邮箱服务主机端口号
+
+### `EMAIL_SSL` <Badge type="info" text="bool" />
+
+发送电子邮件时，是否开启 SSL
+
+### `EMAIL_CAPTCHA_REDIS_PREFIX` <Badge type="info" text="str" />
+
+电子邮件验证码存储到 Redis 时的前缀
+
+### `EMAIL_CAPTCHA_EXPIRE_SECONDS` <Badge type="info" text="int" />
+
+电子邮件验证码缓存时长（秒）

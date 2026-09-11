@@ -1,0 +1,26 @@
+# 本机运行与缓存（不入库）
+.pnpm-store/
+.runtime/
+dump.rdb
+.DS_Store
+**/.venv/
+**/node_modules/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+**/dist/
+.turbo/
+.cache/
+
+# 嵌套上游仓库元数据（全量纳入源码时临时改名，勿提交）
+**/.git.upstream/
+
+# 密钥与本地环境（示例文件可提交）
+**/.env
+!**/.env.example
+!**/.env.development
+!**/.env.production
+!**/.env.analyze
+!**/.env.docker
+!**/.env.server

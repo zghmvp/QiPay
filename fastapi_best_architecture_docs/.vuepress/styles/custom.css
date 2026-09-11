@@ -1,0 +1,155 @@
+:root {
+    /* 链接颜色、强调色 */
+    --vp-c-brand-1: rgba(0, 148, 133, 1);
+    /* 链接、按钮 hover 颜色 */
+    --vp-c-brand-2: rgba(0, 148, 133, 1);
+    /* 背景色、边框色 */
+    --vp-c-brand-3: rgba(0, 148, 133, 1);
+
+    /* 导航栏分组 */
+
+    .vp-menu-group {
+        .title {
+            color: rgba(60, 60, 60, 0.33);
+        }
+    }
+}
+
+[data-theme="dark"] {
+    /* 链接颜色、强调色 */
+    --vp-c-brand-1: rgba(0, 148, 133, 1);
+    /* 链接、按钮 hover 颜色 */
+    --vp-c-brand-2: rgba(0, 148, 133, 1);
+    /* 背景色、边框色 */
+    --vp-c-brand-3: rgba(0, 148, 133, 1);
+
+    /* 导航栏分组 */
+
+    .vp-menu-group {
+        .title {
+            color: rgba(235, 235, 235, 0.38);
+        }
+    }
+}
+
+/* 霓虹灯悬浮文字 - 在标题上方 */
+/*.hero-content {
+    position: relative;
+}
+
+.hero-content::before {
+    content: "正确的选择，无需多言";
+    position: absolute;
+    top: -50px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+    font-weight: bold;
+    color: #ff6b9d;
+    white-space: nowrap;
+    padding: 6px 12px;
+    filter: drop-shadow(0 0 3px rgba(255, 107, 157, 0.4)) drop-shadow(0 0 8px rgba(255, 107, 157, 0.7)) drop-shadow(0 0 15px rgba(255, 107, 157, 1));
+    animation: neon-glow-flicker-light 3s ease-in-out infinite;
+}*/
+
+/* 首页非全屏样式 */
+.vp-home-hero:not(.full) .hero-container {
+    padding-top: 166px !important;
+    padding-bottom: 96px !important;
+}
+
+/* 首页文字说明 */
+.hero-text {
+    margin: 24px 0 49px !important;
+}
+
+/* 首页 features 描述与 :deep(.description) 一致 */
+.vp-home-features .description {
+    font-size: 15px;
+    color: var(--vp-c-text-2);
+    margin-bottom: 36px;
+}
+
+/* 首页按钮 */
+.vp-button.medium {
+    border-radius: 10px !important;
+}
+
+.vp-button.sponsor {
+    background-color: var(--vp-button-alt-bg) !important;
+    border: 2px solid var(--vp-c-brand-1) !important;
+}
+
+/* 首页全屏时向下的箭头 */
+.vp-sign-down {
+    color: var(--vp-c-brand-1) !important;
+}
+
+/* 公告板 */
+.vp-bulletin {
+    width: 380px !important;
+}
+
+/* 文档页左侧边栏赞助位，如果提供 top 插槽，则删除 */
+#SidebarNav > div.custom-content {
+    position: sticky;
+    top: 0;
+    background-color: var(--vp-sidebar-bg-color);
+    z-index: 10;
+
+    @media (max-width: 959px) {
+        top: -32px;
+    }
+}
+
+/* 页脚 */
+.vp-footer {
+    padding: unset !important;
+}
+
+/* 赞助商素材：透明图保持透明，满版图不反色，失效时显示品牌名 */
+.sponsor-media {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    background: transparent;
+}
+
+.sponsor-media img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+    background: transparent;
+    filter: none;
+}
+
+.sponsor-media.is-cover img {
+    object-fit: cover;
+}
+
+html:not([data-theme="dark"]) .sponsor-media.is-ink-white img {
+    filter: invert(1);
+}
+
+[data-theme="dark"] .sponsor-media.is-ink-black img {
+    filter: invert(1);
+}
+
+.sponsor-media__name {
+    color: var(--vp-c-text-1);
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.3;
+    text-align: center;
+    padding: 0 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
