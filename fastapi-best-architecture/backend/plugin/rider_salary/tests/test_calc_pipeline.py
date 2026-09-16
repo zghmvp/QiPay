@@ -262,6 +262,8 @@ def test_cross_segment_month_example() -> None:
     result = run_calc_pipeline(data)
     assert result.order_count == 735
     assert result.valid_order_count == 700
+    assert result.plan_order_count == 700  # 两段合计（无方案日无单）
+    assert [row.plan_order_count for row in (result.segment_order_counts or [])] == [280, 420]
     assert result.per_order_total == D('1156.00')
     assert result.daily_total == D('0.00')
     assert result.period_total == D('3243.33')

@@ -39,6 +39,7 @@ export interface OrderForm {
 }
 
 export interface OrderQuery extends PageParams {
+  attention?: boolean;
   date_from?: string;
   date_to?: string;
   import_batch_id?: number;
