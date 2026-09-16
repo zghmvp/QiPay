@@ -125,7 +125,10 @@ load();
       </a-empty>
       <div v-else-if="summary" class="flex flex-col gap-4">
         <StatCards :cards="summary.cards" />
-        <AttentionList :blocks="summary.attention ?? []" />
+        <AttentionList
+          :blocks="summary.attention ?? []"
+          @refreshed="load"
+        />
         <TrendChart v-if="trendVisible" :data="summary.trend ?? []" />
         <TopRiders
           :bottom="summary.top_riders?.bottom ?? []"
