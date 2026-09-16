@@ -43,6 +43,15 @@ const trendVisible = computed(() => {
   );
 });
 
+const topVisible = computed(() => {
+  const top = summary.value?.top_riders;
+  return Boolean(top?.top?.length || top?.bottom?.length);
+});
+
+const attentionVisible = computed(() =>
+  (summary.value?.attention ?? []).some((item) => item.count > 0),
+);
+
 const pageEmpty = computed(() => {
   const data = summary.value;
   if (!data) return !failed.value && !loading.value;
@@ -56,9 +65,9 @@ const pageEmpty = computed(() => {
     Number(cards.estimated_gross ?? 0) === 0;
   return (
     cardsZero &&
-    !(data.attention ?? []).some((item) => item.count > 0) &&
+    !attentionVisible.value &&
     !trendVisible.value &&
-    !(data.top_riders?.top?.length || data.top_riders?.bottom?.length)
+    !topVisible.value
   );
 });
 
@@ -98,44 +107,63 @@ load();
 <template>
   <PageContainer>
     <div class="flex min-h-0 flex-1 flex-col overflow-auto">
-    <div class="mb-4 flex flex-wrap items-center gap-3">
-      <SiteSelect v-model:value="siteId" allow-all />
-      <a-date-picker
-        v-model:value="month"
-        picker="month"
-        value-format="YYYY-MM"
-      />
-      <VbenButton variant="outline" @click="load">刷新</VbenButton>
-    </div>
-
-    <a-empty v-if="failed" description="工作台加载失败，请重试">
-      <VbenButton class="mt-2" @click="load">重试</VbenButton>
-    </a-empty>
-    <a-spin v-else :spinning="loading">
-      <a-empty
-        v-if="pageEmpty"
-        description="本月暂无需要处理的事项，请先导入订单明细"
-      >
-        <VbenButton
-          class="mt-2"
-          @click="router.push('/rider-salary/order')"
-        >
-          去导入订单
-        </VbenButton>
-      </a-empty>
-      <div v-else-if="summary" class="flex flex-col gap-4">
-        <StatCards :cards="summary.cards" />
-        <AttentionList
-          :blocks="summary.attention ?? []"
-          @refreshed="load"
+      <div class="mb-4 flex flex-wrap items-center gap-3">
+        <SiteSelect v-model:value="siteId" allow-all />
+        <a-date-picker
+          v-model:value="month"
+          picker="month"
+          value-format="YYYY-MM"
         />
-        <TrendChart v-if="trendVisible" :data="summary.trend ?? []" />
-        <TopRiders
-          :bottom="summary.top_riders?.bottom ?? []"
-          :top="summary.top_riders?.top ?? []"
-        />
+        <VbenButton variant="outline" @click="load">刷新</VbenButton>
       </div>
-    </a-spin>
+
+      <!-- 模块级 skeleton：首屏加载 -->
+      <div v-if="loading && !summary" class="flex flex-col gap-4">
+        <a-skeleton active :paragraph="{ rows: 2 }" />
+        <a-card size="small">
+          <a-skeleton active :paragraph="{ rows: 4 }" />
+        </a-card>
+        <a-card size="small">
+          <a-skeleton active :paragraph="{ rows: 3 }" />
+        </a-card>
+      </div>
+
+      <template v-else>
+        <a-empty v-if="failed" description="工作台加载失败，请重试">
+          <VbenButton class="mt-2" @click="load">重试</VbenButton>
+        </a-empty>
+        <a-empty
+          v-else-if="pageEmpty"
+          description="本月暂无需要处理的事项，请先导入订单明细"
+        >
+          <VbenButton
+            class="mt-2"
+            @click="router.push('/rider-salary/order')"
+          >
+            去导入订单
+          </VbenButton>
+        </a-empty>
+        <div v-else-if="summary" class="relative flex flex-col gap-4">
+          <div
+            v-if="loading"
+            class="bg-background/60 absolute inset-0 z-10 flex items-start justify-center pt-8"
+          >
+            <a-spin />
+          </div>
+          <StatCards :cards="summary.cards" />
+          <AttentionList
+            v-if="attentionVisible"
+            :blocks="summary.attention ?? []"
+            @refreshed="load"
+          />
+          <TrendChart v-if="trendVisible" :data="summary.trend ?? []" />
+          <TopRiders
+            v-if="topVisible"
+            :bottom="summary.top_riders?.bottom ?? []"
+            :top="summary.top_riders?.top ?? []"
+          />
+        </div>
+      </template>
     </div>
   </PageContainer>
 </template>

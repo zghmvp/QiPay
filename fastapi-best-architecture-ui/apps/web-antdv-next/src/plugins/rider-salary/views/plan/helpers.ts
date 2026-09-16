@@ -309,6 +309,49 @@ export function activateHint(options: {
   return '';
 }
 
+/** 保底/补足类：引用「本期已计金额」或名称含保底，须排在周期阶段最后 */
+export function isGuaranteeLikeItem(item: {
+  formula_expr?: null | string;
+  formula_json?: null | Record<string, unknown>;
+  name?: string;
+  stage?: string;
+}): boolean {
+  if (item.stage && item.stage !== 'period') return false;
+  const name = item.name || '';
+  if (/保底|补足|补差/.test(name)) return true;
+  const expr =
+    item.formula_expr ||
+    (item.formula_json && typeof item.formula_json.表达式 === 'string'
+      ? String(item.formula_json.表达式)
+      : '') ||
+    JSON.stringify(item.formula_json || {});
+  return expr.includes('本期已计金额');
+}
+
+export function findMisplacedGuaranteeKeys(items: PlanItemDraft[]): string[] {
+  const period = items.filter((item) => item.stage === 'period' && item.enabled !== false);
+  if (period.length === 0) return [];
+  const misplaced: string[] = [];
+  period.forEach((item, index) => {
+    if (isGuaranteeLikeItem(item) && index !== period.length - 1) {
+      misplaced.push(item._key);
+    }
+  });
+  return misplaced;
+}
+
+/** 将保底类周期项沉到周期阶段末尾，保持其他阶段顺序 */
+export function sinkGuaranteeItems(items: PlanItemDraft[]): PlanItemDraft[] {
+  const period = items.filter((item) => item.stage === 'period');
+  const others = items.filter((item) => item.stage !== 'period');
+  const guarantees = period.filter((item) => isGuaranteeLikeItem(item));
+  const nonGuarantees = period.filter((item) => !isGuaranteeLikeItem(item));
+  const nextPeriod = [...nonGuarantees, ...guarantees];
+  return STAGE_ORDER.flatMap((stage) =>
+    stage === 'period' ? nextPeriod : others.filter((item) => item.stage === stage),
+  );
+}
+
 export function defaultOperatorForType(type?: string) {
   return OPERATORS_BY_TYPE[type || 'number']?.[0] ?? '=';
 }

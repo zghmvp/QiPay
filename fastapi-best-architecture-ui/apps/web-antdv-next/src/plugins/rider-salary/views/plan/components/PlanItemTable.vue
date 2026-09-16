@@ -6,7 +6,14 @@ import { computed } from 'vue';
 import { IconifyIcon } from '@vben/icons';
 
 import { CALC_STAGE_OPTIONS, enumLabel } from '../../../constants/enums';
-import { createDraftItem, STAGE_ORDER, summarizeCondition, summarizeFormula } from '../helpers';
+import {
+  createDraftItem,
+  findMisplacedGuaranteeKeys,
+  isGuaranteeLikeItem,
+  STAGE_ORDER,
+  summarizeCondition,
+  summarizeFormula,
+} from '../helpers';
 
 const props = withDefaults(
   defineProps<{
@@ -29,6 +36,10 @@ const grouped = computed(() =>
     stage,
     title: enumLabel(CALC_STAGE_OPTIONS, stage),
   })),
+);
+
+const misplacedGuaranteeKeys = computed(
+  () => new Set(findMisplacedGuaranteeKeys(props.items)),
 );
 
 function replace(next: PlanItemDraft[]) {
@@ -104,6 +115,15 @@ function move(stage: string, index: number, delta: number) {
               <span class="text-muted-foreground truncate text-xs">
                 {{ subjectNameOf(item.subject_id) }}
               </span>
+              <a-tag
+                v-if="isGuaranteeLikeItem(item) && misplacedGuaranteeKeys.has(item._key)"
+                color="warning"
+              >
+                建议沉底
+              </a-tag>
+              <a-tag v-else-if="isGuaranteeLikeItem(item)" color="blue">
+                保底
+              </a-tag>
             </div>
             <div class="text-muted-foreground mt-1 truncate text-xs">
               条件：{{ summarizeCondition(item.condition_json, item.condition_expr) }}

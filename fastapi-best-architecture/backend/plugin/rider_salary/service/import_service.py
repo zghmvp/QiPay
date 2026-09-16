@@ -30,7 +30,7 @@ from backend.plugin.rider_salary.service.order_service import (
     map_order_status,
     rider_employment_error,
 )
-from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.audit import audit_service, resolve_operator_name
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import (
     TEMPLATE_HEADERS,
@@ -333,7 +333,7 @@ class ImportService:
             target_id=batch.id,
             target_label=f'站点{site_name}',
             description=(
-                f'{_operator_name(request)} 于 {_now_str()} 对 站点{site_name} 执行了导入订单，'
+                f'{resolve_operator_name(request)} 于 {_now_str()} 对 站点{site_name} 执行了导入订单，'
                 f'文件{filename}，成功{success_rows}行，失败{failed_rows}行'
             ),
         )
@@ -613,11 +613,6 @@ async def _is_locked(
         return True
     cache[key] = False
     return False
-
-
-def _operator_name(request: Request) -> str:
-    user = getattr(request, 'user', None)
-    return str(getattr(user, 'nickname', None) or getattr(user, 'username', None) or '未知')
 
 
 def _now_str() -> str:

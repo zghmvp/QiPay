@@ -37,7 +37,6 @@ router = APIRouter()
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
-        Depends(RequestPermission('rs:rider:add')),
         DependsRBAC,
     ],
 )

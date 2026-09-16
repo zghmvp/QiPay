@@ -44,6 +44,22 @@ const versionId = computed(
   () => drawerApi.getData<{ versionId?: number }>()?.versionId,
 );
 
+const orderCompare = computed(() => {
+  const summary = result.value?.summary;
+  if (!summary) return null;
+  const valid = Number(summary.valid_order_count ?? summary.order_count ?? 0);
+  const plan = Number(
+    summary.plan_order_count ?? summary.valid_order_count ?? summary.order_count ?? 0,
+  );
+  const segments = summary.segment_order_counts ?? [];
+  return {
+    differs: valid !== plan || segments.length > 1,
+    plan,
+    segments,
+    valid,
+  };
+});
+
 const cards = computed(() => {
   const summary = result.value?.summary;
   if (!summary) return [];
@@ -142,6 +158,51 @@ const periodColumns = [
           description="选择站点、骑手与日期后点击「开始试算」"
         />
         <div v-else class="flex flex-col gap-3">
+          <a-card v-if="orderCompare" size="small" class="border-primary/30">
+            <div class="mb-2 text-sm font-medium">单量口径对照</div>
+            <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
+              <div class="rounded bg-muted/40 px-3 py-2">
+                <div class="text-muted-foreground text-xs">周期有效单量</div>
+                <div class="text-xl font-semibold tabular-nums">
+                  {{ orderCompare.valid }}
+                </div>
+                <div class="text-muted-foreground mt-1 text-xs">
+                  整个试算区间 completed 单量
+                </div>
+              </div>
+              <div class="rounded bg-muted/40 px-3 py-2">
+                <div class="text-muted-foreground text-xs">方案期内单量</div>
+                <div class="text-xl font-semibold tabular-nums">
+                  {{ orderCompare.plan }}
+                </div>
+                <div class="text-muted-foreground mt-1 text-xs">
+                  本版本生效段内 completed 单量（多段为合计）
+                </div>
+              </div>
+            </div>
+            <a-alert
+              class="mt-3"
+              :type="orderCompare.differs ? 'warning' : 'info'"
+              show-icon
+              :message="
+                orderCompare.differs
+                  ? '两值不同：阶梯/提成请确认公式字段选「周期有效单量」还是「方案期内单量」。'
+                  : '试算假定本版本全程生效，两值通常相等；跨段换绑后「方案期内单量」按段独立，会与整期有效单量不同。'
+              "
+            />
+            <div
+              v-if="orderCompare.segments.length > 1"
+              class="text-muted-foreground mt-2 space-y-1 text-xs"
+            >
+              <div
+                v-for="seg in orderCompare.segments"
+                :key="`${seg.plan_version_id}-${seg.start_date}`"
+              >
+                段 v{{ seg.plan_version_id }} {{ seg.start_date }}~{{ seg.end_date }}：方案期内
+                {{ seg.plan_order_count }} 单
+              </div>
+            </div>
+          </a-card>
           <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
             <a-card v-for="card in cards" :key="card.label" size="small">
               <div class="text-muted-foreground text-xs">{{ card.label }}</div>

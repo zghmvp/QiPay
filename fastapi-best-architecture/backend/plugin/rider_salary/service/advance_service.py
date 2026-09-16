@@ -25,7 +25,7 @@ from backend.plugin.rider_salary.schema.advance import (
     GetAdvanceDetail,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
-from backend.plugin.rider_salary.utils.audit import require_reason
+from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
 from backend.plugin.rider_salary.utils.deps import get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import write_workbook
 from backend.plugin.rider_salary.utils.money import q2
@@ -372,7 +372,7 @@ class AdvanceService:
             target_label=f'预支单{advance.id}',
             after=snapshot(advance, _ADVANCE_FIELDS),
             description=(
-                f'{_operator_name(request)} 于 {_fmt_dt(timezone.now())} 对 预支单{advance.id} '
+                f'{resolve_operator_name(request)} 于 {_fmt_dt(timezone.now())} 对 预支单{advance.id} '
                 f'执行了提交预支，金额{amount}'
             ),
         )
@@ -527,11 +527,6 @@ def _user_label(user: User | None) -> str | None:
     if user is None:
         return None
     return user.nickname or user.username
-
-
-def _operator_name(request: Request) -> str:
-    user = getattr(request, 'user', None)
-    return getattr(user, 'nickname', None) or getattr(user, 'username', None) or '未知'
 
 
 def _fmt_dt(value: datetime | None) -> str:

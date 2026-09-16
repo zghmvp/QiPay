@@ -20,6 +20,7 @@ from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePer
 from backend.plugin.rider_salary.model.subject import RiderSalarySubject
 from backend.plugin.rider_salary.service.audit_service import audit_service
 from backend.plugin.rider_salary.service.period_service import period_service
+from backend.plugin.rider_salary.utils.audit import resolve_operator_name
 from backend.plugin.rider_salary.utils.excel import write_workbook
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
@@ -132,11 +133,6 @@ def _yes_no(*, flag: bool) -> str:
     return '是' if flag else '否'
 
 
-def _operator_name(request: Request) -> str:
-    user = getattr(request, 'user', None)
-    return getattr(user, 'nickname', None) or getattr(user, 'username', None) or '未知'
-
-
 class ExportService:
     """薪资导出服务"""
 
@@ -238,7 +234,7 @@ class ExportService:
             target_id=period.id,
             target_label=f'{site_name} {period_text}',
             description=(
-                f'{_operator_name(request)} 于 {timezone.to_str(timezone.now())} '
+                f'{resolve_operator_name(request)} 于 {timezone.to_str(timezone.now())} '
                 f'对 周期{site_name} {period_text} 执行了导出'
             ),
         )

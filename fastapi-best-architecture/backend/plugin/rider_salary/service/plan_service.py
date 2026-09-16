@@ -35,6 +35,7 @@ from backend.plugin.rider_salary.schema.trial import (
     TrialPerOrderRow,
     TrialPeriodItem,
     TrialResult,
+    TrialSegmentOrderCount,
     TrialSummary,
 )
 from backend.plugin.rider_salary.service.calc_service import CalcResult, trial_rider_range
@@ -166,6 +167,16 @@ def build_trial_result(calc: CalcResult, trial_hash: str) -> TrialResult:
     summary = TrialSummary(
         order_count=calc.order_count,
         valid_order_count=calc.valid_order_count,
+        plan_order_count=calc.plan_order_count,
+        segment_order_counts=[
+            TrialSegmentOrderCount(
+                plan_version_id=row.plan_version_id,
+                start_date=row.start_date,
+                end_date=row.end_date,
+                plan_order_count=row.plan_order_count,
+            )
+            for row in (calc.segment_order_counts or [])
+        ],
         gross=calc.gross,
         deduction_total=calc.deduction_total,
         net=calc.net,

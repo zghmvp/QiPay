@@ -97,6 +97,16 @@ class CalcDaily:
 
 
 @dataclass
+class SegmentOrderCount:
+    """方案段内有效单量（对照「周期有效单量」）"""
+
+    plan_version_id: int
+    start_date: date
+    end_date: date
+    plan_order_count: int
+
+
+@dataclass
 class CalcResult:
     """算薪结果"""
 
@@ -121,6 +131,8 @@ class CalcResult:
     dailies: list[CalcDaily]
     calc_version: int = 0
     stale: bool = False
+    plan_order_count: int = 0
+    segment_order_counts: list[SegmentOrderCount] | None = None
 
 
 @dataclass
@@ -274,6 +286,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
     daily_total = ZERO
     period_total = ZERO
     covered: dict[date, int] = {}
+    segment_order_counts: list[SegmentOrderCount] = []
     for segment in data.segments:
         for day in iter_dates(segment.start_date, segment.end_date):
             covered[day] = segment.plan_version_id
@@ -348,6 +361,14 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                     accrued += amount
                     daily_total += amount
         plan_orders = [row for row in completed_all if segment.start_date <= row.biz_date <= segment.end_date]
+        segment_order_counts.append(
+            SegmentOrderCount(
+                plan_version_id=segment.plan_version_id,
+                start_date=segment.start_date,
+                end_date=segment.end_date,
+                plan_order_count=len(plan_orders),
+            )
+        )
         segment_days = (segment.end_date - segment.start_date).days + 1
         seg_ctx = build_segment_context(
             period_ctx,
@@ -545,6 +566,12 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             )
         )
 
+    # 单段（含试算强制全程生效）取该段；多段取各段之和（无方案日不计）
+    plan_order_total = (
+        segment_order_counts[0].plan_order_count
+        if len(segment_order_counts) == 1
+        else sum(item.plan_order_count for item in segment_order_counts)
+    )
     return CalcResult(
         rider_id=rider_id,
         period_id=data.period_id,
@@ -565,6 +592,8 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         warnings=warnings,
         details=details,
         dailies=dailies,
+        plan_order_count=plan_order_total,
+        segment_order_counts=segment_order_counts,
     )
 
 

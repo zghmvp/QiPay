@@ -38,7 +38,7 @@ from backend.plugin.rider_salary.schema.period import (
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
 from backend.plugin.rider_salary.service.calc_service import _riders_for_period, calculate_period
 from backend.plugin.rider_salary.service.payroll_service import payroll_service
-from backend.plugin.rider_salary.utils.audit import require_reason
+from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.periods import compute_period_range
@@ -190,13 +190,11 @@ def _operator_id(request: Request) -> int:
     return int(getattr(getattr(request, 'user', None), 'id', 0) or 0)
 
 
-def _operator_name(request: Request) -> str:
-    user = getattr(request, 'user', None)
-    return getattr(user, 'nickname', None) or getattr(user, 'username', None) or '未知'
-
-
 def _now_str() -> str:
     return timezone.to_str(timezone.now())
+
+
+_operator_name = resolve_operator_name
 
 
 def _period_label(site: RiderSalarySite | None, period: RiderSalarySettlePeriod) -> str:
