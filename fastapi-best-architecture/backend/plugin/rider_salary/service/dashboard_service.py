@@ -2,9 +2,10 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import Request
-from sqlalchemy import and_, func, or_, select, true
+from sqlalchemy import and_, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.plugin.rider_salary.engine.context import iter_dates
@@ -14,7 +15,6 @@ from backend.plugin.rider_salary.enums import (
     OrderStatus,
     PayrollKind,
     PayrollStatus,
-    PeriodStatus,
     RiderStatus,
 )
 from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance
@@ -37,11 +37,16 @@ from backend.plugin.rider_salary.schema.dashboard import (
 from backend.plugin.rider_salary.service.calendar_service import parse_month, period_range_text, pick_effective_payroll
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.money import q2
+from backend.plugin.rider_salary.utils.order_attention import (
+    lock_countdown_statuses,
+    order_attention_condition,
+)
 from backend.utils.timezone import timezone
 
 ZERO = Decimal('0.00')
 _PAYROLL_OK = {PayrollStatus.draft.value, PayrollStatus.finalized.value, PayrollStatus.paid.value}
 _ATTENTION_LIMIT = 10
+_DUE_PERIODS_LIMIT = 10
 
 
 class DashboardService:
@@ -265,13 +270,14 @@ class DashboardService:
                 'range': period_range_text(period.start_date, period.end_date),
                 'status': period.status,
                 'stale_count': int(cnt or 0),
+                'link': f'/rider-salary/period?id={period.id}',
             })
         return DashboardAttentionBlock(
             key='stale_periods',
             title='需重算周期',
             count=len(rows),
             items=items,
-            link='/rider-salary/period?status=open&stale=1',
+            link='/rider-salary/period?stale=1',
         )
 
     async def _no_plan_days(
@@ -312,6 +318,7 @@ class DashboardService:
                 'job_no': getattr(rider, 'job_no', ''),
                 'name': getattr(rider, 'name', ''),
                 'count': int(cnt or 0),
+                'link': f'/rider-salary/rider?rider_id={rider_id}&tab=binding',
             })
         return DashboardAttentionBlock(
             key='no_plan_days',
@@ -351,6 +358,7 @@ class DashboardService:
                 'rider_name': getattr(rider_map.get(row.rider_id), 'name', ''),
                 'amount': str(q2(row.amount)),
                 'submit_time': timezone.to_str(row.submit_time) if row.submit_time else None,
+                'link': '/rider-salary/advance?status=pending',
             }
             for row in rows
         ]
@@ -418,7 +426,12 @@ class DashboardService:
                     continue
                 total += 1
                 if len(items) < _ATTENTION_LIMIT:
-                    items.append({'site_id': site.id, 'site_name': site.name, 'date': day.isoformat()})
+                    items.append({
+                        'site_id': site.id,
+                        'site_name': site.name,
+                        'date': day.isoformat(),
+                        'link': f'/rider-salary/order?site_id={site.id}&date={day.isoformat()}',
+                    })
         if total <= 0:
             return None
         return DashboardAttentionBlock(
@@ -436,11 +449,7 @@ class DashboardService:
         start: date,
         end: date,
     ) -> DashboardAttentionBlock | None:
-        duration_sec = func.extract('epoch', RiderSalaryOrder.deliver_time - RiderSalaryOrder.order_time)
-        abnormal_cond = or_(
-            RiderSalaryOrder.status.in_([OrderStatus.abnormal.value, OrderStatus.refunded.value]),
-            and_(RiderSalaryOrder.deliver_time.is_not(None), duration_sec > 3600),
-        )
+        abnormal_cond = order_attention_condition()
         total = int(
             await db.scalar(
                 select(func.count())
@@ -486,13 +495,14 @@ class DashboardService:
                 'rider_name': getattr(rider_map.get(row.rider_id), 'name', ''),
                 'status': row.status,
                 'duration_min': duration,
+                'link': (f'/rider-salary/order?attention=1&order_no={quote(row.order_no, safe="")}'),
             })
         return DashboardAttentionBlock(
             key='abnormal_orders',
             title='异常订单',
             count=total,
             items=items,
-            link='/rider-salary/order?status=abnormal',
+            link='/rider-salary/order?attention=1',
         )
 
     async def _due_periods(
@@ -501,19 +511,17 @@ class DashboardService:
         site_ids: set[int] | None,
         today: date,
     ) -> DashboardAttentionBlock | None:
-        due_end = today + timedelta(days=3)
+        # 产品语义：未锁 open/reopened 按 end_date 升序倒计时，不限「未来 3 天」窗口
         rows = list(
             (
                 await db.scalars(
                     select(RiderSalarySettlePeriod)
                     .where(
-                        RiderSalarySettlePeriod.status == PeriodStatus.open.value,
-                        RiderSalarySettlePeriod.end_date >= today,
-                        RiderSalarySettlePeriod.end_date <= due_end,
+                        RiderSalarySettlePeriod.status.in_(lock_countdown_statuses()),
                         RiderSalarySettlePeriod.deleted == 0,
                         _site_filter(RiderSalarySettlePeriod.site_id, site_ids),
                     )
-                    .order_by(RiderSalarySettlePeriod.end_date.asc())
+                    .order_by(RiderSalarySettlePeriod.end_date.asc(), RiderSalarySettlePeriod.id.asc())
                 )
             ).all()
         )
@@ -525,17 +533,19 @@ class DashboardService:
                 'site_id': row.site_id,
                 'rider_id': row.rider_id,
                 'range': period_range_text(row.start_date, row.end_date),
+                'status': row.status,
                 'end_date': row.end_date.isoformat(),
                 'days_left': (row.end_date - today).days,
+                'link': f'/rider-salary/period?id={row.id}',
             }
-            for row in rows[:_ATTENTION_LIMIT]
+            for row in rows[:_DUE_PERIODS_LIMIT]
         ]
         return DashboardAttentionBlock(
             key='due_periods',
-            title='即将到期周期',
+            title='锁账倒计时',
             count=len(rows),
             items=items,
-            link='/rider-salary/period?status=open',
+            link='/rider-salary/period',
         )
 
     async def _resigned_with_orders(
@@ -568,6 +578,7 @@ class DashboardService:
                 'job_no': rider.job_no,
                 'name': rider.name,
                 'order_count': int(cnt or 0),
+                'link': f'/rider-salary/rider?rider_id={rider.id}',
             }
             for rider, cnt in rows[:_ATTENTION_LIMIT]
         ]

@@ -42,6 +42,10 @@ async def get_orders_paginated(
     order_no: Annotated[str | None, Query(description='订单号')] = None,
     import_batch_id: Annotated[int | None, Query(description='导入批次 ID')] = None,
     is_locked: Annotated[bool | None, Query(description='是否已锁账')] = None,
+    attention: Annotated[
+        bool | None,
+        Query(description='需关注：配送异常∪已退款∪配送时长>60分钟（与工作台同源）'),
+    ] = None,
 ) -> ResponseSchemaModel[PageData[GetOrderDetail]]:
     page_data = await order_service.get_list(
         db=db,
@@ -54,6 +58,7 @@ async def get_orders_paginated(
         order_no=order_no,
         import_batch_id=import_batch_id,
         is_locked=is_locked,
+        attention=attention,
     )
     return response_base.success(data=page_data)
 

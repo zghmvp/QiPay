@@ -41,7 +41,10 @@ export const querySchema: VbenFormSchema[] = [
     component: 'Select',
     componentProps: {
       allowClear: true,
-      options: enumTagOptions(ORDER_STATUS_OPTIONS),
+      options: [
+        ...enumTagOptions(ORDER_STATUS_OPTIONS),
+        { label: '需关注（异常/退款/超时）', value: '__attention__' },
+      ],
     },
     fieldName: 'status',
     label: '状态',
