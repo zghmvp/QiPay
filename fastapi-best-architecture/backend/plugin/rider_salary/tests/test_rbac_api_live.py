@@ -250,7 +250,13 @@ def test_api_rbac_empty_manager_sees_nothing(world: RbacWorld) -> None:
     assert sites.status < 500, sites.msg
     rows = sites.data if isinstance(sites.data, list) else sites.items
     assert rows == [] or sites.total == 0
-    for path in (f'{PREFIX}/orders', f'{PREFIX}/periods', f'{PREFIX}/payrolls', f'{PREFIX}/riders'):
+    for path in (
+        f'{PREFIX}/orders',
+        f'{PREFIX}/periods',
+        f'{PREFIX}/payrolls',
+        f'{PREFIX}/riders',
+        f'{PREFIX}/audit-logs',
+    ):
         res = empty.call('GET', path, query={'page': 1, 'size': 20})
         assert res.status != 500, f'{path} 空集 500：{res.msg}'
         assert_empty_list(res, label=f'EMPTY {path}')
@@ -274,6 +280,12 @@ def test_api_rbac_audit_site_scope(world: RbacWorld) -> None:
         if marker and marker in blob
     ]
     assert not leaked, f'审计泄漏外站标记 {leaked}（缺口 #3）'
+    sa = world.sa.call('GET', f'{PREFIX}/audit-logs', query={'page': 1, 'size': 100})
+    assert sa.status < 400, sa.msg
+    sa_blob = str(sa.data)
+    assert any(marker in sa_blob for marker in ('权限站B', 'RBACB', 'RBAC-OB-001', 'RBAC-ADJ-B') if marker), (
+        '薪资管理员应仍能看到站 B 审计（含未回填/全局行）'
+    )
 
 
 def test_api_rbac_so_global_catalog_read(world: RbacWorld) -> None:

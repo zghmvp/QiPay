@@ -27,6 +27,12 @@ class RiderSalaryAuditLog(DataClassBase):
     target_type: Mapped[str] = mapped_column(sa.String(64), comment='对象类型')
     target_label: Mapped[str] = mapped_column(sa.String(256), comment='对象摘要')
     target_id: Mapped[str | None] = mapped_column(sa.String(64), default=None, comment='对象 ID')
+    site_id: Mapped[int | None] = mapped_column(
+        sa.BigInteger,
+        default=None,
+        index=True,
+        comment='所属站点；空表示全局目录或无法归属',
+    )
     reason: Mapped[str | None] = mapped_column(UniversalText, default=None, comment='原因')
     before: Mapped[dict | None] = mapped_column(sa.JSON(), default=None, comment='变更前')
     after: Mapped[dict | None] = mapped_column(sa.JSON(), default=None, comment='变更后')

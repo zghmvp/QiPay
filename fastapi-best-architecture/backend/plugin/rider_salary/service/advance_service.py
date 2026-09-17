@@ -371,6 +371,7 @@ class AdvanceService:
             action='提交预支',
             target_type='advance',
             target_id=advance.id,
+            site_id=advance.site_id,
             target_label=f'预支单{advance.id}',
             after=snapshot(advance, _ADVANCE_FIELDS),
             description=(
@@ -461,6 +462,7 @@ class AdvanceService:
             action=action,
             target_type='advance',
             target_id=advance.id,
+            site_id=advance.site_id,
             target_label=f'预支单{advance.id}',
             reason=reason,
             before=before,

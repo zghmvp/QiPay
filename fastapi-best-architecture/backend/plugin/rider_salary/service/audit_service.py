@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.pagination import paging_data
 from backend.plugin.rider_salary.crud.audit_log import audit_log_dao
 from backend.plugin.rider_salary.utils.audit import audit_service as _audit_writer
+from backend.plugin.rider_salary.utils.deps import get_visible_site_ids
 
 
 def snapshot(obj: object, fields: tuple[str, ...]) -> dict[str, Any]:
@@ -57,6 +58,7 @@ class AuditService:
         target_type: str,
         target_id: int | str | None,
         target_label: str,
+        site_id: int | None,
         reason: str | None = None,
         before: dict | None = None,
         after: dict | None = None,
@@ -71,6 +73,7 @@ class AuditService:
             target_type=target_type,
             target_id=target_id,
             target_label=target_label,
+            site_id=site_id,
             reason=reason,
             before=before,
             after=after,
@@ -81,6 +84,7 @@ class AuditService:
     async def get_list(
         *,
         db: AsyncSession,
+        request: Request,
         module: str | None,
         action: str | None,
         operator: str | None,
@@ -93,6 +97,7 @@ class AuditService:
         分页获取操作日志
 
         :param db: 数据库会话
+        :param request: 请求对象
         :param module: 模块
         :param action: 动作
         :param operator: 操作人
@@ -102,6 +107,7 @@ class AuditService:
         :param keyword: 关键字
         :return:
         """
+        visible = await get_visible_site_ids(request, db)
         stmt = await audit_log_dao.get_select(
             module=module,
             action=action,
@@ -110,6 +116,7 @@ class AuditService:
             date_to=date_to,
             target_type=target_type,
             keyword=keyword,
+            site_ids=visible,
         )
         return await paging_data(db, stmt)
 

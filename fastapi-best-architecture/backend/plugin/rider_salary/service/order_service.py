@@ -247,6 +247,7 @@ class OrderService:
             action='导出订单',
             target_type='order',
             target_id=site_id,
+            site_id=site_id,
             target_label=f'站点{site.name}',
         )
         return content, filename
@@ -312,6 +313,7 @@ class OrderService:
             action='订单补录',
             target_type='order',
             target_id=order.id,
+            site_id=order.site_id,
             target_label=f'订单{order.order_no}',
             after=order_snapshot(order),
         )
@@ -404,6 +406,7 @@ class OrderService:
             action='订单纠错',
             target_type='order',
             target_id=order.id,
+            site_id=int(before['site_id']),
             target_label=f'订单{order.order_no}',
             reason=obj.reason,
             before=before,
@@ -449,6 +452,7 @@ class OrderService:
             action='删除订单',
             target_type='order',
             target_id=order_id,
+            site_id=int(before['site_id']),
             target_label=label,
             reason=reason.strip(),
             before=before,

@@ -979,6 +979,7 @@ async def _persist_result(
             action='重算',
             target_type='payroll',
             target_id=payroll.id,
+            site_id=period.site_id,
             target_label=f'周期{period.start_date}~{period.end_date} 骑手{rider.job_no}',
         )
     return result

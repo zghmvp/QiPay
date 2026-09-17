@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from backend.common.pagination import DependsPagination, PageData
 from backend.common.response.response_schema import ResponseSchemaModel, response_base
@@ -26,6 +26,7 @@ router = APIRouter()
 )
 async def get_audit_logs_paginated(
     db: CurrentSession,
+    request: Request,
     module: Annotated[str | None, Query(description='模块')] = None,
     action: Annotated[str | None, Query(description='动作')] = None,
     operator: Annotated[str | None, Query(description='操作人')] = None,
@@ -36,6 +37,7 @@ async def get_audit_logs_paginated(
 ) -> ResponseSchemaModel[PageData[GetAuditLogDetail]]:
     page_data = await audit_service.get_list(
         db=db,
+        request=request,
         module=module,
         action=action,
         operator=operator,

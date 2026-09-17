@@ -334,6 +334,7 @@ class ImportService:
             action='导入订单',
             target_type='import_batch',
             target_id=batch.id,
+            site_id=batch_site_id,
             target_label=f'站点{site_name}',
             description=(
                 f'{resolve_operator_name(request)} 于 {_now_str()} 对 站点{site_name} 执行了导入订单，'

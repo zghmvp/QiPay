@@ -40,13 +40,17 @@ def test_empty_visible_crud_sentinels() -> None:
     assert sentinels.get('order.py') == '[0]'
     assert sentinels.get('import_batch.py') == '[0]'
     assert sentinels.get('payroll.py') == '[-1]'
+    assert sentinels.get('audit_log.py') == '[-1]'
 
 
-def test_audit_list_has_no_site_predicate() -> None:
-    """缺口 #3 合同：审计列表仍不接收站点范围。"""
+def test_audit_list_filters_visible_sites() -> None:
+    """缺口 #3 已收口：列表按 get_visible_site_ids，空集哨兵 [-1]，不含 NULL。"""
     text = (PLUGIN_ROOT / 'service' / 'audit_service.py').read_text(encoding='utf-8')
-    assert 'get_visible_site_ids' not in text
-    assert 'site_ids' not in text
-    assert 'assert_site_visible' not in text
+    assert 'get_visible_site_ids' in text
+    assert 'site_ids=visible' in text
     crud = (PLUGIN_ROOT / 'crud' / 'audit_log.py').read_text(encoding='utf-8')
-    assert 'site_id' not in crud
+    assert 'site_id__in' in crud
+    assert 'list(site_ids) or [-1]' in crud
+    assert 'join(' not in crud
+    assert 'ilike' not in crud.lower()
+    assert '权限站' not in crud

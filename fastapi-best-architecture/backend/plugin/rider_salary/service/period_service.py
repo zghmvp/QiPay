@@ -758,6 +758,7 @@ class PeriodService:
             action='生成周期',
             target_type='period',
             target_id=site.id,
+            site_id=site.id,
             target_label=f'站点{site.code}/{site.name} {obj.month}',
             after={'created': created_count, 'skipped': skipped_count},
             description=(
@@ -841,6 +842,7 @@ class PeriodService:
                 action='算薪',
                 target_type='period',
                 target_id=period.id,
+                site_id=period.site_id,
                 target_label=_period_label(site, period),
                 description=(
                     f'{_operator_name(request)} 于 {_now_str()} 对 {_period_label(site, period)} 执行了算薪，'
@@ -868,6 +870,7 @@ class PeriodService:
             action='算薪',
             target_type='period',
             target_id=period.id,
+            site_id=period.site_id,
             target_label=_period_label(site, period),
             description=(
                 f'{_operator_name(request)} 于 {_now_str()} 对 {_period_label(site, period)} 执行了算薪，'
@@ -922,6 +925,7 @@ class PeriodService:
             action='锁账',
             target_type='period',
             target_id=period.id,
+            site_id=period.site_id,
             target_label=_period_label(site, period),
             reason=reason,
             before=before,
@@ -974,6 +978,7 @@ class PeriodService:
             action='标记发薪',
             target_type='period',
             target_id=period.id,
+            site_id=period.site_id,
             target_label=_period_label(site, period),
             reason=reason,
             before=before,
@@ -1021,6 +1026,7 @@ class PeriodService:
             action='反冲补发',
             target_type='period',
             target_id=period.id,
+            site_id=period.site_id,
             target_label=_period_label(site, period),
             reason=reason,
             before=before,
@@ -1063,6 +1069,7 @@ class PeriodService:
             action='删除周期',
             target_type='period',
             target_id=pk,
+            site_id=period.site_id,
             target_label=_period_label(site, period),
             before=before,
         )

@@ -19,6 +19,7 @@ class GetAuditLogDetail(SchemaBase):
     action: str = Field(description='动作')
     target_type: str = Field(description='对象类型')
     target_id: str | None = Field(None, description='对象 ID')
+    site_id: int | None = Field(None, description='所属站点；空表示全局目录或无法归属')
     target_label: str = Field(description='对象摘要')
     reason: str | None = Field(None, description='原因')
     before: dict[str, Any] | None = Field(None, description='变更前')

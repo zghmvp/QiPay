@@ -232,6 +232,7 @@ class ExportService:
             action='导出',
             target_type='period',
             target_id=period.id,
+            site_id=period.site_id,
             target_label=f'{site_name} {period_text}',
             description=(
                 f'{resolve_operator_name(request)} 于 {timezone.to_str(timezone.now())} '

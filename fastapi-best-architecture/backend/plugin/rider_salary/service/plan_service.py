@@ -241,6 +241,7 @@ class PlanService:
             module='薪资方案',
             action='创建方案',
             target_type='plan',
+            site_id=None,
             target_id=plan.id,
             target_label=f'方案{plan.code}/{plan.name}',
         )
@@ -261,6 +262,7 @@ class PlanService:
             module='薪资方案',
             action='修改方案',
             target_type='plan',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.code}',
         )
@@ -284,6 +286,7 @@ class PlanService:
             module='薪资方案',
             action='删除方案',
             target_type='plan',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.code}/{plan.name}',
         )
@@ -346,6 +349,7 @@ class PlanService:
             module='薪资方案',
             action='创建方案版本',
             target_type='plan_version',
+            site_id=None,
             target_id=version.id,
             target_label=f'方案{plan.name} v{version_no}',
         )
@@ -363,6 +367,7 @@ class PlanService:
             module='薪资方案',
             action='修改方案版本',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案版本{pk}',
         )
@@ -381,6 +386,7 @@ class PlanService:
             module='薪资方案',
             action='删除方案版本',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案版本{pk}',
         )
@@ -423,6 +429,7 @@ class PlanService:
             module='薪资方案',
             action='更新方案项',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案版本{pk}',
         )
@@ -470,6 +477,7 @@ class PlanService:
             module='薪资方案',
             action=action,
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',
         )
@@ -507,6 +515,7 @@ class PlanService:
             module='薪资方案',
             action='启用方案',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',
         )
@@ -527,6 +536,7 @@ class PlanService:
             module='薪资方案',
             action='方案停用',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',
             reason=obj.reason,
@@ -574,6 +584,7 @@ class PlanService:
             module='薪资方案',
             action='复制方案版本',
             target_type='plan_version',
+            site_id=None,
             target_id=copied.id,
             target_label=f'方案{plan.name} v{version.version_no} → v{version_no}',
         )

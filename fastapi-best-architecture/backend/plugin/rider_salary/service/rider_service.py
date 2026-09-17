@@ -413,6 +413,7 @@ class RiderService:
             target_type='rider',
             target_id=rider.id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             after=snapshot(rider, _RIDER_FIELDS),
         )
 
@@ -448,6 +449,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=int(before['site_id']),
             reason=obj.reason,
             before=before,
             after=snapshot(updated, _RIDER_FIELDS) if updated else None,
@@ -493,6 +495,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
         )
         return count
@@ -527,6 +530,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
             before=before,
             after=snapshot(updated, _RIDER_FIELDS) if updated else None,
@@ -578,6 +582,7 @@ class RiderService:
                 target_type='rider_employ_history',
                 target_id=item.id,
                 target_label=f'{rider.job_no} {rider.name}',
+                site_id=rider.site_id,
                 before=before,
                 after=snapshot(updated, _HISTORY_FIELDS) if updated else None,
             )
@@ -596,6 +601,7 @@ class RiderService:
             target_type='rider_employ_history',
             target_id=row.id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             after=snapshot(row, _HISTORY_FIELDS),
         )
 
@@ -634,6 +640,7 @@ class RiderService:
             target_type='rider_employ_history',
             target_id=history_id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
             after=snapshot(updated, _HISTORY_FIELDS) if updated else None,
         )
@@ -657,6 +664,7 @@ class RiderService:
             target_type='rider_employ_history',
             target_id=history_id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
         )
         return count
@@ -746,6 +754,7 @@ class RiderService:
             target_type='rider_plan_binding',
             target_id=row.id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             after=snapshot(row, _BINDING_FIELDS),
         )
 
@@ -799,6 +808,7 @@ class RiderService:
             target_type='rider_plan_binding',
             target_id=binding_id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
             after=snapshot(updated, _BINDING_FIELDS) if updated else None,
         )
@@ -830,6 +840,7 @@ class RiderService:
             target_type='rider_plan_binding',
             target_id=binding_id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
         )
         return count
@@ -905,6 +916,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
             after={'user_id': user.id, 'username': user.username},
         )
@@ -925,6 +937,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
         )
 
@@ -945,6 +958,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
             after={'user_id': rider.user_id, 'status': 0},
         )
@@ -965,6 +979,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
             after={'user_id': rider.user_id, 'status': 1},
         )

@@ -361,6 +361,14 @@ class PayrollService:
         payroll.reversed = True
         await db.flush()
         if operator is not None:
+            period = await db.scalar(
+                select(RiderSalarySettlePeriod).where(
+                    RiderSalarySettlePeriod.id == payroll.period_id,
+                    RiderSalarySettlePeriod.deleted == 0,
+                )
+            )
+            if period is None:
+                raise errors.NotFoundError(msg='结算周期不存在')
             await audit_service.record(
                 db,
                 operator,
@@ -369,6 +377,7 @@ class PayrollService:
                 target_type='payroll',
                 target_id=payroll.id,
                 target_label=f'薪资单{payroll.id}',
+                site_id=period.site_id,
                 reason=reason,
             )
         return reversal

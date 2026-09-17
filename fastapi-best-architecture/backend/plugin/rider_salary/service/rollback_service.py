@@ -167,6 +167,8 @@ class RollbackService:
             )
             binding.deleted = binding.id
             binding.deleted_time = timezone.now()
+            if rider is None:
+                continue
             await audit_service.record(
                 db,
                 request,
@@ -174,7 +176,8 @@ class RollbackService:
                 action='解除绑定',
                 target_type='binding',
                 target_id=binding.id,
-                target_label=f'骑手{rider.job_no if rider else binding.rider_id}',
+                target_label=f'骑手{rider.job_no}',
+                site_id=rider.site_id,
                 reason=obj.reason,
             )
 
@@ -227,6 +230,7 @@ class RollbackService:
             action='方案回退',
             target_type='plan_version',
             target_id=pk,
+            site_id=None,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',
             reason=obj.reason,
             description=(
