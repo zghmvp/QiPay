@@ -19,6 +19,7 @@ from backend.plugin.rider_salary.schema.recalc_job import (
     BatchRecalcStaleParam,
     BatchRecalcStalePreview,
     BatchRecalcStaleResult,
+    GetLatestRecalcJobResult,
     GetRecalcJobDetail,
 )
 from backend.plugin.rider_salary.service.calendar_service import parse_month, period_range_text
@@ -50,6 +51,20 @@ class RecalcJobService:
         visible = await get_visible_site_ids(request, db)
         assert_site_visible(visible, row.site_id)
         return _job_detail(row)
+
+    async def get_latest(
+        self,
+        *,
+        db: AsyncSession,
+        request: Request,
+        site_id: int,
+        source: str | None = None,
+    ) -> GetLatestRecalcJobResult:
+        """本站最近一条重算任务，供关向导后重开；无任务中心、无 Celery。"""
+        visible = await get_visible_site_ids(request, db)
+        assert_site_visible(visible, site_id)
+        row = await recalc_job_dao.get_latest_by_site(db, site_id=site_id, source=source)
+        return GetLatestRecalcJobResult(site_id=site_id, job=_job_detail(row) if row is not None else None)
 
     async def create_import_job(
         self,

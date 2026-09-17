@@ -38,6 +38,8 @@ const STALE_REMARK = 'FIX_STALE_SEED';
 const ORDER_PREFIX = 'FIX_C17_';
 const LOCK_ORDER_PREFIX = 'FIX_C17_LOCK_';
 const LOCK_ORDER_DAY = '2026-09-20';
+const MISS_ORDER_NO = 'FIX_C17_MISSDEL_20260910';
+const MISS_ORDER_DAY = '2026-09-10';
 
 async function swaggerLogin(username, password) {
   const res = await fetch(
@@ -204,6 +206,56 @@ UPDATE rs_payroll_daily
       'WARN: 未能清缺口日 rs_payroll_daily（日历读路径仍应以 live 绑定判 no_plan；工作台 attention 可能需手工清）:',
       err.message || err,
     );
+  }
+}
+
+function runPsql(sql) {
+  const host = process.env.PGHOST || '127.0.0.1';
+  const port = process.env.PGPORT || '5432';
+  const user = process.env.PGUSER || 'root';
+  const db = process.env.PGDATABASE || 'fba';
+  const password = process.env.PGPASSWORD || 'postgres';
+  return execFileSync(
+    'psql',
+    ['-h', host, '-p', String(port), '-U', user, '-d', db, '-v', 'ON_ERROR_STOP=1', '-c', sql],
+    {
+      env: { ...process.env, PGPASSWORD: password },
+      encoding: 'utf8',
+    },
+  );
+}
+
+/**
+ * 已完成但送达为空：API 会拒，只能 SQL 灌。供 ops-order-missing-delivery-filter。
+ * 落在 FIX_C17_R1 有方案日 09-10，避免和 15~17 无方案日混成同一硬失败。
+ */
+function ensureMissingDeliveryOrder(siteId, riderId) {
+  const sql = `
+INSERT INTO rs_order (
+  order_no, site_id, rider_id, biz_date, distance_km, weight_jin,
+  order_time, deliver_time, status, amount, source, is_locked, remark,
+  deleted, created_time
+)
+SELECT
+  '${MISS_ORDER_NO}', ${Number(siteId)}, ${Number(riderId)}, '${MISS_ORDER_DAY}'::date,
+  3.00, 4.00,
+  TIMESTAMPTZ '${MISS_ORDER_DAY} 10:00:00+08', NULL, 'completed', 20.00, 'manual', false,
+  'FIX 已完成缺送达夹具', 0, NOW()
+WHERE NOT EXISTS (
+  SELECT 1 FROM rs_order WHERE order_no = '${MISS_ORDER_NO}' AND deleted = 0
+);
+UPDATE rs_order
+   SET deliver_time = NULL,
+       status = 'completed',
+       remark = 'FIX 已完成缺送达夹具'
+ WHERE order_no = '${MISS_ORDER_NO}'
+   AND deleted = 0;
+`;
+  try {
+    const out = runPsql(sql);
+    console.log('missing-delivery order', MISS_ORDER_NO, out.trim());
+  } catch (err) {
+    console.warn('WARN: 未能灌缺送达夹具单（ops-order-missing-delivery-filter 需要）：', err.message || err);
   }
 }
 
@@ -532,6 +584,7 @@ async function main() {
   await ensureBindings(token, rider.id, planA, planB);
   clearGapPayrollDailies(rider.id);
   await ensureNoPlanOrders(token, site.id, rider.id);
+  ensureMissingDeliveryOrder(site.id, rider.id);
   await ensureSiteOwner(token, site.id);
   await ensureStalePayrolls(token, site.id);
   const lockRider = await ensureLockHardFailRider(token, site.id);

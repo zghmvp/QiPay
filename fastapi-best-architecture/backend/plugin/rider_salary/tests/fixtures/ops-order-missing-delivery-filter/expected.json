@@ -1,0 +1,18 @@
+{
+  "feature": "ops-order-missing-delivery-filter",
+  "order_no": "FIX_C17_MISSDEL_20260910",
+  "biz_date": "2026-09-10",
+  "status": "completed",
+  "deliver_time": null,
+  "expected": {
+    "ui_label": "已完成且送达为空",
+    "query_param": "missing_delivery",
+    "api_path": "/api/v1/rider-salary/orders",
+    "filter_completed_and_null_deliver": true,
+    "ignore_param_is_fail": true,
+    "query_true_values": ["1", "true"],
+    "precheck_look_orders_carries_filter": true,
+    "do_not_require_amount": true,
+    "do_not_restore_duration_zero": true
+  }
+}

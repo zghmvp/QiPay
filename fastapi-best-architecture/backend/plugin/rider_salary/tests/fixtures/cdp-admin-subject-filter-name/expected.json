@@ -1,0 +1,8 @@
+{
+  "feature": "cdp-admin-subject-filter-name",
+  "expected": {
+    "tag_uses_subject_name": true,
+    "forbid_label": "科目 ID n",
+    "query_param": "subject_id"
+  }
+}

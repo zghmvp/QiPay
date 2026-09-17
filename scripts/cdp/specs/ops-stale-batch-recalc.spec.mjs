@@ -1,4 +1,11 @@
-/** CDP: ops-stale-batch-recalc — 本站本月批量重算（站点负责人，非超管） */
+/** CDP: ops-stale-batch-recalc — 本站本月批量重算；无方案骑手不得纯绿「完成」 */
+import {
+  FIX_JOB_NO,
+  PARTIAL_FAIL_COPY,
+  assertNotGreenCompleteAlone,
+  assertPartialFailVisible,
+} from '../cycle1-lib.mjs';
+
 export const name = 'ops-stale-batch-recalc';
 
 export async function run({ page, helpers, config }) {
@@ -35,23 +42,13 @@ export async function run({ page, helpers, config }) {
   await btn.waitFor({ state: 'visible', timeout: 30000 });
   await helpers.shot(page, 'cdp-ops-stale-batch-recalc-button');
 
-  const disabled = await btn.isDisabled();
-  const allowEmpty = process.env.CDP_ALLOW_EMPTY_STALE === '1';
-  if (disabled) {
-    if (allowEmpty) {
-      console.warn('WARN: 本站本月无 stale，按钮禁用（CDP_ALLOW_EMPTY_STALE=1 逃生阀）');
-      helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());
-      return;
-    }
+  if (await btn.isDisabled()) {
     throw new Error(
-      'stale-batch-recalc 按钮禁用（无 stale）。请先 seed ≥2 名骑手奖惩触发 mark_stale；' +
-        '排障临时可设 CDP_ALLOW_EMPTY_STALE=1',
+      'stale-batch-recalc 按钮禁用（无 stale）。请先 seed ≥2 名骑手奖惩触发 mark_stale。禁止 CDP_ALLOW_EMPTY_STALE 换绿。',
     );
   }
 
   await btn.click();
-
-  // Vben confirm → reka AlertDialog（role=alertdialog / data-slot），非 Ant Modal
   const dialog = page.getByRole('alertdialog').or(
     page.locator('[data-slot="alert-dialog-content"]'),
   );
@@ -60,7 +57,6 @@ export async function run({ page, helpers, config }) {
   } catch (err) {
     throw new Error(
       '等待 Vben 确认框超时（alertdialog / [data-slot=alert-dialog-content]）。' +
-        '若仍在等 .ant-modal / [role=dialog]：产品为 Vben confirm，不是 Ant Modal。' +
         ` 原始错误：${err.message}`,
     );
   }
@@ -74,27 +70,42 @@ export async function run({ page, helpers, config }) {
       `确认框文案不符合预期（须含「批量重算」且含站点/周期/骑手语义）：${text}`,
     );
   }
-
-  // 开框态 viewport 证据（cancel 前）；勿在 overlay 关闭后 fullPage
   await helpers.shot(page, 'cdp-ops-stale-batch-recalc-confirm', {
     fullPage: false,
     timeout: 10_000,
   });
 
-  // Vben Alert 按钮 accessible name 常为「取 消」（字间空白）；勿用 /^取消$/
-  await dialog.first().getByRole('button', { name: /^取\s*消$/ }).click();
-  await dialog.first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+  await dialog.first().getByRole('button', { name: /^确\s*认$/ }).click();
 
-  // 取消后辅证：viewport + optional（失败 WARN，不 FAIL）
-  await helpers.shot(page, 'cdp-ops-stale-batch-recalc-after-cancel', {
-    fullPage: false,
-    timeout: 10_000,
-    optional: true,
-  });
-
-  const bodyAfter = await page.locator('body').innerText();
-  if (bodyAfter.includes('已提交批量重算')) {
-    throw new Error('点击取消后出现提交成功态——疑似误点确认');
+  const jobBox = page.getByTestId('dashboard-batch-job');
+  await jobBox.waitFor({ state: 'visible', timeout: 30000 });
+  const failed = page.getByTestId('dashboard-batch-failed');
+  try {
+    await failed.waitFor({ state: 'visible', timeout: 180000 });
+  } catch {
+    const jobText = await jobBox.innerText();
+    throw new Error(
+      `夹具含 ${FIX_JOB_NO} 时批量重算不得纯绿「完成」：${jobText.slice(0, 300)}`,
+    );
   }
-  helpers.assertNoPaymentTaxCopy(bodyAfter);
+  const failText = await failed.innerText();
+  assertNotGreenCompleteAlone(failText);
+  assertPartialFailVisible(failText);
+  if (!PARTIAL_FAIL_COPY.test(failText) && !/失败/.test(failText)) {
+    throw new Error(`dashboard-batch-failed 未见部分失败/失败人数：${failText}`);
+  }
+
+  const gotoCalc = page.getByTestId('dashboard-batch-goto-calc').first();
+  await gotoCalc.waitFor({ state: 'visible', timeout: 15000 });
+  await gotoCalc.click();
+  await page.waitForURL(/\/rider-salary\/period\/\d+\/calculate/, { timeout: 30000 });
+  const calcFail = page.getByTestId('period-calc-failed');
+  await calcFail.waitFor({ state: 'visible', timeout: 20000 });
+  const calcText = await calcFail.innerText();
+  if (!calcText.includes(FIX_JOB_NO) && !/无生效方案/.test(calcText)) {
+    throw new Error(`算薪页未见无方案骑手 ${FIX_JOB_NO}：${calcText.slice(0, 200)}`);
+  }
+
+  helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());
+  await helpers.shot(page, 'cdp-ops-stale-batch-recalc');
 }

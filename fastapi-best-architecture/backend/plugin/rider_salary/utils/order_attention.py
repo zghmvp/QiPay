@@ -23,6 +23,14 @@ def order_attention_condition() -> ColumnElement[bool]:
     )
 
 
+def missing_delivery_condition() -> ColumnElement[bool]:
+    """已完成且送达时间为空（与算薪缺送达硬失败同口径）。GET /orders?missing_delivery=1"""
+    return and_(
+        RiderSalaryOrder.status == OrderStatus.completed.value,
+        RiderSalaryOrder.deliver_time.is_(None),
+    )
+
+
 def lock_countdown_statuses() -> list[str]:
     """锁账倒计时：未锁的开放/补发中周期。"""
     return [PeriodStatus.open.value, PeriodStatus.reopened.value]

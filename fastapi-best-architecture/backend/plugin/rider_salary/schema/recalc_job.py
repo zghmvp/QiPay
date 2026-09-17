@@ -54,6 +54,13 @@ class GetRecalcJobDetail(SchemaBase):
             return str(self.source)
 
 
+class GetLatestRecalcJobResult(SchemaBase):
+    """本站最近一条重算任务（关向导后跨浏览器重开）"""
+
+    site_id: int = Field(description='站点 ID')
+    job: GetRecalcJobDetail | None = Field(None, description='最近一条任务，无则空')
+
+
 class BatchRecalcStaleParam(SchemaBase):
     """本站本月 stale 批量重算参数"""
 

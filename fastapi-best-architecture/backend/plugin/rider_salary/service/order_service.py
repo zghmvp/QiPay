@@ -140,6 +140,7 @@ class OrderService:
         import_batch_id: int | None,
         is_locked: bool | None,
         attention: bool | None = None,
+        missing_delivery: bool | None = None,
     ) -> dict[str, Any]:
         """
         分页获取订单
@@ -155,13 +156,14 @@ class OrderService:
         :param import_batch_id: 导入批次
         :param is_locked: 是否锁账
         :param attention: 需关注（异常∪退款∪超时，与工作台同源）
+        :param missing_delivery: 已完成且送达时间为空
         :return:
         """
         visible = await get_visible_site_ids(request, db)
         if site_id is not None:
             assert_site_visible(visible, site_id)
         mapped_status = None
-        if status and not attention:
+        if status and not attention and not missing_delivery:
             mapped_status = map_order_status(status) or status
         stmt = await order_dao.get_select(
             site_ids=visible,
@@ -174,6 +176,7 @@ class OrderService:
             import_batch_id=import_batch_id,
             is_locked=is_locked,
             attention=attention,
+            missing_delivery=missing_delivery,
         )
         page_data = await paging_data(db, stmt)
         page_data['items'] = await _to_details(db, list(page_data['items']))

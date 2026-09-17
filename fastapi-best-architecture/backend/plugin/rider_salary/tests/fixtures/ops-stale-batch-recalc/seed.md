@@ -6,6 +6,8 @@
 2. `rs_site_manager` 覆盖福民 `SZ0050`（优先 `owner`；站已有 owner 则用 `deputy`）
 3. 福民开放月 ≥2 名骑手 payroll `stale=true`（走奖惩 `mark_stale`，不 wipe 灯塔订单）
 4. **正式 CDP 不得**用 `CDP_SITE_OWNER=admin` 冒充 Must #5
+5. 夹具含 FIX_C17_R1 无方案有单时，**确认后**不得纯绿「完成」；须见 `dashboard-batch-failed` / 部分失败，并能 `dashboard-batch-goto-calc` 看到该骑手
+6. **禁止** `CDP_ALLOW_EMPTY_STALE=1` 换绿
 
 ## 灌种
 
