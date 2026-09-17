@@ -1,4 +1,6 @@
-/** CDP: ops-import-wizard-lighthouse — 向导上传灯塔样例必须走通；API 绿 ≠ 交付 */
+/** CDP: ops-import-wizard-lighthouse — 向导上传灯塔样例必须走通；API 绿 ≠ 交付
+ * 必须用 media/lighthouse-orders-2026-09-15.xlsx；禁止 importCsv 冒充绿。
+ */
 import fs from 'node:fs';
 
 import {
