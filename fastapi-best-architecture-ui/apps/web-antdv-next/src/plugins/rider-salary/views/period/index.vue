@@ -36,6 +36,7 @@ import {
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
 import PageContainer from '../_shared/PageContainer.vue';
+import { periodStaleListParams } from '../dashboard/scope-links';
 import GenerateModal from './components/GenerateModal.vue';
 import PeriodDetail from './components/PeriodDetail.vue';
 import { useExportConfirm } from './components/use-export-confirm';
@@ -96,16 +97,26 @@ const gridOptions: VxeTableGridOptions<PeriodResult> = {
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
+        const values = formValues as {
+          month?: string;
+          rider_id?: number;
+          site_id?: number;
+          status?: string;
+        };
+        const siteId = Number(values.site_id) || initialSiteId;
+        const month = values.month || initialMonth;
         return await getPeriodListApi({
           page: page.currentPage,
           size: page.pageSize,
-          stale: onlyStale.value || undefined,
-          ...(formValues as {
-            month?: string;
-            rider_id?: number;
-            site_id?: number;
-            status?: string;
-          }),
+          ...values,
+          ...(onlyStale.value
+            ? periodStaleListParams(siteId, month)
+            : {
+                ...(Number.isFinite(siteId) && siteId > 0
+                  ? { site_id: siteId }
+                  : {}),
+                ...(month ? { month } : {}),
+              }),
         });
       },
     },
@@ -400,6 +411,9 @@ onMounted(() => {
       closable
       show-icon
       type="warning"
+      data-testid="period-stale-scope"
+      :data-month="initialMonth || undefined"
+      :data-site-id="initialSiteId ? String(initialSiteId) : undefined"
       :message="staleHint"
       @close="onlyStale = false"
     />

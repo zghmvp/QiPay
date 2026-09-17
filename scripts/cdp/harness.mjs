@@ -30,6 +30,8 @@
  *   ops-plan-activate-not-full-trial（挂 trial-equals-calc 加一步，不新造 XOR/金标 Must 名）
  * Cycle 5 具名：cdp-admin-payslip-hide-empty-days / ops-dashboard-no-plan-to-binding /
  *   ops-plan-manual-not-double（挂现有方案保存 spec，不新造 XOR/金标/启用闸 Must 名）
+ * Cycle 6 具名：ops-dashboard-stale-to-calc（#33 查看全部 stale=1+站月；该行进算薪页；
+ *   抽屉-only = FAIL；auto=1 仍禁。不新造 XOR/金标/启用闸/手工 Must 名）
  * 钩子对齐 #19+#24+#27：period-export-* / period-export-adj-* /
  *   period-export-period-row / calendar-export-month /
  *   dashboard-insight-card-* / dashboard-empty-import / dashboard-top-riders /
@@ -44,9 +46,11 @@
  * Cycle 5：#30 具名 testid 缺失即红，不得 skip。#32 保存/启用加项须失败
  * （「手工明细已入账」「再加会双计」）；保底相减合法；C05A=3500；夹具 200 只入账一次。
  * Must 2 无后端改动。金标 8200/7800/3500 不改。
+ * Cycle 6：#33 具名 testid 缺失即红，不得 skip。查看全部须 stale=1+site_id+month；
+ * 该行 /period/{id}/calculate；?id= 抽屉 = FAIL；禁止 auto=1。金标不改。
  * trial-binding-segments 无数字 = FAIL（不得 WARN 过）。
  * 旧 import/stale spec 已改「完成」语义（夹具无方案骑手不得纯绿完成）。
- * 叠 PR #18+#19+#20+#21+#23+#24+#26+#27+#28：Cycle 1/2/3/4 CDP。Cycle 5 叠本文件。
+ * 叠 PR #18+#19+#20+#21+#23+#24+#26+#27+#28+#31：Cycle 1/2/3/4/5 CDP。Cycle 6 叠本文件。
  * #27 选择器缺失即红，不得 skip。金标 8200/7800/3500 不改。
  * queued 阈值替身：CDP_QUEUED_RIDER_THRESHOLD（默认 2）或 Playwright 拦截 queued=true。
  * 侧栏泄漏保持已知红，本 harness 不改断言。
