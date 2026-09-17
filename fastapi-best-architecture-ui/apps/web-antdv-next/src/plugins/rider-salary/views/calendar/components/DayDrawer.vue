@@ -30,6 +30,13 @@ import {
   DAY_DRAWER_NET_CARD_HINT,
   DAY_DRAWER_NET_HINT,
 } from '../day-drawer-copy';
+import {
+  DAY_UNCALCULATED_DEDUCT_HINT,
+  DAY_UNCALCULATED_HINT,
+  isUncalculatedDay,
+  isZeroMoney,
+  orderHitEmptyText,
+} from '../day-uncalculated';
 import { resolveRiderPeriodPayslip } from '../payslip';
 
 const props = defineProps<{
@@ -57,6 +64,15 @@ const canGoCalculate = computed(() => {
     Boolean(detail.value?.period?.id) &&
     (status === 'open' || status === 'reopened') &&
     hasAccessByCodes(['rs:period:calculate'])
+  );
+});
+
+const uncalculated = computed(() => isUncalculatedDay(detail.value));
+const hideNetZero = computed(() => {
+  if (!uncalculated.value || !detail.value) return false;
+  return (
+    isZeroMoney(detail.value.totals.manual_bonus) &&
+    isZeroMoney(detail.value.totals.manual_penalty)
   );
 });
 
@@ -264,6 +280,13 @@ function onKey(e: KeyboardEvent) {
           type="info"
           message="该日已锁账，修改请走反冲补发"
         />
+        <a-alert
+          v-if="uncalculated"
+          show-icon
+          type="warning"
+          data-testid="cdp-admin-day-uncalculated-not-zero"
+          :message="DAY_UNCALCULATED_HINT"
+        />
 
         <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
           <a-card size="small">
@@ -272,8 +295,18 @@ function onKey(e: KeyboardEvent) {
           </a-card>
           <a-card size="small">
             <div class="text-muted-foreground text-xs">公式金额</div>
-            <div class="text-lg font-medium">
+            <div
+              v-if="uncalculated"
+              class="text-lg font-medium"
+              data-testid="day-formula-uncalculated"
+            >
+              —
+            </div>
+            <div v-else class="text-lg font-medium">
               <MoneyText :value="detail.totals.formula_amount" />
+            </div>
+            <div v-if="uncalculated" class="mt-1 text-xs text-orange-600">
+              {{ DAY_UNCALCULATED_HINT }}
             </div>
             <div class="text-muted-foreground mt-1 text-xs">
               {{ DAY_DRAWER_FORMULA_HINT }}
@@ -290,11 +323,27 @@ function onKey(e: KeyboardEvent) {
             <div class="text-lg font-medium">
               <MoneyText signed :value="detail.totals.manual_penalty" />
             </div>
+            <div
+              v-if="uncalculated && detail.adjustments.length"
+              class="text-muted-foreground mt-1 text-xs"
+            >
+              {{ DAY_UNCALCULATED_DEDUCT_HINT }}
+            </div>
           </a-card>
           <a-card size="small">
             <div class="text-muted-foreground text-xs">净额</div>
-            <div class="text-lg font-medium">
+            <div
+              v-if="hideNetZero"
+              class="text-lg font-medium"
+              data-testid="day-net-uncalculated"
+            >
+              —
+            </div>
+            <div v-else class="text-lg font-medium">
               <MoneyText signed :value="detail.totals.net" />
+            </div>
+            <div v-if="uncalculated" class="mt-1 text-xs text-orange-600">
+              {{ DAY_UNCALCULATED_HINT }}
             </div>
             <div class="text-muted-foreground mt-1 text-xs">
               {{ DAY_DRAWER_NET_CARD_HINT }}
@@ -344,8 +393,9 @@ function onKey(e: KeyboardEvent) {
                 <div
                   v-if="!record.details?.length"
                   class="text-muted-foreground text-xs"
+                  data-testid="day-order-hit-empty"
                 >
-                  无命中项
+                  {{ orderHitEmptyText(detail) }}
                 </div>
                 <div
                   v-for="(hit, idx) in (record.details as CalendarHitDetail[])"

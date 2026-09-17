@@ -278,9 +278,13 @@ onMounted(() => {
   const riderId = Number(route.query.rider_id);
   if (Number.isFinite(riderId) && riderId > 0) {
     const tab = typeof route.query.tab === 'string' ? route.query.tab : undefined;
+    const month = queryStr('month');
     router.replace({
       path: `/rider-salary/rider/${riderId}`,
-      query: tab ? { tab } : {},
+      query: {
+        ...(tab ? { tab } : {}),
+        ...(month ? { month } : {}),
+      },
     });
     return;
   }
@@ -316,6 +320,14 @@ onMounted(() => {
       show-icon
       type="info"
       message="已按工作台跳转筛选：在职骑手"
+    />
+    <a-alert
+      v-if="initialStatus === 'resigned'"
+      class="mb-2"
+      data-testid="rider-list-resigned-scope"
+      show-icon
+      type="info"
+      message="已按工作台跳转筛选：离职骑手"
     />
     <Grid>
       <template #toolbar-actions>

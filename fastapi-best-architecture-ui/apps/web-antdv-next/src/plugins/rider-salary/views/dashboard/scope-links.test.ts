@@ -10,6 +10,8 @@ import {
   pendingAdvanceRowTarget,
   pendingAdvancesViewAllTarget,
   periodStaleListParams,
+  resignedWithOrdersRowTarget,
+  resignedWithOrdersViewAllTarget,
   stalePeriodCalcTarget,
   stalePeriodsViewAllTarget,
 } from './scope-links';
@@ -126,6 +128,33 @@ describe('abnormal order row target', () => {
     expect(viewAll.query.attention).toBe('1');
     expect(viewAll.query.id).toBeUndefined();
     expect(viewAll.query.site_id).toBe('3');
+  });
+});
+
+describe('resigned with orders targets', () => {
+  it('该行走该骑手档案并带本月，不是离职总名单', () => {
+    const row = resignedWithOrdersRowTarget(88, 3, '2026-09');
+    expect(row.path).toBe('/rider-salary/rider/88');
+    expect(row.query.month).toBe('2026-09');
+    expect(row.query.site_id).toBe('3');
+    expect(row.path).not.toBe('/rider-salary/rider');
+    expect(row.query.status).toBeUndefined();
+    expect(row.query.rider_id).toBeUndefined();
+  });
+
+  it('查看全部吃 status=resigned，已选站带站月', () => {
+    const viewAll = resignedWithOrdersViewAllTarget(3, '2026-09');
+    expect(viewAll.path).toBe('/rider-salary/rider');
+    expect(viewAll.query.status).toBe('resigned');
+    expect(viewAll.query.site_id).toBe('3');
+    expect(viewAll.query.month).toBe('2026-09');
+  });
+
+  it('未选站查看全部仍吃 resigned，不带站', () => {
+    const viewAll = resignedWithOrdersViewAllTarget(undefined, '2026-09');
+    expect(viewAll.query.status).toBe('resigned');
+    expect(viewAll.query.site_id).toBeUndefined();
+    expect(viewAll.query.month).toBeUndefined();
   });
 });
 

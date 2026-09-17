@@ -169,3 +169,19 @@ export interface ReversePeriodResult {
   reversal_count: number;
   reversal_net_total: MoneyValue;
 }
+
+export interface ReversePreflightResult {
+  confirm_hint?: string;
+  reversal_count: number;
+  rider_count: number;
+}
+
+export interface PeriodForDateResult {
+  cycle_type: string;
+  end_date: string;
+  exists: boolean;
+  period?: null | PeriodResult;
+  rider_id: number;
+  site_id: number;
+  start_date: string;
+}

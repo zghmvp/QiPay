@@ -256,3 +256,8 @@ export function periodStaleListParams(
     ...(month ? { month } : {}),
   };
 }
+
+export {
+  resignedWithOrdersRowTarget,
+  resignedWithOrdersViewAllTarget,
+} from './resigned-order-link';
