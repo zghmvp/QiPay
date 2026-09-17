@@ -31,7 +31,13 @@ export const CONFIG = {
   cdpUrl: process.env.CDP_URL || 'http://127.0.0.1:9222',
   apiUrl: process.env.API_URL || 'http://127.0.0.1:8000',
   adminUrl: process.env.ADMIN_URL || 'http://127.0.0.1:5173',
-  accessKey: process.env.FBA_ACCESS_KEY || 'fba-ui-5.7.0-dev-core-access',
+  accessKey:
+    process.env.FBA_ACCESS_KEY || 'undefined-5.7.0-dev-core-access',
+  // 兼容旧灌种键；注入时双写
+  accessKeyAliases: (process.env.FBA_ACCESS_KEY_ALIASES || 'fba-ui-5.7.0-dev-core-access')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   mediaDir:
     process.env.CDP_MEDIA_DIR ||
     path.join(
@@ -64,25 +70,23 @@ export async function swaggerLogin(username, password, apiUrl = CONFIG.apiUrl) {
 }
 
 export async function injectAdmin(page, token, sessionUuid = null) {
-  await page.goto(`${CONFIG.adminUrl}/auth/login`, {
-    waitUntil: 'domcontentloaded',
-  });
+  await page.goto(`${CONFIG.adminUrl}/auth/login`, { waitUntil: 'domcontentloaded' });
+  const keys = [CONFIG.accessKey, ...(CONFIG.accessKeyAliases || [])];
   await page.evaluate(
-    ({ key, token, sessionUuid }) => {
-      const raw = localStorage.getItem(key);
-      const base = raw ? JSON.parse(raw) : {};
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          ...base,
-          accessToken: token,
-          accessSessionUuid: sessionUuid,
-          refreshToken: null,
-          isLockScreen: false,
-        }),
-      );
+    ({ keys, token, sessionUuid }) => {
+      localStorage.clear();
+      const payload = {
+        accessToken: token,
+        accessSessionUuid: sessionUuid,
+        refreshToken: null,
+        accessCodes: [],
+        isLockScreen: false,
+      };
+      for (const key of keys) {
+        localStorage.setItem(key, JSON.stringify(payload));
+      }
     },
-    { key: CONFIG.accessKey, token, sessionUuid },
+    { keys, token, sessionUuid },
   );
 }
 
@@ -100,15 +104,35 @@ export async function shot(page, name, opts = {}) {
   fs.mkdirSync(CONFIG.mediaDir, { recursive: true });
   const file = path.join(CONFIG.mediaDir, `${name}.png`);
   try {
-    await page.screenshot({ path: file, fullPage, timeout });
+    await page.screenshot({
+      path: file,
+      fullPage,
+      timeout,
+      animations: 'disabled',
+      caret: 'hide',
+    });
     console.log('SHOT', file);
     return file;
   } catch (err) {
-    if (optional) {
-      console.warn(`SHOT optional skip: ${name}`, err.message);
-      return null;
+    // fullPage + 字体偶发挂死：降级 viewport 再试一次
+    try {
+      await page.screenshot({
+        path: file,
+        fullPage: false,
+        timeout: Math.min(timeout, 10_000),
+        animations: 'disabled',
+        caret: 'hide',
+      });
+      console.warn(`SHOT fallback viewport: ${name}`);
+      console.log('SHOT', file);
+      return file;
+    } catch (err2) {
+      if (optional) {
+        console.warn(`SHOT optional skip: ${name}`, err2.message);
+        return null;
+      }
+      throw err;
     }
-    throw err;
   }
 }
 
@@ -116,8 +140,9 @@ export async function connectBrowser() {
   const browser = await chromium.connectOverCDP(CONFIG.cdpUrl);
   const context =
     browser.contexts()[0] || (await browser.newContext({ viewport: { width: 1440, height: 900 } }));
-  const page = context.pages()[0] || (await context.newPage());
-  return { browser, context, page };
+  // 每场景独立 page，避免 keep-alive 页把上一角色菜单文案留在 DOM
+  const page = await context.newPage();
+  return { browser, context, page, ephemeralPage: true };
 }
 
 export function assertNoPaymentTaxCopy(text) {
@@ -183,6 +208,7 @@ async function main() {
     }});
     console.log('PASS', wanted);
   } finally {
+    await page.close().catch(() => {});
     // 不关闭用户调试 Chrome；仅断开 CDP
     await browser.close().catch(() => {});
   }

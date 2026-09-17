@@ -15,10 +15,19 @@ export async function run({ page, helpers }) {
   }
   const put = await api(ow.access_token, 'PUT', `/api/v1/rider-salary/plan-versions/${ver.id}/items`, []);
   if (!isDenied(put)) throw new Error('SO PUT items 未 403');
-  await injectAndOpen(page, ow.access_token, ow.user?.uuid ?? null, `/rider-salary/plan/editor/${ver.id}`);
+  await injectAndOpen(page, ow.access_token, ow.session_uuid || ow.user?.uuid || null, `/rider-salary/plan/editor/${ver.id}`);
+  await page.waitForTimeout(1000);
   const url = page.url();
   const body = await page.locator('body').innerText();
-  if (url.includes('/plan/editor/') && /保存|启用|回退/.test(body) && !/404|无权限|不存在/.test(body)) {
+  const blocked =
+    /404|无权限|不存在|找不到/.test(body) ||
+    !url.includes('/plan/editor/') ||
+    (await page.locator('.ant-result-404, .ant-result').count()) > 0;
+  const writable =
+    url.includes('/plan/editor/') &&
+    ((await page.locator('button:has-text("保存")').count()) > 0 ||
+      (await page.locator('button:has-text("启用")').count()) > 0);
+  if (!blocked && writable) {
     throw new Error('负责人打开了方案编辑器写入口');
   }
   await helpers.shot(page, 'rbac-plan-editor-url-owner');

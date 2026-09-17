@@ -5,7 +5,11 @@
 export const CONFIG = {
   apiUrl: process.env.API_URL || 'http://127.0.0.1:8000',
   adminUrl: process.env.ADMIN_URL || 'http://127.0.0.1:5173',
-  accessKey: process.env.FBA_ACCESS_KEY || 'fba-ui-5.7.0-dev-core-access',
+  accessKey: process.env.FBA_ACCESS_KEY || 'undefined-5.7.0-dev-core-access',
+  accessKeyAliases: (process.env.FBA_ACCESS_KEY_ALIASES || 'fba-ui-5.7.0-dev-core-access')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 };
 
 export const RBAC = {
@@ -28,7 +32,22 @@ export function unwrapLogin(payload) {
   if (!data?.access_token) {
     throw new Error(`login payload missing access_token: ${JSON.stringify(payload).slice(0, 240)}`);
   }
-  return { ...data, access_token: data.access_token, user: data.user || payload.user };
+  let session = data.session_uuid || nested?.session_uuid || null;
+  if (!session && data.access_token) {
+    try {
+      const mid = data.access_token.split('.')[1];
+      const json = JSON.parse(Buffer.from(mid.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+      session = json.session_uuid || null;
+    } catch {
+      /* ignore */
+    }
+  }
+  return {
+    ...data,
+    access_token: data.access_token,
+    session_uuid: session,
+    user: data.user || payload.user || nested?.user,
+  };
 }
 
 export async function loginAs(username, password, apiUrl = CONFIG.apiUrl) {
@@ -47,22 +66,23 @@ export function isDenied(res) {
 
 export async function injectAdmin(page, token, sessionUuid = null) {
   await page.goto(`${CONFIG.adminUrl}/auth/login`, { waitUntil: 'domcontentloaded' });
+  const keys = [CONFIG.accessKey, ...(CONFIG.accessKeyAliases || [])];
   await page.evaluate(
-    ({ key, token, sessionUuid }) => {
-      const raw = localStorage.getItem(key);
-      const base = raw ? JSON.parse(raw) : {};
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          ...base,
-          accessToken: token,
-          accessSessionUuid: sessionUuid,
-          refreshToken: null,
-          isLockScreen: false,
-        }),
-      );
+    ({ keys, token, sessionUuid }) => {
+      // 清掉上一角色残留，再写入当前 token
+      localStorage.clear();
+      const payload = {
+        accessToken: token,
+        accessSessionUuid: sessionUuid,
+        refreshToken: null,
+        accessCodes: [],
+        isLockScreen: false,
+      };
+      for (const key of keys) {
+        localStorage.setItem(key, JSON.stringify(payload));
+      }
     },
-    { key: CONFIG.accessKey, token, sessionUuid },
+    { keys, token, sessionUuid },
   );
 }
 
@@ -87,20 +107,39 @@ export async function api(token, method, urlPath, body) {
 
 export async function injectAndOpen(page, token, sessionUuid, path = '/analytics') {
   await injectAdmin(page, token, sessionUuid);
+  const menuWait = page
+    .waitForResponse(
+      (r) => r.url().includes('/sys/menus/sidebar') && r.status() === 200,
+      { timeout: 25000 },
+    )
+    .catch(() => null);
   await page.goto(`${CONFIG.adminUrl}${path}`, {
-    waitUntil: 'networkidle',
+    waitUntil: 'domcontentloaded',
     timeout: 60000,
   });
+  await menuWait;
+  try {
+    await page.waitForFunction(
+      () => {
+        const t = document.body?.textContent || '';
+        if (t.includes('登录') && t.includes('请输入您的账户')) return true;
+        return t.includes('站点管理') || t.includes('订单明细') || t.includes('骑手管理') || t.includes('结算周期');
+      },
+      { timeout: 25000 },
+    );
+  } catch {
+    /* continue; assertions will fail clearly */
+  }
+  await page.waitForTimeout(500);
 }
 
 export async function sidebarText(page) {
-  const nav = page.locator('aside, .vben-layout-sidebar, [class*="sidebar"]').first();
-  try {
-    await nav.waitFor({ state: 'visible', timeout: 8000 });
-    return ((await nav.innerText()) || '').trim();
-  } catch {
-    return ((await page.locator('body').innerText()) || '').trim();
-  }
+  // 折叠侧栏：菜单名在 DOM 中但 aside.innerText 为空；勿用「aside || body」短路掉 body
+  return await page.evaluate(() => {
+    const aside = document.querySelector('aside')?.textContent || '';
+    const body = document.body?.textContent || '';
+    return `${aside}\n${body}`.replace(/\s+/g, '\n');
+  });
 }
 
 export function assertHas(text, labels, who) {

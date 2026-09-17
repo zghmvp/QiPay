@@ -15,7 +15,7 @@ export const name = 'rbac-sidebar-site-owner';
 
 export async function run({ page, helpers, config }) {
   const ow = await loginAs(RBAC.ownerUser, RBAC.ownerPass);
-  await injectAndOpen(page, ow.access_token, ow.user?.uuid ?? null, '/rider-salary/dashboard');
+  await injectAndOpen(page, ow.access_token, ow.session_uuid || ow.user?.uuid || null, '/rider-salary/dashboard');
   const text = await sidebarText(page);
   assertHas(text, OWNER_MENUS, '站点负责人');
   assertHasNone(text, OWNER_FORBIDDEN, '站点负责人');

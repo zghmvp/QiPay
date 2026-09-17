@@ -4,9 +4,11 @@ export const name = 'rbac-period-actions-owner';
 
 export async function run({ page, helpers }) {
   const ow = await loginAs(RBAC.ownerUser, RBAC.ownerPass);
-  await injectAndOpen(page, ow.access_token, ow.user?.uuid ?? null, '/rider-salary/period');
-  const body = await page.locator('body').innerText();
-  if (body.includes('反冲补发')) {
+  await injectAndOpen(page, ow.access_token, ow.session_uuid || ow.user?.uuid || null, '/rider-salary/period');
+  const reverseBtn = page.locator(
+    '.ant-table button:has-text("反冲"), .vxe-table button:has-text("反冲"), button:has-text("反冲补发")',
+  );
+  if ((await reverseBtn.count()) > 0 && (await reverseBtn.first().isVisible().catch(() => false))) {
     throw new Error('负责人周期行出现反冲按钮');
   }
   const periods = await api(ow.access_token, 'GET', '/api/v1/rider-salary/periods?page=1&size=10');

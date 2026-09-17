@@ -24,6 +24,6 @@ export async function run({ page, helpers }) {
     );
     if (bad.ok) throw new Error('改 query 为站 B 仍导出成功');
   }
-  await injectAndOpen(page, ow.access_token, ow.user?.uuid ?? null, '/rider-salary/order');
+  await injectAndOpen(page, ow.access_token, ow.session_uuid || ow.user?.uuid || null, '/rider-salary/order');
   await helpers.shot(page, 'rbac-export-download-owner');
 }

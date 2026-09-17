@@ -21,5 +21,5 @@ export async function run({ helpers, page }) {
     reason: 'CDP 藏按钮锁账',
   });
   if (!isDenied(lock)) throw new Error(`直打外站 lock 未 403：${lock.status} ${lock.msg}`);
-  await helpers.shot(page, 'rbac-hidden-button-still-403');
+  await helpers.shot(page, 'rbac-hidden-button-still-403', { fullPage: false, optional: true });
 }

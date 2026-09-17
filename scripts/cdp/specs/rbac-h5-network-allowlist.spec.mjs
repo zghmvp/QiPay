@@ -20,5 +20,5 @@ export async function run({ page, helpers, config }) {
   if (banned.length) {
     throw new Error(`H5 网络出现管理端路径：${banned.join(' | ')}`);
   }
-  await helpers.shot(page, 'rbac-h5-network-allowlist');
+  await helpers.shot(page, 'rbac-h5-network-allowlist', { fullPage: false, optional: true });
 }

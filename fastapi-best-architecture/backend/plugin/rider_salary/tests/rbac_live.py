@@ -139,10 +139,15 @@ def _request(
         status = exc.code
         hdrs = {k.lower(): v for k, v in (exc.headers.items() if exc.headers else [])}
     body: Any
-    try:
-        body = json.loads(raw.decode() or 'null')
-    except json.JSONDecodeError:
-        body = raw.decode(errors='replace')
+    ctype = (hdrs.get('content-type') or '').lower()
+    if 'application/json' in ctype or (raw[:1] in (b'{', b'[') and b'PK' != raw[:2]):
+        try:
+            body = json.loads(raw.decode() or 'null')
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            body = raw.decode(errors='replace')
+    else:
+        # xlsx / octet-stream 等二进制响应：保留 raw，body 用可打印摘要
+        body = raw.decode(errors='replace') if raw and not raw.startswith(b'PK') else None
     return HttpResult(status=status, body=body, headers=hdrs, raw=raw)
 
 

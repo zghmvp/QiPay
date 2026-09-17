@@ -12,7 +12,7 @@ export const name = 'rbac-sidebar-deputy';
 
 export async function run({ page, helpers, config }) {
   const dp = await loginAs(config.deputyUser, config.deputyPass);
-  await injectAndOpen(page, dp.access_token, dp.user?.uuid ?? null, '/rider-salary/dashboard');
+  await injectAndOpen(page, dp.access_token, dp.session_uuid || dp.user?.uuid || null, '/rider-salary/dashboard');
   const text = await sidebarText(page);
   assertHas(text, OWNER_MENUS, '副负责人');
   assertHasNone(text, OWNER_FORBIDDEN, '副负责人');

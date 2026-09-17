@@ -12,7 +12,7 @@ export async function run({ page, helpers, config }) {
   if (rows.some((s) => s.code === 'RBACB')) {
     throw new Error('负责人下拉出现站 B');
   }
-  await injectAndOpen(page, ow.access_token, ow.user?.uuid ?? null, '/rider-salary/order');
+  await injectAndOpen(page, ow.access_token, ow.session_uuid || ow.user?.uuid || null, '/rider-salary/order');
   const body = await page.locator('body').innerText();
   if (body.includes('权限站B')) throw new Error('订单页出现站 B 文案');
   await helpers.shot(page, 'rbac-site-select-owner');
