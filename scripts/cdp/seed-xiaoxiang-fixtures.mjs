@@ -3,6 +3,7 @@
  *
  * 仅调用管理端/插件 API（admin token）；不改 FBA 框架、不 wipe 灯塔订单。
  * 正式验收禁止把 Must #5 改成超管登录。
+ * 本脚本不依赖 playwright（可在无 CDP Chrome 的机器上先灌种）。
  *
  * 用法：
  *   API_URL=http://127.0.0.1:8000 CDP_USER=admin CDP_PASS=admin \
@@ -14,8 +15,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CONFIG, swaggerLogin } from './harness.mjs';
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 const FIXTURE = path.join(
@@ -23,6 +22,9 @@ const FIXTURE = path.join(
   'fastapi-best-architecture/backend/plugin/rider_salary/tests/fixtures/trial-binding-segments/seed.json',
 );
 
+const API_URL = process.env.API_URL || 'http://127.0.0.1:8000';
+const ADMIN_USER = process.env.CDP_USER || 'admin';
+const ADMIN_PASS = process.env.CDP_PASS || '123456';
 const SITE_CODE = process.env.CDP_SITE_CODE || 'SZ0050';
 const MONTH = process.env.CDP_MONTH || '2026-09';
 const JOB_NO = 'FIX_C17_R1';
@@ -32,6 +34,17 @@ const OWNER_ROLE_ID = Number(process.env.CDP_SITE_OWNER_ROLE_ID || '92002');
 const STALE_REMARK = 'FIX_STALE_SEED';
 const ORDER_PREFIX = 'FIX_C17_';
 
+async function swaggerLogin(username, password) {
+  const res = await fetch(
+    `${API_URL}/api/v1/auth/login/swagger?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    throw new Error(`login failed ${username}: ${res.status}`);
+  }
+  return res.json();
+}
+
 function authHeaders(token) {
   return {
     Authorization: `Bearer ${token}`,
@@ -40,7 +53,7 @@ function authHeaders(token) {
 }
 
 async function api(token, method, urlPath, body) {
-  const res = await fetch(`${CONFIG.apiUrl}${urlPath}`, {
+  const res = await fetch(`${API_URL}${urlPath}`, {
     method,
     headers: authHeaders(token),
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -116,7 +129,9 @@ async function pickPlanVersions(token) {
   const a = list[0];
   const b = list.find((v) => v.id !== a.id) || a;
   if (b.id === a.id) {
-    console.warn('WARN: 仅一个启用方案版本，段 A/B 共用同一 version（日历深链仍可用；字段对照金标需第二方案）');
+    console.warn(
+      'WARN: 仅一个启用方案版本，段 A/B 共用同一 version（日历深链仍可用；字段对照金标需第二方案）',
+    );
   }
   return { planA: a.id, planB: b.id };
 }
@@ -208,7 +223,9 @@ async function ensureSiteOwner(token, siteId) {
     console.log('created user', OWNER_USER, 'id=', user.id);
   } else {
     console.log('reuse user', OWNER_USER, 'id=', user.id);
-    // 确保角色含站点负责人
+    const roleIds = Array.from(
+      new Set([...(user.roles?.map((r) => r.id || r) || []), OWNER_ROLE_ID].map(Number)),
+    );
     await api(token, 'PUT', `/api/v1/sys/users/${user.id}`, {
       dept_id: user.dept_id || 1,
       username: user.username,
@@ -216,7 +233,7 @@ async function ensureSiteOwner(token, siteId) {
       avatar: user.avatar || null,
       email: user.email || null,
       phone: user.phone || null,
-      roles: Array.from(new Set([...(user.roles?.map((r) => r.id) || []), OWNER_ROLE_ID])),
+      roles: roleIds,
     });
   }
 
@@ -232,7 +249,6 @@ async function ensureSiteOwner(token, siteId) {
     }
   }
 
-  // 重置密码保证与文档一致（幂等）
   try {
     await api(token, 'PUT', `/api/v1/sys/users/${user.id}/password`, { password: OWNER_PASS });
   } catch (err) {
@@ -253,7 +269,6 @@ async function ensureSiteOwner(token, siteId) {
     console.log(`${OWNER_USER} already site manager role=${already.role}`);
   }
 
-  // 冒烟：站长 swagger 登录
   const login = await swaggerLogin(OWNER_USER, OWNER_PASS);
   if (!login?.access_token) {
     throw new Error(`${OWNER_USER} swagger 登录失败`);
@@ -291,7 +306,6 @@ async function ensureStalePayrolls(token, siteId) {
       console.log('marked stale via adjustment:', rider.job_no, rider.id);
     } catch (err) {
       const msg = String(err.message || err);
-      // 重复灌种：若已有同备注奖惩，忽略；其它错误抛出
       if (/锁账|已锁/.test(msg)) throw err;
       console.warn('WARN: adjustment for', rider.job_no, msg);
     }
@@ -341,7 +355,7 @@ async function main() {
   const seed = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
   console.log('fixture', seed.fixture, 'job_no', seed.rider.job_no);
 
-  const admin = await swaggerLogin(CONFIG.username, CONFIG.password);
+  const admin = await swaggerLogin(ADMIN_USER, ADMIN_PASS);
   const token = admin.access_token;
   if (!token) throw new Error('admin swagger 登录失败');
 
@@ -364,7 +378,7 @@ async function main() {
   console.log(`export CDP_SITE_OWNER_PASS=${OWNER_PASS}`);
   console.log('\nDone. Re-run:');
   console.log(
-    `  CDP_URL=http://127.0.0.1:9222 CDP_PASS=${CONFIG.password} CDP_SITE_ID=${site.id} CDP_RIDER_ID=${rider.id} CDP_MONTH=${MONTH} node scripts/cdp/harness.mjs ops-calendar-no-plan-deeplink`,
+    `  CDP_URL=http://127.0.0.1:9222 CDP_PASS=${ADMIN_PASS} CDP_SITE_ID=${site.id} CDP_RIDER_ID=${rider.id} CDP_MONTH=${MONTH} node scripts/cdp/harness.mjs ops-calendar-no-plan-deeplink`,
   );
   console.log(
     `  CDP_URL=http://127.0.0.1:9222 CDP_SITE_ID=${site.id} CDP_MONTH=${MONTH} node scripts/cdp/harness.mjs ops-stale-batch-recalc`,
