@@ -8,7 +8,6 @@ import type {
   MeAdjustmentItem,
   MePlan,
   MeProfile,
-  NoticeDetail,
   PayrollEstimate,
 } from '@/types'
 
@@ -52,9 +51,6 @@ export function getPlan() {
   return request<MePlan>({ url: `${PREFIX}/plan`, method: 'GET' })
 }
 
-export function getNotices() {
-  return request<NoticeDetail[]>({ url: `${PREFIX}/notices`, method: 'GET' })
-}
 
 export function getAdvanceLimit() {
   return request<AdvanceLimit>({

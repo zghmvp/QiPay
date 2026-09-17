@@ -46,7 +46,7 @@ class CRUDPayroll(CRUDPlus[RiderSalaryPayroll]):
             if site_id is not None:
                 stmt = stmt.where(RiderSalarySettlePeriod.site_id == site_id)
             if site_ids is not None:
-                stmt = stmt.where(RiderSalarySettlePeriod.site_id.in_(site_ids))
+                stmt = stmt.where(RiderSalarySettlePeriod.site_id.in_(list(site_ids) or [-1]))
         return stmt
 
     async def list_by_period_rider(

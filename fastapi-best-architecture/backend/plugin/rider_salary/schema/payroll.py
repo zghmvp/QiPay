@@ -46,6 +46,43 @@ class GetPayrollDetailItem(SchemaBase):
     calc_trace: dict[str, Any] | None = Field(None, description='计算过程')
     name: str | None = Field(None, description='项名称')
     order_no: str | None = Field(None, description='订单号')
+    subject_name: str | None = Field(None, description='科目名称')
+    subject_code: str | None = Field(None, description='科目编码')
+    plan_item_name: str | None = Field(None, description='方案项名称')
+    plan_version_name: str | None = Field(None, description='方案版本短名')
+    advance_id: int | None = Field(None, description='预支单 ID')
+    adjustment_id: int | None = Field(None, description='奖惩单 ID')
+
+
+class PlanVersionLabel(SchemaBase):
+    """方案版本标签"""
+
+    id: int = Field(description='方案版本 ID')
+    name: str | None = Field(None, description='方案短名')
+    code: str | None = Field(None, description='方案编码')
+
+
+class SubjectBreakdownItem(SchemaBase):
+    """科目汇总行"""
+
+    subject_id: int | None = Field(None, description='科目 ID，预支可为 0')
+    subject_code: str | None = Field(None, description='科目编码')
+    subject_name: str | None = Field(None, description='科目名称')
+    direction: str | None = Field(None, description='科目方向')
+    include_in_gross: bool | None = Field(None, description='是否进应发')
+    line_count: int = Field(description='明细行数')
+    amount_sum: Decimal = Field(description='金额合计（带符号）')
+    sources: list[str] = Field(default_factory=list, description='来源集合')
+
+
+class AdvanceLineItem(SchemaBase):
+    """预支抵扣行"""
+
+    advance_id: int = Field(description='预支单 ID')
+    amount: Decimal = Field(description='抵扣额')
+    remaining_after: Decimal | None = Field(None, description='抵扣后剩余')
+    deduct_status: str | None = Field(None, description='抵扣状态')
+    calc_trace: dict[str, Any] | None = Field(None, description='计算过程')
 
 
 class GetPayrollSummary(SchemaBase):
@@ -79,6 +116,15 @@ class GetPayrollSummary(SchemaBase):
     calc_by: int | None = Field(None, description='计算人 ID')
     created_time: datetime | None = Field(None, description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
+    site_id: int | None = Field(None, description='站点 ID')
+    site_name: str | None = Field(None, description='站点名称')
+    period_start: date | None = Field(None, description='周期起')
+    period_end: date | None = Field(None, description='周期止')
+    cycle_type: str | None = Field(None, description='周期类型')
+    period_status: str | None = Field(None, description='周期状态')
+    rider_job_no: str | None = Field(None, description='骑手工号')
+    job_no: str | None = Field(None, description='工号（兼容周期详情）')
+    rider_name: str | None = Field(None, description='骑手姓名')
 
 
 class GetPayrollGroupedDetail(GetPayrollSummary):
@@ -86,3 +132,6 @@ class GetPayrollGroupedDetail(GetPayrollSummary):
 
     details: dict[str, list[GetPayrollDetailItem]] = Field(default_factory=dict, description='按阶段分组的明细')
     dailies: list[GetPayrollDailyDetail] = Field(default_factory=list, description='日汇总列表')
+    subject_breakdown: list[SubjectBreakdownItem] = Field(default_factory=list, description='科目汇总')
+    advance_lines: list[AdvanceLineItem] = Field(default_factory=list, description='预支抵扣行')
+    plan_version_labels: list[PlanVersionLabel] = Field(default_factory=list, description='方案版本标签')

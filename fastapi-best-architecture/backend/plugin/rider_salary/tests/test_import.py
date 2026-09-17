@@ -200,3 +200,31 @@ def test_parse_datetime_excel_serial() -> None:
     parsed = parse_cell_datetime(46266)  # 2026-09-01
     assert parsed.date() == date(2026, 9, 1)
     assert parsed.tzinfo == timezone.tz_info
+
+
+def test_completed_requires_deliver_time() -> None:
+    assert (
+        validate_row_format({
+            'site_code': 'CY01',
+            'job_no': 'RS001',
+            'order_no': 'A',
+            'distance_km': 1,
+            'weight_jin': 1,
+            'order_time': '2026-09-01 12:00:00',
+            'status': '已完成',
+        })
+        == '已完成订单的送达时间不能为空'
+    )
+    assert (
+        validate_row_format({
+            'site_code': 'CY01',
+            'job_no': 'RS001',
+            'order_no': 'A',
+            'distance_km': 1,
+            'weight_jin': 1,
+            'order_time': '2026-09-01 12:00:00',
+            'deliver_time': '2026-09-01 12:20:00',
+            'status': '已完成',
+        })
+        is None
+    )

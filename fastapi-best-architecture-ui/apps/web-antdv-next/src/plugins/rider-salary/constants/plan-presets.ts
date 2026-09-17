@@ -452,43 +452,7 @@ export const PLAN_PRESETS: PlanPreset[] = [
       },
     ],
   },
-  {
-    category: '多补贴叠加',
-    description: '基础 4 元 + 恶劣天气 2 元 + 高温 3 元，依赖日标记维护。',
-    expected: '双标记日 10 单 → 90 元/日',
-    id: 'C14',
-    mode_tag: 'custom',
-    name: '恶劣天气 / 高温补贴',
-    tags: ['日标记', '条件'],
-    items: [
-      {
-        formula_json: fixed(4),
-        name: '基础单价',
-        stage: 'per_order',
-        subject_code: 'BASE_UNIT_PRICE',
-      },
-      {
-        condition_json: {
-          条件: [{ 值: true, 字段: '是否恶劣天气', 运算符: '=' }],
-          逻辑: '且',
-        },
-        formula_json: fixed(2),
-        name: '恶劣天气补贴',
-        stage: 'per_order',
-        subject_code: 'BONUS_BAD_WEATHER',
-      },
-      {
-        condition_json: {
-          条件: [{ 值: true, 字段: '是否高温', 运算符: '=' }],
-          逻辑: '且',
-        },
-        formula_json: fixed(3),
-        name: '高温补贴',
-        stage: 'per_order',
-        subject_code: 'BONUS_HIGH_TEMP',
-      },
-    ],
-  },
+
   {
     category: '多补贴叠加',
     description: '基础 4 元 + 大额订单奖 + 超重补贴，逐单条件叠加。',

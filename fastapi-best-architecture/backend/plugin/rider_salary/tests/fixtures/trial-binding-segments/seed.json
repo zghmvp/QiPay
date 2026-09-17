@@ -1,0 +1,31 @@
+{
+  "fixture": "FIX_C17",
+  "site_code": "SZ0050",
+  "month": "2026-09",
+  "rider": {
+    "job_no": "FIX_C17_R1",
+    "name": "换绑夹具骑手",
+    "hire_date": "2026-09-01",
+    "employ_type": "part_time",
+    "status": "on_job"
+  },
+  "bindings": [
+    { "start": "2026-09-01", "end": "2026-09-14", "plan_version": "A", "binding_type": "default" },
+    { "start": "2026-09-18", "end": "2026-09-30", "plan_version": "B", "binding_type": "default" }
+  ],
+  "no_plan_days": ["2026-09-15", "2026-09-16", "2026-09-17"],
+  "orders": {
+    "prefix": "FIX_C17_",
+    "per_no_plan_day": 5,
+    "status": "completed",
+    "note": "无方案三日必须有 completed 有效单，日历才标 no_plan"
+  },
+  "cdp": {
+    "scenes": ["trial-binding-segments", "ops-calendar-no-plan-deeplink"],
+    "env": {
+      "CDP_SITE_ID": "<福民 site id，演示机通常 13>",
+      "CDP_RIDER_ID": "<FIX_C17_R1 的 id，勿再用 40>",
+      "CDP_MONTH": "2026-09"
+    }
+  }
+}

@@ -55,6 +55,8 @@ export interface PlanItemDetail {
   sort_order: number;
   stage: string;
   subject_id: number;
+  /** 一句话说明（后端派生；备注优先，否则条件+公式摘要） */
+  summary?: null | string;
 }
 
 export interface PlanItemParam {
@@ -118,7 +120,16 @@ export interface UpdatePlanVersionParam {
 
 export interface TrialParam {
   end_date: string;
+  /** full_version | binding_segments */
+  mode?: 'binding_segments' | 'full_version';
   rider_id: number;
+  start_date: string;
+}
+
+export interface TrialSegmentOrderCount {
+  end_date: string;
+  plan_order_count: number;
+  plan_version_id: number;
   start_date: string;
 }
 
@@ -136,6 +147,10 @@ export interface TrialSummary {
   period_total: number | string;
   per_order_total: number | string;
   daily_total: number | string;
+  /** 方案期内单量（各段合计；强制全程生效试算通常等于周期有效单量） */
+  plan_order_count?: number;
+  segment_order_counts?: TrialSegmentOrderCount[];
+  /** 周期有效单量 */
   valid_order_count?: number;
   warnings?: string[];
 }
@@ -165,6 +180,8 @@ export interface TrialDailyRow {
 export interface TrialResult {
   adjustments?: Record<string, unknown>[];
   daily: TrialDailyRow[];
+  mode?: string;
+  mode_label?: string;
   passed: boolean;
   period_items: TrialCalcItem[];
   per_order: TrialPerOrderRow[];

@@ -2,19 +2,18 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import Request
-from sqlalchemy import and_, func, or_, select, true
+from sqlalchemy import and_, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.plugin.rider_salary.engine.context import iter_dates
 from backend.plugin.rider_salary.enums import (
     AdvanceStatus,
-    DayStatus,
     OrderStatus,
     PayrollKind,
     PayrollStatus,
-    PeriodStatus,
     RiderStatus,
 )
 from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance
@@ -34,14 +33,25 @@ from backend.plugin.rider_salary.schema.dashboard import (
     DashboardTrendPoint,
     GetDashboardSummary,
 )
-from backend.plugin.rider_salary.service.calendar_service import parse_month, period_range_text, pick_effective_payroll
+from backend.plugin.rider_salary.service.calendar_service import (
+    count_live_no_plan_days,
+    parse_month,
+    period_range_text,
+    pick_effective_payroll,
+)
+from backend.plugin.rider_salary.service.rider_service import BindingView, resolve_effective_plans_from_bindings
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.money import q2
+from backend.plugin.rider_salary.utils.order_attention import (
+    lock_countdown_statuses,
+    order_attention_condition,
+)
 from backend.utils.timezone import timezone
 
 ZERO = Decimal('0.00')
 _PAYROLL_OK = {PayrollStatus.draft.value, PayrollStatus.finalized.value, PayrollStatus.paid.value}
 _ATTENTION_LIMIT = 10
+_DUE_PERIODS_LIMIT = 10
 
 
 class DashboardService:
@@ -265,13 +275,14 @@ class DashboardService:
                 'range': period_range_text(period.start_date, period.end_date),
                 'status': period.status,
                 'stale_count': int(cnt or 0),
+                'link': f'/rider-salary/period?id={period.id}',
             })
         return DashboardAttentionBlock(
             key='stale_periods',
             title='需重算周期',
             count=len(rows),
             items=items,
-            link='/rider-salary/period?status=open&stale=1',
+            link='/rider-salary/period?stale=1',
         )
 
     async def _no_plan_days(
@@ -281,44 +292,91 @@ class DashboardService:
         start: date,
         end: date,
     ) -> DashboardAttentionBlock | None:
-        rider_ids_stmt = select(RiderSalaryRider.id).where(
-            RiderSalaryRider.deleted == 0,
-            _site_filter(RiderSalaryRider.site_id, site_ids),
+        riders = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryRider).where(
+                        RiderSalaryRider.deleted == 0,
+                        _site_filter(RiderSalaryRider.site_id, site_ids),
+                    )
+                )
+            ).all()
         )
-        stmt = (
-            select(
-                RiderSalaryPayrollDaily.rider_id,
-                func.count(RiderSalaryPayrollDaily.id),
-            )
-            .where(
-                RiderSalaryPayrollDaily.day_status == DayStatus.no_plan.value,
-                RiderSalaryPayrollDaily.biz_date >= start,
-                RiderSalaryPayrollDaily.biz_date <= end,
-                RiderSalaryPayrollDaily.deleted == 0,
-                RiderSalaryPayrollDaily.rider_id.in_(rider_ids_stmt),
-            )
-            .group_by(RiderSalaryPayrollDaily.rider_id)
-            .order_by(func.count(RiderSalaryPayrollDaily.id).desc())
-        )
-        rows = (await db.execute(stmt)).all()
-        if not rows:
+        if not riders:
             return None
-        rider_map = await _riders_by_id(db, [row[0] for row in rows[:_ATTENTION_LIMIT]])
+        rider_ids = [row.id for row in riders]
+        orders = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryOrder).where(
+                        RiderSalaryOrder.rider_id.in_(rider_ids),
+                        RiderSalaryOrder.biz_date >= start,
+                        RiderSalaryOrder.biz_date <= end,
+                        RiderSalaryOrder.status == OrderStatus.completed.value,
+                        RiderSalaryOrder.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        completed_by_rider: dict[int, dict[date, int]] = defaultdict(lambda: defaultdict(int))
+        for order in orders:
+            completed_by_rider[order.rider_id][order.biz_date] += 1
+        if not completed_by_rider:
+            return None
+        bindings = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryRiderPlanBinding).where(
+                        RiderSalaryRiderPlanBinding.rider_id.in_(list(completed_by_rider)),
+                        RiderSalaryRiderPlanBinding.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        bindings_by_rider: dict[int, list[BindingView]] = defaultdict(list)
+        for row in bindings:
+            bindings_by_rider[row.rider_id].append(
+                BindingView(
+                    binding_type=row.binding_type,
+                    start_date=row.start_date,
+                    end_date=row.end_date,
+                    plan_version_id=row.plan_version_id,
+                    id=row.id,
+                )
+            )
+        month_key = f'{start:%Y-%m}'
+        scored: list[tuple[RiderSalaryRider, int]] = []
+        for rider in riders:
+            days = completed_by_rider.get(rider.id)
+            if not days:
+                continue
+            segments = resolve_effective_plans_from_bindings(bindings_by_rider.get(rider.id, []), start, end)
+            cnt = count_live_no_plan_days(segments, days, start, end)
+            if cnt > 0:
+                scored.append((rider, cnt))
+        if not scored:
+            return None
+        scored.sort(key=lambda item: (-item[1], item[0].id))
+        first = scored[0][0]
         items = []
-        for rider_id, cnt in rows[:_ATTENTION_LIMIT]:
-            rider = rider_map.get(rider_id)
+        for rider, cnt in scored[:_ATTENTION_LIMIT]:
             items.append({
-                'rider_id': rider_id,
-                'job_no': getattr(rider, 'job_no', ''),
-                'name': getattr(rider, 'name', ''),
-                'count': int(cnt or 0),
+                'rider_id': rider.id,
+                'site_id': rider.site_id,
+                'job_no': rider.job_no,
+                'name': rider.name,
+                'count': cnt,
+                'month': month_key,
+                'link': (
+                    f'/rider-salary/rider?rider_id={rider.id}&tab=binding&site_id={rider.site_id}&month={month_key}'
+                ),
             })
         return DashboardAttentionBlock(
             key='no_plan_days',
             title='无方案日',
-            count=len(rows),
+            count=len(scored),
             items=items,
-            link='/rider-salary/calendar',
+            link=(f'/rider-salary/calendar?site_id={first.site_id}&month={month_key}&rider_id={first.id}'),
         )
 
     async def _pending_advances(
@@ -351,6 +409,7 @@ class DashboardService:
                 'rider_name': getattr(rider_map.get(row.rider_id), 'name', ''),
                 'amount': str(q2(row.amount)),
                 'submit_time': timezone.to_str(row.submit_time) if row.submit_time else None,
+                'link': '/rider-salary/advance?status=pending',
             }
             for row in rows
         ]
@@ -386,39 +445,17 @@ class DashboardService:
         items: list[dict[str, Any]] = []
         total = 0
         for site in sites:
-            batches = list(
-                (
-                    await db.scalars(
-                        select(RiderSalaryImportBatch).where(
-                            RiderSalaryImportBatch.site_id == site.id,
-                            RiderSalaryImportBatch.deleted == 0,
-                        )
-                    )
-                ).all()
-            )
-            covered: set[date] = set()
-            for batch in batches:
-                if batch.date_from is None or batch.date_to is None:
-                    continue
-                covered.update(iter_dates(max(batch.date_from, start), min(batch.date_to, gap_end)))
-            order_dates = set(
-                (
-                    await db.scalars(
-                        select(RiderSalaryOrder.biz_date).where(
-                            RiderSalaryOrder.site_id == site.id,
-                            RiderSalaryOrder.biz_date >= start,
-                            RiderSalaryOrder.biz_date <= gap_end,
-                            RiderSalaryOrder.deleted == 0,
-                        )
-                    )
-                ).all()
-            )
-            for day in iter_dates(start, gap_end):
-                if day in covered or day in order_dates:
-                    continue
-                total += 1
-                if len(items) < _ATTENTION_LIMIT:
-                    items.append({'site_id': site.id, 'site_name': site.name, 'date': day.isoformat()})
+            uncovered = await _site_import_gap_days(db, site.id, start, gap_end)
+            total += len(uncovered)
+            for day in uncovered:
+                if len(items) >= _ATTENTION_LIMIT:
+                    break
+                items.append({
+                    'site_id': site.id,
+                    'site_name': site.name,
+                    'date': day.isoformat(),
+                    'link': f'/rider-salary/order?site_id={site.id}&date={day.isoformat()}',
+                })
         if total <= 0:
             return None
         return DashboardAttentionBlock(
@@ -426,7 +463,7 @@ class DashboardService:
             title='导入覆盖缺口',
             count=total,
             items=items,
-            link='/rider-salary/order',
+            link=_import_gap_view_all(site_ids, items, start, gap_end),
         )
 
     async def _abnormal_orders(
@@ -436,11 +473,7 @@ class DashboardService:
         start: date,
         end: date,
     ) -> DashboardAttentionBlock | None:
-        duration_sec = func.extract('epoch', RiderSalaryOrder.deliver_time - RiderSalaryOrder.order_time)
-        abnormal_cond = or_(
-            RiderSalaryOrder.status.in_([OrderStatus.abnormal.value, OrderStatus.refunded.value]),
-            and_(RiderSalaryOrder.deliver_time.is_not(None), duration_sec > 3600),
-        )
+        abnormal_cond = order_attention_condition()
         total = int(
             await db.scalar(
                 select(func.count())
@@ -486,13 +519,14 @@ class DashboardService:
                 'rider_name': getattr(rider_map.get(row.rider_id), 'name', ''),
                 'status': row.status,
                 'duration_min': duration,
+                'link': (f'/rider-salary/order?attention=1&order_no={quote(row.order_no, safe="")}'),
             })
         return DashboardAttentionBlock(
             key='abnormal_orders',
             title='异常订单',
             count=total,
             items=items,
-            link='/rider-salary/order?status=abnormal',
+            link='/rider-salary/order?attention=1',
         )
 
     async def _due_periods(
@@ -501,19 +535,17 @@ class DashboardService:
         site_ids: set[int] | None,
         today: date,
     ) -> DashboardAttentionBlock | None:
-        due_end = today + timedelta(days=3)
+        # 产品语义：未锁 open/reopened 按 end_date 升序倒计时，不限「未来 3 天」窗口
         rows = list(
             (
                 await db.scalars(
                     select(RiderSalarySettlePeriod)
                     .where(
-                        RiderSalarySettlePeriod.status == PeriodStatus.open.value,
-                        RiderSalarySettlePeriod.end_date >= today,
-                        RiderSalarySettlePeriod.end_date <= due_end,
+                        RiderSalarySettlePeriod.status.in_(lock_countdown_statuses()),
                         RiderSalarySettlePeriod.deleted == 0,
                         _site_filter(RiderSalarySettlePeriod.site_id, site_ids),
                     )
-                    .order_by(RiderSalarySettlePeriod.end_date.asc())
+                    .order_by(RiderSalarySettlePeriod.end_date.asc(), RiderSalarySettlePeriod.id.asc())
                 )
             ).all()
         )
@@ -525,17 +557,19 @@ class DashboardService:
                 'site_id': row.site_id,
                 'rider_id': row.rider_id,
                 'range': period_range_text(row.start_date, row.end_date),
+                'status': row.status,
                 'end_date': row.end_date.isoformat(),
                 'days_left': (row.end_date - today).days,
+                'link': f'/rider-salary/period?id={row.id}',
             }
-            for row in rows[:_ATTENTION_LIMIT]
+            for row in rows[:_DUE_PERIODS_LIMIT]
         ]
         return DashboardAttentionBlock(
             key='due_periods',
-            title='即将到期周期',
+            title='锁账倒计时',
             count=len(rows),
             items=items,
-            link='/rider-salary/period?status=open',
+            link='/rider-salary/period',
         )
 
     async def _resigned_with_orders(
@@ -568,6 +602,7 @@ class DashboardService:
                 'job_no': rider.job_no,
                 'name': rider.name,
                 'order_count': int(cnt or 0),
+                'link': f'/rider-salary/rider?rider_id={rider.id}',
             }
             for rider, cnt in rows[:_ATTENTION_LIMIT]
         ]
@@ -679,6 +714,59 @@ class DashboardService:
         top = ranked[:10]
         bottom = sorted(ranked, key=lambda item: (item.order_count, item.rider_id))[:5]
         return DashboardTopRiders(top=top, bottom=bottom)
+
+
+async def _site_import_gap_days(
+    db: AsyncSession,
+    site_id: int,
+    start: date,
+    gap_end: date,
+) -> list[date]:
+    batches = list(
+        (
+            await db.scalars(
+                select(RiderSalaryImportBatch).where(
+                    RiderSalaryImportBatch.site_id == site_id,
+                    RiderSalaryImportBatch.deleted == 0,
+                )
+            )
+        ).all()
+    )
+    covered: set[date] = set()
+    for batch in batches:
+        if batch.date_from is None or batch.date_to is None:
+            continue
+        covered.update(iter_dates(max(batch.date_from, start), min(batch.date_to, gap_end)))
+    order_dates = set(
+        (
+            await db.scalars(
+                select(RiderSalaryOrder.biz_date).where(
+                    RiderSalaryOrder.site_id == site_id,
+                    RiderSalaryOrder.biz_date >= start,
+                    RiderSalaryOrder.biz_date <= gap_end,
+                    RiderSalaryOrder.deleted == 0,
+                )
+            )
+        ).all()
+    )
+    return [day for day in iter_dates(start, gap_end) if day not in covered and day not in order_dates]
+
+
+def _import_gap_view_all(
+    site_ids: set[int] | None,
+    items: list[dict[str, Any]],
+    start: date,
+    gap_end: date,
+) -> str:
+    if site_ids and len(site_ids) == 1:
+        sid = next(iter(site_ids))
+    elif items:
+        sid = int(items[0]['site_id'])
+    else:
+        sid = None
+    if sid:
+        return f'/rider-salary/order?site_id={sid}&date_from={start.isoformat()}&date_to={gap_end.isoformat()}'
+    return f'/rider-salary/order?date_from={start.isoformat()}&date_to={gap_end.isoformat()}'
 
 
 def _site_filter(column: Any, site_ids: set[int] | None) -> Any:

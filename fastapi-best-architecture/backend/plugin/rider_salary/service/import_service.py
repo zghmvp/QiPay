@@ -13,7 +13,7 @@ from backend.core.conf import settings
 from backend.database.db import async_db_session
 from backend.plugin.rider_salary.crud.import_batch import import_batch_dao
 from backend.plugin.rider_salary.crud.order import order_dao
-from backend.plugin.rider_salary.enums import ImportBatchStatus, OrderSource, PeriodStatus
+from backend.plugin.rider_salary.enums import ImportBatchStatus, OrderSource, OrderStatus, PeriodStatus
 from backend.plugin.rider_salary.model.import_batch import RiderSalaryImportBatch
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
 from backend.plugin.rider_salary.model.rider import RiderSalaryRider
@@ -30,7 +30,7 @@ from backend.plugin.rider_salary.service.order_service import (
     map_order_status,
     rider_employment_error,
 )
-from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.audit import audit_service, resolve_operator_name
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import (
     TEMPLATE_HEADERS,
@@ -72,7 +72,7 @@ def build_import_template() -> bytes:
         ['时间格式：YYYY-MM-DD HH:mm:ss，亦支持 YYYY/M/D H:mm 与 Excel 日期。'],
         ['订单状态请填写：已完成 / 已取消 / 配送异常 / 已退款（可用别名：完成、取消、异常、退款）。'],
         ['业务日期：有送达时间取送达日期，否则取下单日期；跨午夜按送达日归属。'],
-        ['带 * 的列为必填；配送距离、商品重量须 ≥ 0；订单金额可空。'],
+        ['带 * 的列为必填；已完成订单必须填写送达时间；配送距离、商品重量须 ≥ 0；订单金额可空。'],
         ['同一订单号不可重复；库内已存在的订单号不会被覆盖。'],
     ]
     return write_workbook([
@@ -129,6 +129,9 @@ def validate_row_format(row: dict[str, Any]) -> str | None:  # ruff:ignore[compl
             return '订单金额不能为负数'
     if map_order_status(row.get('status')) is None:
         return '订单状态不合法，请填写已完成/已取消/配送异常/已退款'
+    status = map_order_status(row.get('status'))
+    if status == OrderStatus.completed.value and deliver_time is None:
+        return '已完成订单的送达时间不能为空'
     return None
 
 
@@ -331,23 +334,34 @@ class ImportService:
             action='导入订单',
             target_type='import_batch',
             target_id=batch.id,
+            site_id=batch_site_id,
             target_label=f'站点{site_name}',
             description=(
-                f'{_operator_name(request)} 于 {_now_str()} 对 站点{site_name} 执行了导入订单，'
+                f'{resolve_operator_name(request)} 于 {_now_str()} 对 站点{site_name} 执行了导入订单，'
                 f'文件{filename}，成功{success_rows}行，失败{failed_rows}行'
             ),
         )
+        recalc_job_id: int | None = None
         if auto_recalc and inserted and date_from is not None and date_to is not None:
-            # 先提交导入事务，避免后台重算与请求事务互相回滚
-            await db.commit()
-            background_tasks.add_task(
-                recalc_imported_periods,
+            from backend.plugin.rider_salary.service.recalc_job_service import (
+                recalc_job_service,
+                run_recalc_job,
+            )
+
+            operator_id = int(getattr(request.user, 'id', 0) or 0)
+            job = await recalc_job_service.create_import_job(
+                db,
                 site_id=batch_site_id,
+                batch_id=batch.id,
                 rider_ids=list(rider_ids),
                 date_from=date_from,
                 date_to=date_to,
-                operator_id=int(getattr(request.user, 'id', 0) or 0),
+                operator_id=operator_id,
             )
+            recalc_job_id = job.id
+            # 先提交导入事务，避免后台重算与请求事务互相回滚
+            await db.commit()
+            background_tasks.add_task(run_recalc_job, job_id=job.id)
         return ImportResult(
             batch_id=batch.id,
             total_rows=total_rows,
@@ -355,6 +369,7 @@ class ImportService:
             failed_rows=failed_rows,
             status=batch_status,
             errors=[ImportErrorItem(**item) for item in error_items[:MAX_ERROR_RETURN]],
+            recalc_job_id=recalc_job_id,
         )
 
     @staticmethod
@@ -431,11 +446,16 @@ async def recalc_imported_periods(
     date_from: date,
     date_to: date,
     operator_id: int,
+    job_id: int | None = None,
 ) -> None:
-    """导入后后台重算涉及的开放周期；失败不影响已入库订单。"""
+    """导入后后台重算（兼容旧调用）；优先走 run_recalc_job 以回写可观测状态。"""
     from backend.common.log import log
+    from backend.plugin.rider_salary.service.recalc_job_service import run_recalc_job
 
     _ = operator_id
+    if job_id is not None:
+        await run_recalc_job(job_id=job_id)
+        return
     try:
         from backend.plugin.rider_salary.service.calc_service import calculate_period
     except ImportError:
@@ -613,11 +633,6 @@ async def _is_locked(
         return True
     cache[key] = False
     return False
-
-
-def _operator_name(request: Request) -> str:
-    user = getattr(request, 'user', None)
-    return str(getattr(user, 'nickname', None) or getattr(user, 'username', None) or '未知')
 
 
 def _now_str() -> str:

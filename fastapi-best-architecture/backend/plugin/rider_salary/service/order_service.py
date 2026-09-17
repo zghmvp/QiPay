@@ -139,6 +139,7 @@ class OrderService:
         order_no: str | None,
         import_batch_id: int | None,
         is_locked: bool | None,
+        attention: bool | None = None,
     ) -> dict[str, Any]:
         """
         分页获取订单
@@ -153,13 +154,14 @@ class OrderService:
         :param order_no: 订单号
         :param import_batch_id: 导入批次
         :param is_locked: 是否锁账
+        :param attention: 需关注（异常∪退款∪超时，与工作台同源）
         :return:
         """
         visible = await get_visible_site_ids(request, db)
         if site_id is not None:
             assert_site_visible(visible, site_id)
         mapped_status = None
-        if status:
+        if status and not attention:
             mapped_status = map_order_status(status) or status
         stmt = await order_dao.get_select(
             site_ids=visible,
@@ -171,6 +173,7 @@ class OrderService:
             order_no=order_no,
             import_batch_id=import_batch_id,
             is_locked=is_locked,
+            attention=attention,
         )
         page_data = await paging_data(db, stmt)
         page_data['items'] = await _to_details(db, list(page_data['items']))
@@ -244,6 +247,7 @@ class OrderService:
             action='导出订单',
             target_type='order',
             target_id=site_id,
+            site_id=site_id,
             target_label=f'站点{site.name}',
         )
         return content, filename
@@ -275,6 +279,8 @@ class OrderService:
             raise errors.RequestError(msg='订单金额不能为负数')
         if obj.deliver_time is not None and obj.deliver_time < obj.order_time:
             raise errors.RequestError(msg='送达时间不能早于下单时间')
+        if mapped == OrderStatus.completed.value and obj.deliver_time is None:
+            raise errors.RequestError(msg='已完成订单的送达时间不能为空')
         biz_date = compute_biz_date(obj.order_time, obj.deliver_time)
         emp_error = rider_employment_error(rider, biz_date)
         if emp_error:
@@ -307,6 +313,7 @@ class OrderService:
             action='订单补录',
             target_type='order',
             target_id=order.id,
+            site_id=order.site_id,
             target_label=f'订单{order.order_no}',
             after=order_snapshot(order),
         )
@@ -374,6 +381,8 @@ class OrderService:
             order.remark = payload['remark']
         if order.deliver_time is not None and order.deliver_time < order.order_time:
             raise errors.RequestError(msg='送达时间不能早于下单时间')
+        if order.status == OrderStatus.completed.value and order.deliver_time is None:
+            raise errors.RequestError(msg='已完成订单的送达时间不能为空')
         site = await _get_site(db, order.site_id)
         rider = await _get_rider(db, order.rider_id)
         if rider.site_id != site.id:
@@ -397,6 +406,7 @@ class OrderService:
             action='订单纠错',
             target_type='order',
             target_id=order.id,
+            site_id=int(before['site_id']),
             target_label=f'订单{order.order_no}',
             reason=obj.reason,
             before=before,
@@ -442,6 +452,7 @@ class OrderService:
             action='删除订单',
             target_type='order',
             target_id=order_id,
+            site_id=int(before['site_id']),
             target_label=label,
             reason=reason.strip(),
             before=before,

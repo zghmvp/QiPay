@@ -15,7 +15,7 @@ from backend.plugin.rider_salary.crud.plan_item import plan_item_dao
 from backend.plugin.rider_salary.crud.plan_version import plan_version_dao
 from backend.plugin.rider_salary.engine.compiler import validate_item
 from backend.plugin.rider_salary.engine.fields import STAGE_ORDER
-from backend.plugin.rider_salary.enums import CalcStage, PlanVersionStatus
+from backend.plugin.rider_salary.enums import CalcStage, PlanVersionStatus, TrialMode
 from backend.plugin.rider_salary.model.plan import RiderSalaryPlan
 from backend.plugin.rider_salary.model.plan_item import RiderSalaryPlanItem
 from backend.plugin.rider_salary.model.plan_version import RiderSalaryPlanVersion
@@ -35,6 +35,7 @@ from backend.plugin.rider_salary.schema.trial import (
     TrialPerOrderRow,
     TrialPeriodItem,
     TrialResult,
+    TrialSegmentOrderCount,
     TrialSummary,
 )
 from backend.plugin.rider_salary.service.calc_service import CalcResult, trial_rider_range
@@ -125,7 +126,12 @@ def _to_version_detail(
     )
 
 
-def build_trial_result(calc: CalcResult, trial_hash: str) -> TrialResult:
+def build_trial_result(
+    calc: CalcResult,
+    trial_hash: str | None,
+    *,
+    mode: TrialMode = TrialMode.full_version,
+) -> TrialResult:
     """将 CalcResult 转为试算接口结构"""
     per_order_map: dict[tuple[Any, ...], TrialPerOrderRow] = {}
     period_items: list[TrialPeriodItem] = []
@@ -166,6 +172,16 @@ def build_trial_result(calc: CalcResult, trial_hash: str) -> TrialResult:
     summary = TrialSummary(
         order_count=calc.order_count,
         valid_order_count=calc.valid_order_count,
+        plan_order_count=calc.plan_order_count,
+        segment_order_counts=[
+            TrialSegmentOrderCount(
+                plan_version_id=row.plan_version_id,
+                start_date=row.start_date,
+                end_date=row.end_date,
+                plan_order_count=row.plan_order_count,
+            )
+            for row in (calc.segment_order_counts or [])
+        ],
         gross=calc.gross,
         deduction_total=calc.deduction_total,
         net=calc.net,
@@ -183,6 +199,8 @@ def build_trial_result(calc: CalcResult, trial_hash: str) -> TrialResult:
     return TrialResult(
         passed=True,
         trial_hash=trial_hash,
+        mode=mode.value,
+        mode_label=mode.label,
         summary=summary,
         per_order=list(per_order_map.values()),
         daily=daily_rows,
@@ -223,6 +241,7 @@ class PlanService:
             module='薪资方案',
             action='创建方案',
             target_type='plan',
+            site_id=None,
             target_id=plan.id,
             target_label=f'方案{plan.code}/{plan.name}',
         )
@@ -243,6 +262,7 @@ class PlanService:
             module='薪资方案',
             action='修改方案',
             target_type='plan',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.code}',
         )
@@ -266,6 +286,7 @@ class PlanService:
             module='薪资方案',
             action='删除方案',
             target_type='plan',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.code}/{plan.name}',
         )
@@ -328,6 +349,7 @@ class PlanService:
             module='薪资方案',
             action='创建方案版本',
             target_type='plan_version',
+            site_id=None,
             target_id=version.id,
             target_label=f'方案{plan.name} v{version_no}',
         )
@@ -345,6 +367,7 @@ class PlanService:
             module='薪资方案',
             action='修改方案版本',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案版本{pk}',
         )
@@ -363,6 +386,7 @@ class PlanService:
             module='薪资方案',
             action='删除方案版本',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案版本{pk}',
         )
@@ -380,7 +404,8 @@ class PlanService:
         for index, item in enumerate(items):
             result = validate_item(item.stage, item.condition_json, item.formula_json)
             if not result.ok:
-                item_errors.extend([f'第 {index + 1} 项 {msg}' for msg in result.errors])
+                label = item.name or f'第 {index + 1} 项'
+                item_errors.extend([f'方案项「{label}」{msg}' for msg in result.errors])
             compiled.append((item, result.condition_expr, result.formula_expr))
         if item_errors:
             raise errors.RequestError(msg='；'.join(item_errors))
@@ -404,6 +429,7 @@ class PlanService:
             module='薪资方案',
             action='更新方案项',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案版本{pk}',
         )
@@ -417,29 +443,41 @@ class PlanService:
         start_date: date,
         end_date: date,
         request: Request,
+        mode: TrialMode = TrialMode.full_version,
     ) -> TrialResult:
-        """试算并回写 trial_hash"""
+        """试算；整版模式回写 trial_hash，分段模式仅对照不写启用门槛"""
         version = await PlanService.get_version_model(db, pk)
         items = await plan_item_dao.list_by_version(db, pk)
         if not items:
             raise errors.RequestError(msg='请先配置方案项再试算')
+        forced = version if mode == TrialMode.full_version else None
         calc = await trial_rider_range(
-            db, rider_id=rider_id, start=start_date, end=end_date, forced_plan_version=version
+            db,
+            rider_id=rider_id,
+            start=start_date,
+            end=end_date,
+            forced_plan_version=forced,
         )
         current_hash = items_hash_of(orm_items_as_dicts(items))
-        version.items_hash = current_hash
-        version.trial_hash = current_hash
-        version.trial_passed = True
-        result = build_trial_result(calc, current_hash)
-        version.trial_snapshot = result.summary.model_dump(mode='json')
-        await db.flush()
+        if mode == TrialMode.full_version:
+            version.items_hash = current_hash
+            version.trial_hash = current_hash
+            version.trial_passed = True
+            result = build_trial_result(calc, current_hash, mode=mode)
+            version.trial_snapshot = result.summary.model_dump(mode='json')
+            await db.flush()
+            action = '试算方案'
+        else:
+            result = build_trial_result(calc, None, mode=mode)
+            action = '按绑定分段试算'
         plan = await plan_dao.get(db, version.plan_id)
         await audit_service.record(
             db,
             request,
             module='薪资方案',
-            action='试算方案',
+            action=action,
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',
         )
@@ -454,6 +492,13 @@ class PlanService:
         items = await plan_item_dao.list_by_version(db, pk)
         if len(items) < 1:
             raise errors.RequestError(msg='启用前至少需要 1 条方案项')
+        activate_errors: list[str] = []
+        for item in items:
+            result = validate_item(item.stage, item.condition_json, item.formula_json)
+            if not result.ok:
+                activate_errors.extend([f'方案项「{item.name}」{msg}' for msg in result.errors])
+        if activate_errors:
+            raise errors.RequestError(msg='；'.join(activate_errors))
         current_hash = items_hash_of(orm_items_as_dicts(items))
         version.items_hash = current_hash
         if not version.trial_passed:
@@ -470,6 +515,7 @@ class PlanService:
             module='薪资方案',
             action='启用方案',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',
         )
@@ -490,6 +536,7 @@ class PlanService:
             module='薪资方案',
             action='方案停用',
             target_type='plan_version',
+            site_id=None,
             target_id=pk,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',
             reason=obj.reason,
@@ -537,6 +584,7 @@ class PlanService:
             module='薪资方案',
             action='复制方案版本',
             target_type='plan_version',
+            site_id=None,
             target_id=copied.id,
             target_label=f'方案{plan.name} v{version.version_no} → v{version_no}',
         )

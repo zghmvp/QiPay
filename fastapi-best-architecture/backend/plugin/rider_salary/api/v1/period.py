@@ -11,6 +11,7 @@ from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.schema.period import (
+    CalcPrecheckResult,
     CalculatePeriodParam,
     CalculatePeriodResult,
     GeneratePeriodParam,
@@ -45,6 +46,7 @@ async def get_periods_paginated(
     rider_id: Annotated[int | None, Query(description='骑手 ID，0 表示站点级')] = None,
     status: Annotated[str | None, Query(description='状态')] = None,
     month: Annotated[str | None, Query(description='年月 YYYY-MM')] = None,
+    stale: Annotated[bool | None, Query(description='仅需重算周期')] = None,
 ) -> ResponseSchemaModel[PageData[GetPeriodListItem]]:
     data = await period_service.get_list(
         db=db,
@@ -53,6 +55,7 @@ async def get_periods_paginated(
         rider_id=rider_id,
         status=status,
         month=month,
+        stale=stale,
     )
     return response_base.success(data=data)
 
@@ -134,6 +137,24 @@ async def get_period(
     pk: Annotated[int, Path(description='周期 ID')],
 ) -> ResponseSchemaModel[GetPeriodWithPayrolls]:
     data = await period_service.get(db=db, request=request, pk=pk)
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/{pk}/calc-precheck',
+    summary='算薪预检',
+    description='只读聚合硬风险与警告，不写薪资结果；不要求算薪权限',
+    dependencies=[
+        DependsJwtAuth,
+        DependsRBAC,
+    ],
+)
+async def calc_precheck_period(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+) -> ResponseSchemaModel[CalcPrecheckResult]:
+    data = await period_service.calc_precheck(db=db, request=request, pk=pk)
     return response_base.success(data=data)
 
 

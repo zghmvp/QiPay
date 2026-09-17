@@ -39,6 +39,8 @@ import VersionStatusTag from './components/VersionStatusTag.vue';
 import {
   activateHint,
   canEditVersion,
+  findMisplacedGuaranteeKeys,
+  sinkGuaranteeItems,
   toDraftItems,
   toSaveItems,
   trialLabel,
@@ -134,12 +136,25 @@ async function saveItems() {
     message.warning('请完善每一项的名称与科目');
     return;
   }
+  const misplaced = findMisplacedGuaranteeKeys(items.value);
+  if (misplaced.length > 0) {
+    try {
+      await confirm({
+        content:
+          '保底项应放在周期阶段最后执行，否则「本期已计金额」尚未包含后续项，补差可能错误。点击确定将自动沉底后再保存；取消则按当前顺序保存（不强制拦截）。',
+        icon: 'warning',
+      });
+      items.value = sinkGuaranteeItems(items.value);
+    } catch {
+      // 取消=不沉底仍保存（弱提示）
+    }
+  }
   saving.value = true;
   try {
     if (version.value?.mode_tag) {
       await updatePlanVersionApi(pk, { mode_tag: version.value.mode_tag });
     }
-    const data = await putPlanVersionItemsApi(pk, payload);
+    const data = await putPlanVersionItemsApi(pk, toSaveItems(items.value));
     version.value = data;
     items.value = toDraftItems(data.items ?? []);
     snapshot.value = JSON.stringify(toSaveItems(items.value));
@@ -285,9 +300,10 @@ watch(versionId, () => {
                   />
                 </div>
                 <div>
-                  <div class="mb-1 text-sm">备注</div>
+                  <div class="mb-1 text-sm">备注（作一句话说明优先展示）</div>
                   <a-input
                     :disabled="readonly"
+                    placeholder="选填；有备注则绑定/骑手端优先显示备注"
                     :value="selected.remark ?? ''"
                     @update:value="(v) => patchSelected({ remark: String(v ?? '') })"
                   />

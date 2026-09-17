@@ -45,12 +45,6 @@ const router = createRouter({
       meta: { tab: 'advance', title: '预支' },
     },
     {
-      path: '/notices',
-      name: 'notices',
-      component: () => import('@/views/NoticesView.vue'),
-      meta: { tab: 'notices', title: '公告' },
-    },
-    {
       path: '/me',
       name: 'me',
       component: () => import('@/views/MeView.vue'),

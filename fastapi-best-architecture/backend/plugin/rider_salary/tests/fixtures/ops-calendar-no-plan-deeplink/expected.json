@@ -1,0 +1,13 @@
+{
+  "feature": "ops-calendar-no-plan-deeplink",
+  "month": "2026-09",
+  "rider_job_no": "FIX_C17_R1",
+  "no_plan_days": ["2026-09-15", "2026-09-16", "2026-09-17"],
+  "expected": {
+    "cell_cta": "去绑方案",
+    "drawer_cta": "去绑定方案",
+    "deeplink_path_pattern": "/rider-salary/rider/{rider_id}",
+    "deeplink_query": { "tab": "binding" },
+    "after_bind_no_plan_days_reduced": true
+  }
+}

@@ -25,7 +25,7 @@ from backend.plugin.rider_salary.schema.advance import (
     GetAdvanceDetail,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
-from backend.plugin.rider_salary.utils.audit import require_reason
+from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
 from backend.plugin.rider_salary.utils.deps import get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import write_workbook
 from backend.plugin.rider_salary.utils.money import q2
@@ -207,6 +207,7 @@ class AdvanceService:
         status: str | None,
         date_from: date | None,
         date_to: date | None,
+        pk: int | None = None,
     ) -> dict[str, Any]:
         """分页列表"""
         visible = await get_visible_site_ids(request, db)
@@ -219,6 +220,7 @@ class AdvanceService:
             date_from=date_from,
             date_to=date_to,
             site_ids=visible if site_id is None else None,
+            pk=pk,
         )
         page = await paging_data(db, stmt)
         items = page.get('items') or []
@@ -369,10 +371,11 @@ class AdvanceService:
             action='提交预支',
             target_type='advance',
             target_id=advance.id,
+            site_id=advance.site_id,
             target_label=f'预支单{advance.id}',
             after=snapshot(advance, _ADVANCE_FIELDS),
             description=(
-                f'{_operator_name(request)} 于 {_fmt_dt(timezone.now())} 对 预支单{advance.id} '
+                f'{resolve_operator_name(request)} 于 {_fmt_dt(timezone.now())} 对 预支单{advance.id} '
                 f'执行了提交预支，金额{amount}'
             ),
         )
@@ -459,6 +462,7 @@ class AdvanceService:
             action=action,
             target_type='advance',
             target_id=advance.id,
+            site_id=advance.site_id,
             target_label=f'预支单{advance.id}',
             reason=reason,
             before=before,
@@ -527,11 +531,6 @@ def _user_label(user: User | None) -> str | None:
     if user is None:
         return None
     return user.nickname or user.username
-
-
-def _operator_name(request: Request) -> str:
-    user = getattr(request, 'user', None)
-    return getattr(user, 'nickname', None) or getattr(user, 'username', None) or '未知'
 
 
 def _fmt_dt(value: datetime | None) -> str:

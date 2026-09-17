@@ -7,11 +7,25 @@ from pydantic import Field
 from backend.common.schema import SchemaBase
 
 
+class TrialSegmentOrderCount(SchemaBase):
+    """试算各方案段内单量"""
+
+    plan_version_id: int = Field(description='方案版本 ID')
+    start_date: date = Field(description='段起')
+    end_date: date = Field(description='段止')
+    plan_order_count: int = Field(description='方案期内单量')
+
+
 class TrialSummary(SchemaBase):
     """试算摘要"""
 
     order_count: int = Field(description='单量')
-    valid_order_count: int = Field(0, description='有效单量')
+    valid_order_count: int = Field(0, description='周期有效单量（整期 completed）')
+    plan_order_count: int = Field(0, description='方案期内单量（各段合计；单段试算等于该段）')
+    segment_order_counts: list[TrialSegmentOrderCount] = Field(
+        default_factory=list,
+        description='各方案段方案期内单量明细（跨段换绑时对照用）',
+    )
     gross: Decimal = Field(description='应发')
     deduction_total: Decimal = Field(description='代扣')
     net: Decimal = Field(description='实发')
@@ -68,6 +82,8 @@ class TrialResult(SchemaBase):
 
     passed: bool = Field(True, description='是否成功')
     trial_hash: str | None = Field(None, description='试算哈希')
+    mode: str = Field('full_version', description='试算模式')
+    mode_label: str = Field('整版试算', description='试算模式中文')
     summary: TrialSummary
     per_order: list[TrialPerOrderRow] = Field(default_factory=list, description='逐单明细')
     daily: list[TrialDailyRow] = Field(default_factory=list, description='按日汇总')

@@ -131,6 +131,7 @@ class SiteService:
             action='创建站点',
             target_type='site',
             target_id=site.id,
+            site_id=site.id,
             target_label=f'{site.code} {site.name}',
             after=snapshot(site, _SITE_FIELDS),
         )
@@ -182,6 +183,7 @@ class SiteService:
             action='修改站点',
             target_type='site',
             target_id=pk,
+            site_id=pk,
             target_label=f'{site.code} {site.name}',
             before=before,
             after=snapshot(updated, _SITE_FIELDS) if updated else None,
@@ -215,6 +217,7 @@ class SiteService:
             action='删除站点',
             target_type='site',
             target_id=pk,
+            site_id=pk,
             target_label=f'{site.code} {site.name}',
             before=before,
         )
@@ -300,6 +303,7 @@ class SiteService:
             action='配置负责人',
             target_type='site',
             target_id=pk,
+            site_id=pk,
             target_label=f'{site.code} {site.name}',
             before={'managers': before},
             after={'managers': after},

@@ -33,6 +33,7 @@ export interface PeriodResult {
 }
 
 export interface PeriodWithPayrolls extends PeriodResult {
+  last_calc_failures?: CalculateRiderFailure[];
   payrolls: PayrollSummary[];
 }
 
@@ -40,6 +41,7 @@ export interface PeriodQuery extends PageParams {
   month?: string;
   rider_id?: number;
   site_id?: number;
+  stale?: boolean | string;
   status?: string;
 }
 
@@ -71,10 +73,46 @@ export interface CalculatePeriodParam {
   rider_ids?: null | number[];
 }
 
+export interface CalculateRiderFailure {
+  errors: string[];
+  job_no?: null | string;
+  rider_id: number;
+}
+
 export interface CalculatePeriodResult {
   calculated: number;
+  failed?: CalculateRiderFailure[];
   queued: boolean;
   warnings: string[];
+}
+
+export interface CalcPrecheckDeeplink {
+  path: string;
+  query?: null | Record<string, string>;
+}
+
+export interface CalcPrecheckBlocker {
+  code: string;
+  deeplink?: CalcPrecheckDeeplink | null;
+  job_no?: null | string;
+  messages: string[];
+  rider_id: number;
+  rider_name?: null | string;
+}
+
+export interface CalcPrecheckWarning {
+  code: string;
+  deeplink?: CalcPrecheckDeeplink | null;
+  messages: string[];
+}
+
+export interface CalcPrecheckResult {
+  blockers: CalcPrecheckBlocker[];
+  can_run: boolean;
+  eligible_rider_count: number;
+  period_id: number;
+  stale_count: number;
+  warnings: CalcPrecheckWarning[];
 }
 
 export interface ReversePeriodResult {

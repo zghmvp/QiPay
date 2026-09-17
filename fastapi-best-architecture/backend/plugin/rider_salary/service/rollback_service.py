@@ -22,7 +22,7 @@ from backend.plugin.rider_salary.schema.rollback import (
 from backend.plugin.rider_salary.service.payroll_service import payroll_service
 from backend.plugin.rider_salary.service.period_service import period_service
 from backend.plugin.rider_salary.service.plan_service import PlanService
-from backend.plugin.rider_salary.utils.audit import audit_service, require_reason
+from backend.plugin.rider_salary.utils.audit import audit_service, require_reason, resolve_operator_name
 from backend.plugin.rider_salary.utils.recalc import mark_stale
 from backend.utils.timezone import timezone
 
@@ -167,6 +167,8 @@ class RollbackService:
             )
             binding.deleted = binding.id
             binding.deleted_time = timezone.now()
+            if rider is None:
+                continue
             await audit_service.record(
                 db,
                 request,
@@ -174,7 +176,8 @@ class RollbackService:
                 action='解除绑定',
                 target_type='binding',
                 target_id=binding.id,
-                target_label=f'骑手{rider.job_no if rider else binding.rider_id}',
+                target_label=f'骑手{rider.job_no}',
+                site_id=rider.site_id,
                 reason=obj.reason,
             )
 
@@ -227,10 +230,11 @@ class RollbackService:
             action='方案回退',
             target_type='plan_version',
             target_id=pk,
+            site_id=None,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',
             reason=obj.reason,
             description=(
-                f'{getattr(request.user, "nickname", None) or getattr(request.user, "username", "未知")} 于 '
+                f'{resolve_operator_name(request)} 于 '
                 f'{timezone.to_str(timezone.now())} 对 方案{plan.name if plan else ""} v{version.version_no} '
                 f'执行了回退，原因：{obj.reason}；后果：{summary}'
             ),

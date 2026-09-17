@@ -40,6 +40,34 @@ REASON_REQUIRED_ACTIONS = frozenset({
     'rider_disable_account',
 })
 
+# 站点型对象必须显式传入 site_id；科目/方案等全局对象传 None
+SITE_SCOPED_TARGET_TYPES = frozenset({
+    'site',
+    'rider',
+    'rider_employ_history',
+    'rider_plan_binding',
+    'binding',
+    'order',
+    'import_batch',
+    'adjustment',
+    'day_flag',
+    'advance',
+    'period',
+    'payroll',
+})
+
+
+def require_audit_site_id(target_type: str, site_id: int | None) -> None:
+    """
+    站点型审计必须带所属站点；漏传不得写成「可见全站」
+
+    :param target_type: 对象类型
+    :param site_id: 所属站点，全局对象为 None
+    :return:
+    """
+    if target_type in SITE_SCOPED_TARGET_TYPES and site_id is None:
+        raise errors.RequestError(msg='站点型操作必须写入所属站点')
+
 
 def require_reason(action: str, reason: str | None) -> None:
     """
@@ -75,7 +103,7 @@ def _user_attr(user: object, *names: str) -> str | None:
     return None
 
 
-def _operator_name(request: Request) -> str:
+def resolve_operator_name(request: Request) -> str:
     """优先 nickname，其次 username；FBA 占位昵称「用户数字」视为缺失。"""
     user = getattr(request, 'user', None)
     nickname = _user_attr(user, 'nickname', 'nick_name')
@@ -87,6 +115,10 @@ def _operator_name(request: Request) -> str:
     if nickname:
         return nickname
     return '未知'
+
+
+# 兼容旧调用名
+_operator_name = resolve_operator_name
 
 
 def _operator_id(request: Request) -> int:
@@ -141,6 +173,7 @@ class AuditService:
         target_type: str,
         target_id: int | str | None,
         target_label: str,
+        site_id: int | None,
         reason: str | None = None,
         before: dict | None = None,
         after: dict | None = None,
@@ -156,6 +189,7 @@ class AuditService:
         :param target_type: 对象类型
         :param target_id: 对象 ID
         :param target_label: 对象摘要
+        :param site_id: 所属站点；全局目录显式传 None
         :param reason: 原因
         :param before: 变更前
         :param after: 变更后
@@ -163,8 +197,9 @@ class AuditService:
         :return:
         """
         require_reason(action, reason)
+        require_audit_site_id(target_type, site_id)
         operate_time = timezone.now()
-        operator_name = _operator_name(request)
+        operator_name = resolve_operator_name(request)
         text = description or build_description(
             operator_name=operator_name,
             operate_time=operate_time,
@@ -183,6 +218,7 @@ class AuditService:
                 target_type=target_type,
                 target_label=target_label,
                 target_id=target_id_text,
+                site_id=site_id,
                 reason=reason,
                 before=before,
                 after=after,

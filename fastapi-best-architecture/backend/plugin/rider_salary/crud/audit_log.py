@@ -1,4 +1,5 @@
 from sqlalchemy import Select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
 from backend.plugin.rider_salary.model.audit_log import RiderSalaryAuditLog
@@ -6,6 +7,16 @@ from backend.plugin.rider_salary.model.audit_log import RiderSalaryAuditLog
 
 class CRUDAuditLog(CRUDPlus[RiderSalaryAuditLog]):
     """操作日志数据库操作"""
+
+    async def get(self, db: AsyncSession, pk: int) -> RiderSalaryAuditLog | None:
+        """
+        按主键获取操作日志
+
+        :param db: 数据库会话
+        :param pk: 日志 ID
+        :return:
+        """
+        return await self.select_model(db, pk)
 
     async def get_select(
         self,
@@ -16,6 +27,7 @@ class CRUDAuditLog(CRUDPlus[RiderSalaryAuditLog]):
         date_to: str | None,
         target_type: str | None,
         keyword: str | None,
+        site_ids: set[int] | None,
     ) -> Select:
         """
         操作日志列表查询
@@ -27,6 +39,7 @@ class CRUDAuditLog(CRUDPlus[RiderSalaryAuditLog]):
         :param date_to: 结束时间
         :param target_type: 对象类型
         :param keyword: 关键字
+        :param site_ids: 可见站点，None 表示不限制；集合不含 NULL
         :return:
         """
         filters: dict = {}
@@ -47,6 +60,8 @@ class CRUDAuditLog(CRUDPlus[RiderSalaryAuditLog]):
             filters['target_type'] = target_type
         if keyword:
             filters['description__like'] = f'%{keyword}%'
+        if site_ids is not None:
+            filters['site_id__in'] = list(site_ids) or [-1]
         return await self.select_order('operate_time', 'desc', **filters)
 
 

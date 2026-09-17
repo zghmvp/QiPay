@@ -16,7 +16,6 @@ from backend.plugin.rider_salary.schema.me import (
     GetMePlan,
     GetMeProfile,
 )
-from backend.plugin.rider_salary.schema.notice import GetNoticeDetail
 from backend.plugin.rider_salary.service.me_service import me_service
 from backend.plugin.rider_salary.utils.deps import DependsCurrentRider
 
@@ -101,19 +100,6 @@ async def get_me_plan(
     rider: Annotated[Rider, DependsCurrentRider],
 ) -> ResponseSchemaModel[GetMePlan]:
     data = await me_service.plan(db=db, rider=rider)
-    return response_base.success(data=data)
-
-
-@router.get(
-    '/notices',
-    summary='获取站点公告',
-    dependencies=[DependsJwtAuth],
-)
-async def get_me_notices(
-    db: CurrentSession,
-    rider: Annotated[Rider, DependsCurrentRider],
-) -> ResponseSchemaModel[list[GetNoticeDetail]]:
-    data = await me_service.notices(db=db, rider=rider)
     return response_base.success(data=data)
 
 

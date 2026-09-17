@@ -39,16 +39,58 @@ function isUserCancelled(error: unknown) {
 const route = useRoute();
 const { ReasonModal, prompt } = useReasonModal();
 
-const initialStatus =
-  typeof route.query.status === 'string' ? route.query.status : undefined;
+function queryStr(key: string) {
+  const raw = route.query[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === 'string' && v ? v : undefined;
+}
+
+function queryNum(key: string) {
+  const n = Number(queryStr(key));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+const initialAttention =
+  route.query.attention === '1' ||
+  route.query.attention === 'true' ||
+  queryStr('status') === '__attention__';
+const initialStatus = initialAttention
+  ? '__attention__'
+  : queryStr('status');
+const initialSiteId = queryNum('site_id');
+const initialRiderId = queryNum('rider_id');
+const initialDate = queryStr('date');
+const initialDateFrom = queryStr('date_from');
+const initialDateTo = queryStr('date_to');
+const initialOrderNo = queryStr('order_no');
+
+const initialDateRange =
+  initialDateFrom && initialDateTo
+    ? [initialDateFrom, initialDateTo]
+    : initialDate
+      ? [initialDate, initialDate]
+      : undefined;
 
 const formOptions: VbenFormProps = {
   collapsed: true,
-  schema: querySchema.map((item) =>
-    item.fieldName === 'status' && initialStatus
-      ? { ...item, defaultValue: initialStatus }
-      : item,
-  ),
+  schema: querySchema.map((item) => {
+    if (item.fieldName === 'status' && initialStatus) {
+      return { ...item, defaultValue: initialStatus };
+    }
+    if (item.fieldName === 'site_id' && initialSiteId) {
+      return { ...item, defaultValue: initialSiteId };
+    }
+    if (item.fieldName === 'rider_id' && initialRiderId) {
+      return { ...item, defaultValue: initialRiderId };
+    }
+    if (item.fieldName === 'date_range' && initialDateRange) {
+      return { ...item, defaultValue: initialDateRange };
+    }
+    if (item.fieldName === 'order_no' && initialOrderNo) {
+      return { ...item, defaultValue: initialOrderNo };
+    }
+    return item;
+  }),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
 };
@@ -60,19 +102,26 @@ const gridOptions: VxeTableGridOptions<OrderResult> = {
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
-        const { date_range, is_locked, ...rest } = formValues as Record<string, unknown> & {
+        const { date_range, is_locked, status, ...rest } = formValues as Record<
+          string,
+          unknown
+        > & {
           date_range?: [string, string];
           is_locked?: boolean | string;
+          status?: string;
         };
         let locked: boolean | undefined;
         if (is_locked === true || is_locked === 'true') locked = true;
         else if (is_locked === false || is_locked === 'false') locked = false;
+        const attention = status === '__attention__';
         return await getOrderListApi({
+          attention: attention || undefined,
           date_from: toDateString(date_range?.[0]),
           date_to: toDateString(date_range?.[1]),
           is_locked: locked,
           page: page.currentPage,
           size: page.pageSize,
+          status: attention ? undefined : status,
           ...rest,
         });
       },
@@ -132,8 +181,14 @@ const [BatchDrawer, batchApi] = useVbenDrawer({
 });
 
 onMounted(() => {
-  if (initialStatus) {
-    void gridApi.formApi.setValues({ status: initialStatus });
+  const values: Record<string, unknown> = {};
+  if (initialStatus) values.status = initialStatus;
+  if (initialSiteId) values.site_id = initialSiteId;
+  if (initialRiderId) values.rider_id = initialRiderId;
+  if (initialDateRange) values.date_range = initialDateRange;
+  if (initialOrderNo) values.order_no = initialOrderNo;
+  if (Object.keys(values).length) {
+    void gridApi.formApi.setValues(values);
   }
 });
 </script>

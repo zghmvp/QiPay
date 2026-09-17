@@ -163,8 +163,6 @@ export const AUDIT_MODULE_OPTIONS: EnumOption[] = [
   { color: 'cyan', label: '骑手管理', value: '骑手管理' },
   { color: 'geekblue', label: '科目管理', value: '科目管理' },
   { color: 'gold', label: '奖惩录入', value: '奖惩录入' },
-  { color: 'orange', label: '日标记', value: '日标记' },
-  { color: 'purple', label: '站点公告', value: '站点公告' },
   { color: 'processing', label: '薪资方案', value: '薪资方案' },
   { color: 'green', label: '订单明细', value: '订单明细' },
   { color: 'magenta', label: '结算周期', value: '结算周期' },

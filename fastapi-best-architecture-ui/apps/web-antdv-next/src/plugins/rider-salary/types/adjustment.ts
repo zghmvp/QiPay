@@ -33,6 +33,7 @@ export interface AdjustmentQuery {
   date_from?: string;
   date_to?: string;
   direction?: string;
+  id?: number;
   page?: number;
   rider_id?: number;
   size?: number;

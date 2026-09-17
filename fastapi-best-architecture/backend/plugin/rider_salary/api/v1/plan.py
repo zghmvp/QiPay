@@ -198,7 +198,7 @@ async def trial_plan_version(
     pk: Annotated[int, Path(description='版本 ID')],
     obj: TrialPlanVersionParam,
 ) -> ResponseSchemaModel[TrialResult]:
-    data = await plan_service.trial(db, pk, obj.rider_id, obj.start_date, obj.end_date, request)
+    data = await plan_service.trial(db, pk, obj.rider_id, obj.start_date, obj.end_date, request, mode=obj.mode)
     return response_base.success(data=data)
 
 

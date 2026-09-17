@@ -54,15 +54,12 @@ export const FIELD_GROUPS = [
     ],
   },
   {
-    label: '日期与标记',
+    label: '日期',
     names: [
       '日期',
       '星期',
       '是否节假日',
       '是否周末',
-      '是否恶劣天气',
-      '是否高温',
-      '是否大促',
     ],
   },
   {
@@ -267,6 +264,31 @@ export function summarizeFormula(
   return String(json.表达式 || '表达式');
 }
 
+/** 方案项一句话说明：接口 summary / 备注优先，否则条件+公式摘要 */
+export function summarizeItem(item: {
+  condition_expr?: null | string;
+  condition_json?: null | Record<string, unknown>;
+  formula_expr?: null | string;
+  formula_json?: null | Record<string, unknown>;
+  remark?: null | string;
+  summary?: null | string;
+}): string {
+  const fromApi = item.summary?.trim();
+  if (fromApi) return fromApi;
+  const remark = item.remark?.trim();
+  if (remark) return remark;
+  const cond = summarizeCondition(item.condition_json, item.condition_expr);
+  const formula = summarizeFormula(item.formula_json, item.formula_expr);
+  const parts: string[] = [];
+  if (cond && cond !== '恒真（空条件）' && cond !== 'True') {
+    parts.push(`条件 ${cond}`);
+  }
+  if (formula && formula !== '—') {
+    parts.push(formula);
+  }
+  return parts.join('；') || '—';
+}
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return value.join('~');
@@ -307,6 +329,49 @@ export function activateHint(options: {
   if (!options.trialPassed) return '请先完成试算再启用';
   if (options.trialHash !== options.itemsHash) return '方案内容已变更，请重新试算';
   return '';
+}
+
+/** 保底/补足类：引用「本期已计金额」或名称含保底，须排在周期阶段最后 */
+export function isGuaranteeLikeItem(item: {
+  formula_expr?: null | string;
+  formula_json?: null | Record<string, unknown>;
+  name?: string;
+  stage?: string;
+}): boolean {
+  if (item.stage && item.stage !== 'period') return false;
+  const name = item.name || '';
+  if (/保底|补足|补差/.test(name)) return true;
+  const expr =
+    item.formula_expr ||
+    (item.formula_json && typeof item.formula_json.表达式 === 'string'
+      ? String(item.formula_json.表达式)
+      : '') ||
+    JSON.stringify(item.formula_json || {});
+  return expr.includes('本期已计金额');
+}
+
+export function findMisplacedGuaranteeKeys(items: PlanItemDraft[]): string[] {
+  const period = items.filter((item) => item.stage === 'period' && item.enabled !== false);
+  if (period.length === 0) return [];
+  const misplaced: string[] = [];
+  period.forEach((item, index) => {
+    if (isGuaranteeLikeItem(item) && index !== period.length - 1) {
+      misplaced.push(item._key);
+    }
+  });
+  return misplaced;
+}
+
+/** 将保底类周期项沉到周期阶段末尾，保持其他阶段顺序 */
+export function sinkGuaranteeItems(items: PlanItemDraft[]): PlanItemDraft[] {
+  const period = items.filter((item) => item.stage === 'period');
+  const others = items.filter((item) => item.stage !== 'period');
+  const guarantees = period.filter((item) => isGuaranteeLikeItem(item));
+  const nonGuarantees = period.filter((item) => !isGuaranteeLikeItem(item));
+  const nextPeriod = [...nonGuarantees, ...guarantees];
+  return STAGE_ORDER.flatMap((stage) =>
+    stage === 'period' ? nextPeriod : others.filter((item) => item.stage === stage),
+  );
 }
 
 export function defaultOperatorForType(type?: string) {

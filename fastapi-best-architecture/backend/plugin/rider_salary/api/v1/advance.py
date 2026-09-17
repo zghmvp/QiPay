@@ -68,6 +68,7 @@ async def get_advances_paginated(
     status: Annotated[str | None, Query(description='状态')] = None,
     date_from: Annotated[date | None, Query(description='申请日起')] = None,
     date_to: Annotated[date | None, Query(description='申请日止')] = None,
+    id: Annotated[int | None, Query(description='预支单 ID')] = None,
 ) -> ResponseSchemaModel[PageData[GetAdvanceDetail]]:
     page_data = await advance_service.get_list(
         db=db,
@@ -77,6 +78,7 @@ async def get_advances_paginated(
         status=status,
         date_from=date_from,
         date_to=date_to,
+        pk=id,
     )
     return response_base.success(data=page_data)
 

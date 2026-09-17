@@ -45,7 +45,7 @@ from backend.plugin.rider_salary.schema.rider import (
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
-from backend.plugin.rider_salary.utils.recalc import mark_stale
+from backend.plugin.rider_salary.utils.recalc import invalidate_payroll_dailies, mark_stale
 from backend.utils.timezone import timezone
 
 _OPEN_END = date(9999, 12, 31)
@@ -413,6 +413,7 @@ class RiderService:
             target_type='rider',
             target_id=rider.id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             after=snapshot(rider, _RIDER_FIELDS),
         )
 
@@ -448,6 +449,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=int(before['site_id']),
             reason=obj.reason,
             before=before,
             after=snapshot(updated, _RIDER_FIELDS) if updated else None,
@@ -493,6 +495,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
         )
         return count
@@ -527,6 +530,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
             before=before,
             after=snapshot(updated, _RIDER_FIELDS) if updated else None,
@@ -578,6 +582,7 @@ class RiderService:
                 target_type='rider_employ_history',
                 target_id=item.id,
                 target_label=f'{rider.job_no} {rider.name}',
+                site_id=rider.site_id,
                 before=before,
                 after=snapshot(updated, _HISTORY_FIELDS) if updated else None,
             )
@@ -596,6 +601,7 @@ class RiderService:
             target_type='rider_employ_history',
             target_id=row.id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             after=snapshot(row, _HISTORY_FIELDS),
         )
 
@@ -634,6 +640,7 @@ class RiderService:
             target_type='rider_employ_history',
             target_id=history_id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
             after=snapshot(updated, _HISTORY_FIELDS) if updated else None,
         )
@@ -657,6 +664,7 @@ class RiderService:
             target_type='rider_employ_history',
             target_id=history_id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
         )
         return count
@@ -737,6 +745,7 @@ class RiderService:
         if not version.is_used:
             version.is_used = True
         await mark_stale(db, rider_ids=[pk], date_from=obj.start_date, date_to=_as_end(obj.end_date))
+        await invalidate_payroll_dailies(db, rider_ids=[pk], date_from=obj.start_date, date_to=_as_end(obj.end_date))
         await audit_service.record(
             db,
             request,
@@ -745,6 +754,7 @@ class RiderService:
             target_type='rider_plan_binding',
             target_id=row.id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             after=snapshot(row, _BINDING_FIELDS),
         )
 
@@ -789,6 +799,7 @@ class RiderService:
         date_from = min(row.start_date, start_date)
         date_to = max(_as_end(row.end_date), _as_end(end_date))
         await mark_stale(db, rider_ids=[pk], date_from=date_from, date_to=date_to)
+        await invalidate_payroll_dailies(db, rider_ids=[pk], date_from=date_from, date_to=date_to)
         await audit_service.record(
             db,
             request,
@@ -797,6 +808,7 @@ class RiderService:
             target_type='rider_plan_binding',
             target_id=binding_id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
             after=snapshot(updated, _BINDING_FIELDS) if updated else None,
         )
@@ -819,6 +831,7 @@ class RiderService:
         before = snapshot(row, _BINDING_FIELDS)
         count = await rider_plan_binding_dao.delete(db, binding_id)
         await mark_stale(db, rider_ids=[pk], date_from=row.start_date, date_to=_as_end(row.end_date))
+        await invalidate_payroll_dailies(db, rider_ids=[pk], date_from=row.start_date, date_to=_as_end(row.end_date))
         await audit_service.record(
             db,
             request,
@@ -827,6 +840,7 @@ class RiderService:
             target_type='rider_plan_binding',
             target_id=binding_id,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             before=before,
         )
         return count
@@ -902,6 +916,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
             after={'user_id': user.id, 'username': user.username},
         )
@@ -922,6 +937,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
         )
 
@@ -942,6 +958,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
             after={'user_id': rider.user_id, 'status': 0},
         )
@@ -962,6 +979,7 @@ class RiderService:
             target_type='rider',
             target_id=pk,
             target_label=f'{rider.job_no} {rider.name}',
+            site_id=rider.site_id,
             reason=obj.reason,
             after={'user_id': rider.user_id, 'status': 1},
         )

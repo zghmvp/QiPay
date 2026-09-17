@@ -138,6 +138,7 @@ class AdjustmentService:
         date_from: date | None,
         date_to: date | None,
         direction: str | None,
+        pk: int | None = None,
     ) -> dict[str, Any]:
         """分页获取奖惩记录"""
         visible = await get_visible_site_ids(request, db)
@@ -150,6 +151,7 @@ class AdjustmentService:
             date_from=date_from.isoformat() if date_from else None,
             date_to=date_to.isoformat() if date_to else None,
             site_ids=visible,
+            pk=pk,
         )
         if direction:
             stmt = stmt.join(
@@ -196,6 +198,7 @@ class AdjustmentService:
             action='新增奖惩',
             target_type='adjustment',
             target_id=row.id,
+            site_id=row.site_id,
             target_label=f'{rider.job_no} {rider.name} {subject.name}',
             after=snapshot(row, _ADJ_FIELDS),
         )
@@ -279,6 +282,7 @@ class AdjustmentService:
             action='奖惩修改',
             target_type='adjustment',
             target_id=pk,
+            site_id=row.site_id,
             target_label=f'{rider.job_no} {rider.name} {subject.name}',
             reason=obj.reason,
             before=before,
@@ -305,6 +309,7 @@ class AdjustmentService:
             action='奖惩删除',
             target_type='adjustment',
             target_id=pk,
+            site_id=row.site_id,
             target_label=f'奖惩记录 #{pk}',
             reason=reason,
             before=before,
