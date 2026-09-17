@@ -67,6 +67,29 @@ export async function run({ page, helpers, config }) {
   preflight.payroll_count = required.payroll_count;
   const expectedHint = lockConfirmHintFromPreflight(preflight);
 
+  // 本席验确认文案，不重开 Cycle4 硬拦；放行 calc-precheck 让锁确认框能弹出。
+  // 冻结数 / 跳过 M 仍吃真实 lock-preflight。
+  await page.route('**/api/v1/rider-salary/periods/*/calc-precheck**', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 200,
+        msg: '请求成功',
+        data: {
+          period_id: siteLevel.id,
+          can_run: true,
+          blockers: [],
+          stale_count: 0,
+        },
+      }),
+    });
+  });
+
   await page.goto(
     `${config.adminUrl}/rider-salary/period?site_id=${siteId}&month=${month}`,
     { waitUntil: 'networkidle', timeout: 60000 },

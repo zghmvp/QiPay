@@ -30,11 +30,12 @@ async function openPayslip(periodId: number) {
 </script>
 
 <template>
-  <div v-if="summary" class="flex flex-col gap-3">
-    <div
-      class="flex flex-wrap items-center gap-2 text-sm"
-      data-testid="cdp-admin-calendar-month-not-payslip"
-    >
+  <div
+    v-if="summary"
+    class="flex flex-col gap-3"
+    data-testid="cdp-admin-calendar-month-not-payslip"
+  >
+    <div class="flex flex-wrap items-center gap-2 text-sm">
       <span class="font-medium" data-testid="calendar-month-total">本月合计</span>
       <span class="text-muted-foreground">·</span>
       <span data-testid="calendar-month-period-count"
