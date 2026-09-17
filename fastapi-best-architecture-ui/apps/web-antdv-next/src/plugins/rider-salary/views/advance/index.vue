@@ -137,7 +137,7 @@ async function onActionClick({
 }: OnActionClickParams<AdvanceResult>) {
   try {
     if (code === 'detail') {
-      detailApi.setData({ id: row.id }).open();
+      detailApi.setData({ id: row.id, row }).open();
       return;
     }
     if (code === 'approve') {

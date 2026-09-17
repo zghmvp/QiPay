@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { AdvanceResult } from '../../../types/advance';
+import type { AdvanceQuota, AdvanceResult } from '../../../types/advance';
 
 import { ref } from 'vue';
 
@@ -13,9 +13,11 @@ import {
   DEDUCT_STATUS_OPTIONS,
 } from '../../../constants/enums';
 import { toDateTimeString } from '../../../utils/date';
+import { formatAdvanceQuota, resolveAdvanceQuota } from '../helpers';
 
 const loading = ref(false);
 const detail = ref<AdvanceResult>();
+const quota = ref<AdvanceQuota | null>(null);
 
 const [Drawer, drawerApi] = useVbenDrawer({
   class: 'w-[560px]',
@@ -24,12 +26,15 @@ const [Drawer, drawerApi] = useVbenDrawer({
   showConfirmButton: false,
   async onOpenChange(isOpen) {
     if (!isOpen) return;
-    const pk = drawerApi.getData<{ id?: number }>()?.id;
+    const payload = drawerApi.getData<{ id?: number; row?: AdvanceResult }>();
+    const pk = payload?.id;
     detail.value = undefined;
+    quota.value = resolveAdvanceQuota(payload?.row);
     if (!pk) return;
     loading.value = true;
     try {
       detail.value = await getAdvanceApi(pk);
+      quota.value = resolveAdvanceQuota(detail.value) ?? quota.value;
     } finally {
       loading.value = false;
     }
@@ -46,6 +51,9 @@ const [Drawer, drawerApi] = useVbenDrawer({
             {{ [detail.rider_job_no, detail.rider_name].filter(Boolean).join(' ') || '—' }}
           </a-descriptions-item>
           <a-descriptions-item label="站点">{{ detail.site_name || '—' }}</a-descriptions-item>
+          <a-descriptions-item v-if="quota" label="本月预支次数">
+            {{ formatAdvanceQuota(quota) }}
+          </a-descriptions-item>
           <a-descriptions-item label="金额">
             <MoneyText :value="detail.amount" />
           </a-descriptions-item>
