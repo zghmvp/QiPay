@@ -43,6 +43,13 @@ export const CONFIG = {
   password: process.env.CDP_PASS || '123456',
   siteOwnerUser: process.env.CDP_SITE_OWNER || 'site_owner_d2',
   siteOwnerPass: process.env.CDP_SITE_OWNER_PASS || 'Rider@123456',
+  salaryAdminUser: process.env.CDP_SA_USER || 'salary_admin',
+  salaryAdminPass: process.env.CDP_SA_PASS || process.env.CDP_SITE_OWNER_PASS || 'Rider@123456',
+  deputyUser: process.env.CDP_DEPUTY_USER || 'site_deputy_a',
+  deputyPass: process.env.CDP_DEPUTY_PASS || process.env.CDP_SITE_OWNER_PASS || 'Rider@123456',
+  riderUser: process.env.CDP_RIDER_USER || 'RBAC-RB',
+  riderPass: process.env.CDP_RIDER_PASS || process.env.CDP_SITE_OWNER_PASS || 'Rider@123456',
+  h5Url: process.env.H5_URL || 'http://127.0.0.1:5174',
 };
 
 export async function swaggerLogin(username, password, apiUrl = CONFIG.apiUrl) {
