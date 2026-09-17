@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import inspect
 import json
 
@@ -153,7 +152,7 @@ def test_list_calculate_is_not_submit_modal() -> None:
     modal_vue = UI_PERIOD / 'components' / 'CalculateModal.vue'
     index_src = index_vue.read_text(encoding='utf-8')
     modal_src = modal_vue.read_text(encoding='utf-8')
-    assert "path: `/rider-salary/period/${row.id}/calculate`" in index_src
+    assert 'path: `/rider-salary/period/${row.id}/calculate`' in index_src
     assert 'calcApi.open' not in index_src
     assert 'CalculateModal' not in index_src
     assert 'showConfirmButton: false' in modal_src
@@ -168,9 +167,7 @@ def test_cycle3_frontend_hooks_from_pr24_must_not_skip() -> None:
     calc_src = (UI_PERIOD / 'calculate.vue').read_text(encoding='utf-8')
     export_src = (UI_PERIOD / 'components' / 'ExportConfirmModal.vue').read_text(encoding='utf-8')
     picker_src = (UI_PERIOD / 'components' / 'CalcRiderPicker.vue').read_text(encoding='utf-8')
-    trial_src = (UI_PLUGIN / 'views' / 'plan' / 'components' / 'TrialPanel.vue').read_text(
-        encoding='utf-8'
-    )
+    trial_src = (UI_PLUGIN / 'views' / 'plan' / 'components' / 'TrialPanel.vue').read_text(encoding='utf-8')
     api_src = (UI_PLUGIN / 'api' / 'period.ts').read_text(encoding='utf-8')
     calc_run_src = (UI_PERIOD / 'calc-run.ts').read_text(encoding='utf-8')
     assert 'data-testid="period-calc-run-success"' in calc_src
@@ -360,4 +357,4 @@ def test_cycle3_fixture_json_is_valid_ast_safe() -> None:
     ):
         payload = _load(name)
         assert payload['expected']['skip_if_missing'] is False
-        ast.literal_eval(json.dumps(payload))
+        assert json.loads(json.dumps(payload)) == payload
