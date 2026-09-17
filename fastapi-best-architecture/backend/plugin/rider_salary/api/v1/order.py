@@ -12,10 +12,13 @@ from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
-from backend.plugin.rider_salary.enums import ImportBatchStatus
 from backend.plugin.rider_salary.schema.import_batch import GetImportBatchDetail, GetImportBatchListItem
 from backend.plugin.rider_salary.schema.order import CreateOrderParam, GetOrderDetail, ImportResult, UpdateOrderParam
-from backend.plugin.rider_salary.service.import_service import build_import_template, import_service
+from backend.plugin.rider_salary.service.import_service import (
+    build_import_template,
+    import_result_msg,
+    import_service,
+)
 from backend.plugin.rider_salary.service.order_service import order_service
 
 router = APIRouter()
@@ -134,15 +137,14 @@ async def import_orders(
         auto_recalc=auto_recalc,
         background_tasks=background_tasks,
     )
-    if result.status == ImportBatchStatus.failed:
-        res = CustomResponse(code=200, msg='导入失败，未写入任何订单，请下载错误报告')
-    elif result.status == ImportBatchStatus.partial_failed:
-        res = CustomResponse(
-            code=200,
-            msg=f'导入完成：成功 {result.success_rows} 行，失败 {result.failed_rows} 行，请下载错误报告',
-        )
-    else:
-        res = CustomResponse(code=200, msg='导入完成')
+    res = CustomResponse(
+        code=200,
+        msg=import_result_msg(
+            status=result.status,
+            success_rows=result.success_rows,
+            failed_rows=result.failed_rows,
+        ),
+    )
     return response_base.success(res=res, data=result)
 
 

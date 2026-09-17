@@ -7,6 +7,7 @@ from fastapi import Request
 from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.plugin.rider_salary.crud.settle_period import SITE_LEVEL_RIDER_ID
 from backend.plugin.rider_salary.engine.context import iter_dates
 from backend.plugin.rider_salary.enums import (
     AdvanceStatus,
@@ -256,16 +257,20 @@ class DashboardService:
         rows = (await db.execute(stmt)).all()
         if not rows:
             return None
-        items = []
-        for period, cnt in rows[:_ATTENTION_LIMIT]:
-            items.append({
-                'period_id': period.id,
-                'site_id': period.site_id,
-                'rider_id': period.rider_id,
-                'range': period_range_text(period.start_date, period.end_date),
-                'status': period.status,
-                'stale_count': int(cnt or 0),
-            })
+        limited = rows[:_ATTENTION_LIMIT]
+        rider_map = await _riders_by_id(db, [period.rider_id for period, _cnt in limited])
+        items = [
+            build_period_attention_item(
+                period_id=period.id,
+                site_id=period.site_id,
+                rider_id=period.rider_id,
+                rider=rider_map.get(period.rider_id),
+                range_text=period_range_text(period.start_date, period.end_date),
+                status=period.status,
+                stale_count=int(cnt or 0),
+            )
+            for period, cnt in limited
+        ]
         return DashboardAttentionBlock(
             key='stale_periods',
             title='需重算周期',
@@ -418,7 +423,7 @@ class DashboardService:
                     continue
                 total += 1
                 if len(items) < _ATTENTION_LIMIT:
-                    items.append({'site_id': site.id, 'site_name': site.name, 'date': day.isoformat()})
+                    items.append(import_gap_attention_item(site_id=site.id, site_name=site.name, day=day))
         if total <= 0:
             return None
         return DashboardAttentionBlock(
@@ -474,19 +479,7 @@ class DashboardService:
             ).all()
         )
         rider_map = await _riders_by_id(db, [row.rider_id for row in matched])
-        items = []
-        for row in matched:
-            duration = None
-            if row.deliver_time is not None and row.order_time is not None:
-                duration = round((row.deliver_time - row.order_time).total_seconds() / 60, 1)
-            items.append({
-                'id': row.id,
-                'order_no': row.order_no,
-                'rider_id': row.rider_id,
-                'rider_name': getattr(rider_map.get(row.rider_id), 'name', ''),
-                'status': row.status,
-                'duration_min': duration,
-            })
+        items = [abnormal_order_attention_item(row, rider_map.get(row.rider_id)) for row in matched]
         return DashboardAttentionBlock(
             key='abnormal_orders',
             title='异常订单',
@@ -519,16 +512,19 @@ class DashboardService:
         )
         if not rows:
             return None
+        limited = rows[:_ATTENTION_LIMIT]
+        rider_map = await _riders_by_id(db, [row.rider_id for row in limited])
         items = [
-            {
-                'period_id': row.id,
-                'site_id': row.site_id,
-                'rider_id': row.rider_id,
-                'range': period_range_text(row.start_date, row.end_date),
-                'end_date': row.end_date.isoformat(),
-                'days_left': (row.end_date - today).days,
-            }
-            for row in rows[:_ATTENTION_LIMIT]
+            build_period_attention_item(
+                period_id=row.id,
+                site_id=row.site_id,
+                rider_id=row.rider_id,
+                rider=rider_map.get(row.rider_id),
+                range_text=period_range_text(row.start_date, row.end_date),
+                end_date=row.end_date.isoformat(),
+                days_left=(row.end_date - today).days,
+            )
+            for row in limited
         ]
         return DashboardAttentionBlock(
             key='due_periods',
@@ -679,6 +675,67 @@ class DashboardService:
         top = ranked[:10]
         bottom = sorted(ranked, key=lambda item: (item.order_count, item.rider_id))[:5]
         return DashboardTopRiders(top=top, bottom=bottom)
+
+
+def period_attention_rider_fields(rider_id: int, rider: Any | None) -> dict[str, Any]:
+    """
+    倒计时 / 需重算行骑手辨识：站点级（rider_id=0）不填姓名；骑手级补工号与姓名。
+
+    :param rider_id: 周期骑手 ID，0 为站点级
+    :param rider: 骑手记录，站点级或缺失时为 None
+    :return: rider_id / rider_job_no / rider_name
+    """
+    rid = int(rider_id or SITE_LEVEL_RIDER_ID)
+    if rid == SITE_LEVEL_RIDER_ID:
+        return {
+            'rider_id': SITE_LEVEL_RIDER_ID,
+            'rider_job_no': '',
+            'rider_name': '',
+        }
+    return {
+        'rider_id': rid,
+        'rider_job_no': str(getattr(rider, 'job_no', None) or ''),
+        'rider_name': str(getattr(rider, 'name', None) or ''),
+    }
+
+
+def build_period_attention_item(
+    *,
+    period_id: int,
+    site_id: int,
+    rider_id: int,
+    rider: Any | None,
+    range_text: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    """组装工作台倒计时 / 需重算行（保留该行 period_id）。"""
+    return {
+        'period_id': period_id,
+        'site_id': site_id,
+        'range': range_text,
+        **period_attention_rider_fields(rider_id, rider),
+        **extra,
+    }
+
+
+def import_gap_attention_item(*, site_id: int, site_name: str, day: date) -> dict[str, Any]:
+    """导入缺口行：现有站 + 该日，供向导预填 date_from=date_to=date。"""
+    return {'site_id': site_id, 'site_name': site_name, 'date': day.isoformat()}
+
+
+def abnormal_order_attention_item(row: RiderSalaryOrder, rider: Any | None) -> dict[str, Any]:
+    """异常订单行：保留该单 id / order_no。"""
+    duration = None
+    if row.deliver_time is not None and row.order_time is not None:
+        duration = round((row.deliver_time - row.order_time).total_seconds() / 60, 1)
+    return {
+        'id': row.id,
+        'order_no': row.order_no,
+        'rider_id': row.rider_id,
+        'rider_name': getattr(rider, 'name', '') or '',
+        'status': row.status,
+        'duration_min': duration,
+    }
 
 
 def _site_filter(column: Any, site_ids: set[int] | None) -> Any:

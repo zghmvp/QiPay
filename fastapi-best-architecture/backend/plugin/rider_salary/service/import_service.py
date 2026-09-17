@@ -172,6 +172,38 @@ def _max_import_rows() -> int:
     return int(getattr(settings, 'RIDER_SALARY_IMPORT_MAX_ROWS', 20000))
 
 
+def resolve_import_batch_outcome(
+    *,
+    skip_errors: bool,
+    prepared_count: int,
+    failed_rows: int,
+) -> tuple[int, str, bool]:
+    """
+    计算导入批次成功行数与状态。不改跳过错误行谓词，保留 success_rows / failed_rows。
+
+    :param skip_errors: 是否跳过错误行
+    :param prepared_count: 校验通过行数
+    :param failed_rows: 失败行数
+    :return: (success_rows, batch_status, drop_prepared)
+    """
+    if not skip_errors and failed_rows:
+        return 0, ImportBatchStatus.failed.value, True
+    if prepared_count <= 0 and failed_rows:
+        return 0, ImportBatchStatus.failed.value, False
+    if failed_rows:
+        return prepared_count, ImportBatchStatus.partial_failed.value, False
+    return prepared_count, ImportBatchStatus.success.value, False
+
+
+def import_result_msg(*, status: str, success_rows: int, failed_rows: int) -> str:
+    """导入接口中文结果文案：半成功必须同时写出成功/失败行数。"""
+    if status == ImportBatchStatus.failed.value or status == ImportBatchStatus.failed:
+        return '导入失败，未写入任何订单，请下载错误报告'
+    if status == ImportBatchStatus.partial_failed.value or status == ImportBatchStatus.partial_failed:
+        return f'导入完成：成功 {success_rows} 行，失败 {failed_rows} 行，请下载错误报告'
+    return '导入完成'
+
+
 class ImportService:
     """订单导入服务"""
 
@@ -268,19 +300,13 @@ class ImportService:
 
         total_rows = len(rows)
         failed_rows = len(error_items)
-        if not skip_errors and failed_rows:
+        success_rows, batch_status, drop_prepared = resolve_import_batch_outcome(
+            skip_errors=skip_errors,
+            prepared_count=len(prepared),
+            failed_rows=failed_rows,
+        )
+        if drop_prepared:
             prepared = []
-            success_rows = 0
-            batch_status = ImportBatchStatus.failed.value
-        elif not prepared and failed_rows:
-            success_rows = 0
-            batch_status = ImportBatchStatus.failed.value
-        elif failed_rows:
-            success_rows = len(prepared)
-            batch_status = ImportBatchStatus.partial_failed.value
-        else:
-            success_rows = len(prepared)
-            batch_status = ImportBatchStatus.success.value
 
         inserted = _build_orders(prepared)
         rider_ids = {item.rider_id for item in inserted}

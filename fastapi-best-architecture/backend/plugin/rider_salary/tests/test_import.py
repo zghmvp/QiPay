@@ -3,9 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from backend.plugin.rider_salary.enums import OrderStatus
+from backend.plugin.rider_salary.enums import ImportBatchStatus, OrderStatus
+from backend.plugin.rider_salary.schema.import_batch import GetImportBatchDetail, GetImportBatchListItem
+from backend.plugin.rider_salary.schema.order import ImportResult
 from backend.plugin.rider_salary.service.import_service import (
     build_import_template,
+    import_result_msg,
+    resolve_import_batch_outcome,
     validate_row_format,
 )
 from backend.plugin.rider_salary.service.order_service import compute_biz_date, map_order_status
@@ -200,3 +204,53 @@ def test_parse_datetime_excel_serial() -> None:
     parsed = parse_cell_datetime(46266)  # 2026-09-01
     assert parsed.date() == date(2026, 9, 1)
     assert parsed.tzinfo == timezone.tz_info
+
+
+def test_skip_errors_partial_keeps_success_and_failed_rows() -> None:
+    success_rows, status, drop_prepared = resolve_import_batch_outcome(
+        skip_errors=True,
+        prepared_count=4,
+        failed_rows=1,
+    )
+    assert drop_prepared is False
+    assert success_rows == 4
+    assert status == ImportBatchStatus.partial_failed.value
+    msg = import_result_msg(status=status, success_rows=success_rows, failed_rows=1)
+    assert '成功 4 行' in msg
+    assert '失败 1 行' in msg
+    assert '全部导入成功' not in msg
+    assert '导入流程已完成' not in msg
+
+
+def test_skip_errors_off_failed_row_is_all_or_nothing() -> None:
+    success_rows, status, drop_prepared = resolve_import_batch_outcome(
+        skip_errors=False,
+        prepared_count=4,
+        failed_rows=1,
+    )
+    assert drop_prepared is True
+    assert success_rows == 0
+    assert status == ImportBatchStatus.failed.value
+    msg = import_result_msg(status=status, success_rows=success_rows, failed_rows=1)
+    assert '未写入任何订单' in msg
+    assert '全部导入成功' not in msg
+
+
+def test_import_schemas_keep_success_and_failed_rows() -> None:
+    for schema in (ImportResult, GetImportBatchDetail, GetImportBatchListItem):
+        assert 'success_rows' in schema.model_fields
+        assert 'failed_rows' in schema.model_fields
+        assert schema.model_fields['success_rows'].description == '成功行数'
+        assert schema.model_fields['failed_rows'].description == '失败行数'
+
+
+def test_all_success_import_message_is_not_half_success() -> None:
+    success_rows, status, drop_prepared = resolve_import_batch_outcome(
+        skip_errors=True,
+        prepared_count=5,
+        failed_rows=0,
+    )
+    assert drop_prepared is False
+    assert success_rows == 5
+    assert status == ImportBatchStatus.success.value
+    assert import_result_msg(status=status, success_rows=success_rows, failed_rows=0) == '导入完成'
