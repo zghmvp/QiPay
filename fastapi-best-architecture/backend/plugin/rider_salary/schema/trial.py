@@ -20,8 +20,10 @@ class TrialSummary(SchemaBase):
     """试算摘要"""
 
     order_count: int = Field(description='单量')
-    valid_order_count: int = Field(0, description='周期有效单量（整期 completed）')
-    plan_order_count: int = Field(0, description='方案期内单量（各段合计；单段试算等于该段）')
+    valid_order_count: int = Field(0, description='周期有效单量')
+    period_valid_order_count: int = Field(0, description='周期有效单量')
+    plan_order_count: int = Field(0, description='方案期内单量')
+    plan_period_order_count: int = Field(0, description='方案期内单量')
     segment_order_counts: list[TrialSegmentOrderCount] = Field(
         default_factory=list,
         description='各方案段方案期内单量明细（跨段换绑时对照用）',

@@ -183,7 +183,9 @@ def build_trial_result(
     summary = TrialSummary(
         order_count=calc.order_count,
         valid_order_count=calc.valid_order_count,
+        period_valid_order_count=calc.valid_order_count,
         plan_order_count=calc.plan_order_count,
+        plan_period_order_count=calc.plan_period_order_count,
         segment_order_counts=[
             TrialSegmentOrderCount(
                 plan_version_id=row.plan_version_id,
