@@ -8,6 +8,7 @@
     "C17_period_valid_amount": "2310.00",
     "C17_plan_period_amount": "100.00",
     "gold_is_backend": true,
+    "skip_if_missing": false,
     "no_numbers_is_fail": true,
     "forbid_warn_pass": true
   }

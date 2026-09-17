@@ -26,10 +26,10 @@
  * 钩子对齐 #19：period-export-* / payroll-layers / payroll-reconciliation /
  *   payroll-deduction-remark / rider-goto-payroll / rider-binding-goto-calculate /
  *   period-calc-queued / period-calc-refresh。
- * exclude_attention 落行等后端；Must 1 金标是后端 pytest。
+ * exclude_attention 须拿掉明细行（#20）；金标 C03/C04/C05A/C17 不得 skip。
  * trial-binding-segments 无数字 = FAIL（不得 WARN 过）。
  * 旧 import/stale spec 已改「完成」语义（夹具无方案骑手不得纯绿完成）。
- * 叠 PR #14+#16：GET /recalc-jobs/latest 须 200+{site_id,job}，不得当缺失 skip。
+ * 叠 PR #18+#19+#20：Cycle 1 CDP + Cycle 2 前端钩子 + Cycle 2 后端。
  * queued 阈值替身：CDP_QUEUED_RIDER_THRESHOLD（默认 2）或 Playwright 拦截 queued=true。
  * 侧栏泄漏保持已知红，本 harness 不改断言。
  *

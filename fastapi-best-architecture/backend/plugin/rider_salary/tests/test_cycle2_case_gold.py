@@ -104,9 +104,9 @@ C17_LADDER = {
     '模式': '全量落档',
     '计价': '按单价',
     '档位': [
-        {'下限': 0, '上限': 300, '值': 5},
-        {'下限': 300, '上限': 600, '值': 5.5},
-        {'下限': 600, '上限': None, '值': 6},
+        {'下限': 0, '上限': 400, '值': 5},
+        {'下限': 400, '上限': 700, '值': 5.5},
+        {'下限': 700, '上限': None, '值': 6},
     ],
 }
 
@@ -223,30 +223,24 @@ def test_fix_c17_amount_fork_2310_vs_100() -> None:
     amt_period = next(d.amount for d in r_period.details if d.name == '提成-周期有效')
     assert amt_period == D('2310.00')
 
-    start = date(2026, 9, 1)
-    end = date(2026, 9, 30)
-    covered = {start + timedelta(days=i) for i in range(30)}
-    data_plan = CalcInput(
-        rider_id=1,
-        site_id=1,
-        period_start=start,
-        period_end=end,
-        hire_date=date(2025, 1, 1),
-        leave_date=None,
-        employ_type='full_time',
-        segments=[
-            Segment(plan_version_id=1, start_date=start, end_date=date(2026, 9, 2), items=plan_items),
-        ],
-        orders=_orders(20, start),
-        employ_history=[],
-        adjustments=[],
-        advances=[],
-        covered_dates=covered,
-        site_order_dates=covered,
-        persist_advance=False,
-        period_id=1,
-    )
-    r_plan = run_calc_pipeline(data_plan)
+    day = date(2026, 9, 15)
+    orders_20: list[SimpleNamespace] = [
+        SimpleNamespace(
+            id=i + 1,
+            order_no=f'C17S-{i + 1}',
+            site_id=1,
+            rider_id=1,
+            biz_date=day,
+            distance_km=D('3.00'),
+            weight_jin=D('4.00'),
+            order_time=_dt(day),
+            deliver_time=_dt(day, 10),
+            status=OrderStatus.completed.value,
+            amount=D('20.00'),
+        )
+        for i in range(20)
+    ]
+    r_plan = run_calc_pipeline(_input(plan_items, orders_20))
     amt_plan = next(d.amount for d in r_plan.details if d.name == '提成-方案期内')
     assert amt_plan == D('100.00')
     assert amt_period != amt_plan

@@ -1,4 +1,4 @@
-/** CDP: ops-export-attention-parity — 导出确认框与需关注同源；默认不排除；排除落行等后端 */
+/** CDP: ops-export-attention-parity — 导出确认框与需关注同源；默认不排除；排除须拿掉明细行 */
 import { siteLevelOpenPeriod } from '../cycle1-lib.mjs';
 import {
   ATTENTION_ORDER_NOS,
@@ -56,8 +56,18 @@ export async function run({ page, helpers, config }) {
     periodId: period.id,
     excludeAttention: false,
   });
+  if ([404, 405, 501].includes(included.res.status)) {
+    throw new Error(`导出接口缺失 HTTP ${included.res.status}，不得 skip`);
+  }
   if (!included.res.ok) {
     throw new Error(`导出（不排除）失败 HTTP ${included.res.status}`);
+  }
+  if (included.attentionExcluded === '1') {
+    throw new Error('默认 exclude_attention=false 时响应头 X-QiPay-Attention-Excluded 不得为 1');
+  }
+  const missingInFile = ATTENTION_ORDER_NOS.filter((no) => !xlsxContainsOrderNo(included.buf, no));
+  if (missingInFile.length === ATTENTION_ORDER_NOS.length) {
+    throw new Error('默认不排除时文件应含需关注订单行（只影响文件行，不改 gross/net）');
   }
 
   const excluded = await exportPeriodBlob({
@@ -66,21 +76,20 @@ export async function run({ page, helpers, config }) {
     periodId: period.id,
     excludeAttention: true,
   });
-  if (excluded.res.status === 422) {
+  if ([404, 405, 422, 501].includes(excluded.res.status)) {
     throw new Error(
-      `导出 exclude_attention=true 被 422。后端 Must 2 须接受该查询参数（落行过滤仍可后补）`,
+      `导出 exclude_attention=true HTTP ${excluded.res.status}。#20 须接受该参数并拿掉明细行，不得 skip`,
     );
   }
-  if (!excluded.res.ok && excluded.res.status !== 404 && excluded.res.status !== 501) {
-    throw new Error(`导出 exclude_attention=true HTTP ${excluded.res.status}（参数应可传）`);
+  if (!excluded.res.ok) {
+    throw new Error(`导出 exclude_attention=true 失败 HTTP ${excluded.res.status}`);
   }
-  if (excluded.res.ok) {
-    const leaked = ATTENTION_ORDER_NOS.filter((no) => xlsxContainsOrderNo(excluded.buf, no));
-    if (leaked.length) {
-      console.warn(
-        `exclude_attention 落行等后端：文件仍含 ${leaked.join('、')}（只影响文件行，不改 gross/net）`,
-      );
-    }
+  if (excluded.attentionExcluded && excluded.attentionExcluded !== '1') {
+    throw new Error(`排除后 X-QiPay-Attention-Excluded 须为 1，实际 ${excluded.attentionExcluded}`);
+  }
+  const leaked = ATTENTION_ORDER_NOS.filter((no) => xlsxContainsOrderNo(excluded.buf, no));
+  if (leaked.length) {
+    throw new Error(`exclude_attention=true 后明细仍含需关注单：${leaked.join('、')}`);
   }
 
   const exportUrls = [];

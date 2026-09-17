@@ -4,6 +4,8 @@ import {
   GOLD_C03_GROSS,
   GOLD_C04_GROSS,
   GOLD_C05A_GROSS,
+  GOLD_C17_PERIOD_AMOUNT,
+  GOLD_C17_PLAN_AMOUNT,
   GOLD_C03_JOB,
   GOLD_C05_JOB,
   clickStartTrial,
@@ -19,12 +21,26 @@ import {
 
 export const name = 'trial-case-gold';
 
+function trialGross(json) {
+  const n = Number(json?.data?.summary?.gross ?? json?.data?.gross);
+  return n;
+}
+
 function assertGross(label, actual, expected) {
   if (!Number.isFinite(actual)) {
-    throw new Error(`${label} 无试算应发数字 = FAIL（禁止 WARN 过）`);
+    throw new Error(`${label} 无试算应发数字 = FAIL（禁止 WARN / skip 过）`);
   }
   if (!moneyEquals(actual, expected)) {
     throw new Error(`${label} 应发须=${expected}，实际=${actual}`);
+  }
+}
+
+function assertTrialOk(label, trial) {
+  if ([404, 405, 501].includes(trial.res.status)) {
+    throw new Error(`${label} 试算接口缺失 HTTP ${trial.res.status}，不得 skip`);
+  }
+  if (!trial.res.ok) {
+    throw new Error(`${label} 试算失败 HTTP ${trial.res.status}：${JSON.stringify(trial.json).slice(0, 300)}`);
   }
 }
 
@@ -48,10 +64,8 @@ export async function run({ page, helpers, config }) {
     end,
     mode: 'full_version',
   });
-  if (!t03.res.ok) {
-    throw new Error(`C03 试算失败 HTTP ${t03.res.status}：${JSON.stringify(t03.json).slice(0, 300)}`);
-  }
-  assertGross('C03', Number(t03.json?.data?.summary?.gross), GOLD_C03_GROSS);
+  assertTrialOk('C03', t03);
+  assertGross('C03', trialGross(t03.json), GOLD_C03_GROSS);
 
   const t04 = await trialVersion(config.apiUrl, token, c04.version.id, {
     riderId: riderC03.id,
@@ -59,10 +73,8 @@ export async function run({ page, helpers, config }) {
     end,
     mode: 'full_version',
   });
-  if (!t04.res.ok) {
-    throw new Error(`C04 试算失败 HTTP ${t04.res.status}：${JSON.stringify(t04.json).slice(0, 300)}`);
-  }
-  assertGross('C04', Number(t04.json?.data?.summary?.gross), GOLD_C04_GROSS);
+  assertTrialOk('C04', t04);
+  assertGross('C04', trialGross(t04.json), GOLD_C04_GROSS);
 
   const t05 = await trialVersion(config.apiUrl, token, c05.version.id, {
     riderId: riderC05.id,
@@ -70,10 +82,8 @@ export async function run({ page, helpers, config }) {
     end,
     mode: 'full_version',
   });
-  if (!t05.res.ok) {
-    throw new Error(`C05A 试算失败 HTTP ${t05.res.status}：${JSON.stringify(t05.json).slice(0, 300)}`);
-  }
-  assertGross('C05A', Number(t05.json?.data?.summary?.gross), GOLD_C05A_GROSS);
+  assertTrialOk('C05A', t05);
+  assertGross('C05A', trialGross(t05.json), GOLD_C05A_GROSS);
 
   await page.goto(`${config.adminUrl}/rider-salary/plan`, {
     waitUntil: 'networkidle',
@@ -107,6 +117,9 @@ export async function run({ page, helpers, config }) {
   );
   if (!(c17.json?.data?.items || []).some((r) => r.job_no === FIX_JOB_NO)) {
     throw new Error(`C17 夹具骑手 ${FIX_JOB_NO} 缺失`);
+  }
+  if (!(GOLD_C17_PERIOD_AMOUNT !== GOLD_C17_PLAN_AMOUNT && GOLD_C17_PERIOD_AMOUNT === 2310 && GOLD_C17_PLAN_AMOUNT === 100)) {
+    throw new Error('C17 金标须为 2310 vs 100，不得 skip');
   }
 
   helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());

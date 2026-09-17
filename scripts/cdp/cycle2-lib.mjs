@@ -8,14 +8,19 @@
  *   payroll-layers / payroll-reconciliation / payroll-deduction-remark /
  *   rider-goto-payroll / rider-binding-goto-calculate /
  *   period-calc-queued / period-calc-refresh
- * exclude_attention 落行等后端；Must 1 金标是后端（pytest 管数字）。
+ * exclude_attention 须真正拿掉明细行（#20）；金标 C03/C04/C05A/C17 不得当缺失 skip。
  *
- * 叠 Cycle 1 CDP（#18）+ Cycle 2 前端（#19）。
+ * 叠 Cycle 1 CDP（#18）+ Cycle 2 前端（#19）+ Cycle 2 后端（#20）。
  * 具名：trial-case-gold / ops-plan-guarantee-last / ops-export-attention-parity /
  *   cdp-admin-payslip-layers / cdp-admin-deduction-remark /
  *   cdp-admin-calc-success-four-numbers / ops-rider-profile-to-payroll /
  *   ops-queued-calc-progress
  */
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { apiFetch, authHeaders, siteMonth } from './cycle1-lib.mjs';
 
 export const GOLD_C03_JOB = 'FIX_C03_R1';
@@ -354,7 +359,40 @@ export async function exportPeriodBlob({ apiUrl, token, periodId, excludeAttenti
     headers: authHeaders(token),
   });
   const buf = Buffer.from(await res.arrayBuffer());
-  return { res, buf, text: buf.toString('utf8') };
+  return {
+    res,
+    buf,
+    text: buf.toString('utf8'),
+    attentionCount: res.headers.get('x-qipay-attention-count'),
+    attentionExcluded: res.headers.get('x-qipay-attention-excluded'),
+  };
+}
+
+export function xlsxText(buf) {
+  const raw = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  const latin1 = raw.toString('latin1');
+  const tmp = path.join(os.tmpdir(), `cdp-export-${process.pid}-${Date.now()}.xlsx`);
+  try {
+    fs.writeFileSync(tmp, raw);
+    const out = execFileSync(
+      'python3',
+      [
+        '-c',
+        'import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); print("".join(z.read(n).decode("utf-8","ignore") for n in z.namelist()))',
+        tmp,
+      ],
+      { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 },
+    );
+    return `${latin1}\n${out}`;
+  } catch {
+    return latin1;
+  } finally {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export async function clickPeriodExport(page, period) {
@@ -387,8 +425,7 @@ export async function clickPeriodExport(page, period) {
 }
 
 export function xlsxContainsOrderNo(buf, orderNo) {
-  const blob = Buffer.isBuffer(buf) ? buf.toString('latin1') : String(buf);
-  return blob.includes(orderNo);
+  return xlsxText(buf).includes(orderNo);
 }
 
 export async function openTrialDrawer(page) {

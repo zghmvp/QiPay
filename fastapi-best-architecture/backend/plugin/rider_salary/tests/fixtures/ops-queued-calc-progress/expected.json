@@ -5,6 +5,7 @@
     "refresh_copy": "刷新预检/结果",
     "testid_queued": "period-calc-queued",
     "testid_refresh": "period-calc-refresh",
+    "last_calc_status_labels": ["排队中", "计算中", "完成", "失败"],
     "threshold_standin_env": "CDP_QUEUED_RIDER_THRESHOLD",
     "sync_limit_default": 200,
     "failed_gt_zero_forbids_green_complete": true,
