@@ -1,0 +1,14 @@
+{
+  "feature": "trial-case-gold",
+  "expected": {
+    "C03_gross": "8200.00",
+    "C04_gross": "7800.00",
+    "C05A_gross": "3500.00",
+    "C05A_topup": "700.00",
+    "C17_period_valid_amount": "2310.00",
+    "C17_plan_period_amount": "100.00",
+    "gold_is_backend": true,
+    "no_numbers_is_fail": true,
+    "forbid_warn_pass": true
+  }
+}

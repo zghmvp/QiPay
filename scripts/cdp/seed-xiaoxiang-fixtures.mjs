@@ -40,6 +40,13 @@ const LOCK_ORDER_PREFIX = 'FIX_C17_LOCK_';
 const LOCK_ORDER_DAY = '2026-09-20';
 const MISS_ORDER_NO = 'FIX_C17_MISSDEL_20260910';
 const MISS_ORDER_DAY = '2026-09-10';
+const GOLD_C03_JOB = 'FIX_C03_R1';
+const GOLD_C05_JOB = 'FIX_C05_R1';
+const ATT_OVERTIME_NO = 'FIX_C2_ATT_OVERTIME';
+const ATT_REFUND_NO = 'FIX_C2_ATT_REFUND';
+const ATT_ABNORMAL_NO = 'FIX_C2_ATT_ABNORMAL';
+const ATT_DAY = '2026-09-12';
+const LAYER_NOTED_REMARK = '保险代扣说明-Cycle2';
 
 async function swaggerLogin(username, password) {
   const res = await fetch(
@@ -542,6 +549,284 @@ async function ensureLockHardFailPeriod(token, siteId, riderId) {
   return period;
 }
 
+async function findSubjectByCode(token, code) {
+  const all = await api(token, 'GET', '/api/v1/rider-salary/subjects/all');
+  return (all?.data || []).find((row) => row.code === code) || null;
+}
+
+async function ensureGoldRider(token, siteId, jobNo, name, remark) {
+  let rider = await findRiderByJobNo(token, siteId, jobNo);
+  if (!rider) {
+    await api(token, 'POST', '/api/v1/rider-salary/riders', {
+      job_no: jobNo,
+      name,
+      phone: null,
+      site_id: siteId,
+      employ_type: 'full_time',
+      hire_date: '2026-09-01',
+      leave_date: null,
+      status: 'on_job',
+      advance_limit: null,
+      settle_cycle_override: null,
+      cycle_config_override: null,
+      remark,
+    });
+    rider = await findRiderByJobNo(token, siteId, jobNo);
+    if (!rider) throw new Error(`创建 ${jobNo} 后仍查不到骑手`);
+    console.log('created rider', jobNo, 'id=', rider.id);
+  } else {
+    console.log('reuse rider', jobNo, 'id=', rider.id);
+  }
+  return rider;
+}
+
+function ensureBulkCompletedOrders(siteId, riderId, prefix, count) {
+  const sql = `
+INSERT INTO rs_order (
+  order_no, site_id, rider_id, biz_date, distance_km, weight_jin,
+  order_time, deliver_time, status, amount, source, is_locked, remark,
+  deleted, created_time
+)
+SELECT
+  '${prefix}' || lpad(gs::text, 4, '0'),
+  ${Number(siteId)}, ${Number(riderId)},
+  DATE '2026-09-01' + ((gs - 1) % 30),
+  3.00, 4.00,
+  (DATE '2026-09-01' + ((gs - 1) % 30)) + TIME '10:00:00',
+  (DATE '2026-09-01' + ((gs - 1) % 30)) + TIME '10:20:00',
+  'completed', 20.00, 'manual', false,
+  'Cycle2 金标夹具', 0, NOW()
+FROM generate_series(1, ${Number(count)}) gs
+WHERE NOT EXISTS (
+  SELECT 1 FROM rs_order o
+   WHERE o.order_no = '${prefix}' || lpad(gs::text, 4, '0')
+     AND o.deleted = 0
+);
+`;
+  try {
+    const out = runPsql(sql);
+    console.log(`bulk orders ${prefix}*${count}`, out.trim());
+  } catch (err) {
+    console.warn(`WARN: 未能灌 ${prefix} 金标订单：`, err.message || err);
+  }
+}
+
+async function ensurePlanByCode(token, code, name, shortName) {
+  const page = await api(
+    token,
+    'GET',
+    `/api/v1/rider-salary/plans?page=1&size=50&name=${encodeURIComponent(name)}`,
+  );
+  const hit = (page?.data?.items || []).find((p) => p.code === code);
+  if (hit) {
+    console.log('reuse plan', code, 'id=', hit.id);
+    return hit;
+  }
+  const created = await api(token, 'POST', '/api/v1/rider-salary/plans', {
+    code,
+    name,
+    short_name: shortName,
+    color: '#1677ff',
+    description: 'Cycle2 金标夹具',
+    status: 'enable',
+  });
+  const plan = created?.data || created;
+  console.log('created plan', code, 'id=', plan.id);
+  return plan;
+}
+
+async function ensureGoldVersion(token, plan, items, remark) {
+  const list = await api(
+    token,
+    'GET',
+    `/api/v1/rider-salary/plan-versions?page=1&size=20&plan_id=${plan.id}`,
+  );
+  let version = (list?.data?.items || [])[0];
+  if (!version) {
+    const created = await api(token, 'POST', '/api/v1/rider-salary/plan-versions', {
+      plan_id: plan.id,
+      mode_tag: 'base_plus_commission',
+      remark,
+    });
+    version = created?.data || created;
+    console.log('created version', remark, 'id=', version.id);
+  }
+  try {
+    await api(token, 'PUT', `/api/v1/rider-salary/plan-versions/${version.id}/items`, items);
+    console.log('put gold items', remark, 'version', version.id);
+  } catch (err) {
+    console.warn('WARN: 写入金标方案项失败（保底硬拦落地前 C05 提前项会失败，属预期）：', err.message);
+  }
+  return version;
+}
+
+function c03Ladder(mode) {
+  return {
+    类型: '阶梯',
+    字段: '周期有效单量',
+    模式: mode,
+    计价: '按单价',
+    档位: [
+      { 下限: 0, 上限: 400, 值: 4 },
+      { 下限: 400, 上限: 700, 值: 5 },
+      { 下限: 700, 上限: null, 值: 6 },
+    ],
+  };
+}
+
+async function ensureGoldPlans(token) {
+  const subjects = (await api(token, 'GET', '/api/v1/rider-salary/subjects/all'))?.data || [];
+  const byCode = Object.fromEntries(subjects.map((s) => [s.code, s]));
+  const need = ['BASE_UNIT_PRICE', 'BASE_SALARY', 'COMMISSION', 'GUARANTEE_TOPUP'];
+  for (const code of need) {
+    if (!byCode[code]) throw new Error(`金标科目缺失 ${code}`);
+  }
+  const c03Items = [
+    {
+      subject_id: byCode.BASE_UNIT_PRICE.id,
+      name: '基础单价',
+      stage: 'per_order',
+      sort_order: 10,
+      formula_json: { 类型: '固定金额', 金额: 3 },
+      enabled: true,
+    },
+    {
+      subject_id: byCode.BASE_SALARY.id,
+      name: '底薪',
+      stage: 'period',
+      sort_order: 20,
+      formula_json: { 类型: '表达式', 表达式: '3000 * 方案生效天数 / 周期天数' },
+      enabled: true,
+    },
+    {
+      subject_id: byCode.COMMISSION.id,
+      name: '提成',
+      stage: 'period',
+      sort_order: 30,
+      formula_json: c03Ladder('全量落档'),
+      enabled: true,
+    },
+  ];
+  const c04Items = c03Items.map((row) =>
+    row.name === '提成'
+      ? { ...row, formula_json: c03Ladder('分段累进') }
+      : row,
+  );
+  const c05Items = [
+    {
+      subject_id: byCode.BASE_UNIT_PRICE.id,
+      name: '提成',
+      stage: 'per_order',
+      sort_order: 10,
+      formula_json: { 类型: '固定金额', 金额: 3.5 },
+      enabled: true,
+    },
+    {
+      subject_id: byCode.COMMISSION.id,
+      name: '周期加价',
+      stage: 'period',
+      sort_order: 20,
+      formula_json: { 类型: '固定金额', 金额: 0 },
+      enabled: true,
+    },
+    {
+      subject_id: byCode.GUARANTEE_TOPUP.id,
+      name: '保底补足',
+      stage: 'period',
+      sort_order: 90,
+      formula_json: { 类型: '表达式', 表达式: '最大值(0, 3500 - 本期已计金额)' },
+      enabled: true,
+    },
+  ];
+  const p03 = await ensurePlanByCode(token, 'FIX_C03', '金标C03全量落档', 'C03');
+  const p04 = await ensurePlanByCode(token, 'FIX_C04', '金标C04分段累进', 'C04');
+  const p05 = await ensurePlanByCode(token, 'FIX_C05', '金标C05保底', 'C05');
+  await ensureGoldVersion(token, p03, c03Items, 'FIX_C03');
+  await ensureGoldVersion(token, p04, c04Items, 'FIX_C04');
+  await ensureGoldVersion(token, p05, c05Items, 'FIX_C05');
+}
+
+function ensureAttentionOrders(siteId, riderId) {
+  const sql = `
+INSERT INTO rs_order (
+  order_no, site_id, rider_id, biz_date, distance_km, weight_jin,
+  order_time, deliver_time, status, amount, source, is_locked, remark,
+  deleted, created_time
+)
+SELECT * FROM (VALUES
+  ('${ATT_OVERTIME_NO}', ${Number(siteId)}, ${Number(riderId)}, DATE '${ATT_DAY}', 3.00, 4.00,
+    TIMESTAMPTZ '${ATT_DAY} 10:00:00+08', TIMESTAMPTZ '${ATT_DAY} 11:30:00+08', 'completed', 20.00, 'manual', false,
+    'Cycle2 超时需关注', 0, NOW()),
+  ('${ATT_REFUND_NO}', ${Number(siteId)}, ${Number(riderId)}, DATE '${ATT_DAY}', 3.00, 4.00,
+    TIMESTAMPTZ '${ATT_DAY} 12:00:00+08', TIMESTAMPTZ '${ATT_DAY} 12:20:00+08', 'refunded', 20.00, 'manual', false,
+    'Cycle2 退款需关注', 0, NOW()),
+  ('${ATT_ABNORMAL_NO}', ${Number(siteId)}, ${Number(riderId)}, DATE '${ATT_DAY}', 3.00, 4.00,
+    TIMESTAMPTZ '${ATT_DAY} 13:00:00+08', TIMESTAMPTZ '${ATT_DAY} 13:15:00+08', 'abnormal', 20.00, 'manual', false,
+    'Cycle2 异常需关注', 0, NOW())
+) AS v(order_no, site_id, rider_id, biz_date, distance_km, weight_jin, order_time, deliver_time, status, amount, source, is_locked, remark, deleted, created_time)
+WHERE NOT EXISTS (
+  SELECT 1 FROM rs_order o WHERE o.order_no = v.order_no AND o.deleted = 0
+);
+UPDATE rs_order SET deliver_time = TIMESTAMPTZ '${ATT_DAY} 11:30:00+08', status = 'completed'
+ WHERE order_no = '${ATT_OVERTIME_NO}' AND deleted = 0;
+UPDATE rs_order SET status = 'refunded'
+ WHERE order_no = '${ATT_REFUND_NO}' AND deleted = 0;
+UPDATE rs_order SET status = 'abnormal'
+ WHERE order_no = '${ATT_ABNORMAL_NO}' AND deleted = 0;
+`;
+  try {
+    const out = runPsql(sql);
+    console.log('attention orders', ATT_OVERTIME_NO, ATT_REFUND_NO, ATT_ABNORMAL_NO, out.trim());
+  } catch (err) {
+    console.warn('WARN: 未能灌需关注夹具单：', err.message || err);
+  }
+}
+
+async function ensureLayerAdjustments(token, riderId) {
+  const insurance = await findSubjectByCode(token, 'INSURANCE_DEDUCT');
+  const complaint = await findSubjectByCode(token, 'COMPLAINT');
+  const bonus = await findSubjectByCode(token, 'BONUS_GOOD_REVIEW');
+  if (!insurance || !complaint) {
+    console.warn('WARN: 缺保险/客诉科目，跳过分层奖惩夹具');
+    return;
+  }
+  const specs = [
+    {
+      rider_id: riderId,
+      biz_date: ATT_DAY,
+      subject_id: insurance.id,
+      amount: '-50.00',
+      remark: LAYER_NOTED_REMARK,
+    },
+    {
+      rider_id: riderId,
+      biz_date: ATT_DAY,
+      subject_id: complaint.id,
+      amount: '-10.00',
+      remark: '',
+    },
+  ];
+  if (bonus) {
+    specs.push({
+      rider_id: riderId,
+      biz_date: ATT_DAY,
+      subject_id: bonus.id,
+      amount: '20.00',
+      remark: '进应发奖',
+    });
+  }
+  for (const body of specs) {
+    try {
+      await api(token, 'POST', '/api/v1/rider-salary/adjustments', body);
+      console.log('layer adjustment', body.subject_id, body.remark || '(empty)');
+    } catch (err) {
+      const msg = String(err.message || err);
+      if (/已存在|重复|锁账/.test(msg)) continue;
+      console.warn('WARN: 分层奖惩', msg);
+    }
+  }
+}
+
 async function writeEnvHint(siteId, riderId, lockPeriodId, lockRiderId) {
   const outDir =
     process.env.CDP_MEDIA_DIR ||
@@ -585,6 +870,15 @@ async function main() {
   clearGapPayrollDailies(rider.id);
   await ensureNoPlanOrders(token, site.id, rider.id);
   ensureMissingDeliveryOrder(site.id, rider.id);
+  const goldC03 = await ensureGoldRider(token, site.id, GOLD_C03_JOB, '金标C03骑手', 'FIX_C03 650 单');
+  const goldC05 = await ensureGoldRider(token, site.id, GOLD_C05_JOB, '金标C05骑手', 'FIX_C05A 800 单');
+  ensureBulkCompletedOrders(site.id, goldC03.id, 'FIX_C03_', 650);
+  ensureBulkCompletedOrders(site.id, goldC05.id, 'FIX_C05_', 800);
+  await ensureGoldPlans(token);
+  const payrollRiders = await listRidersWithPayroll(token, site.id);
+  const attentionHost = payrollRiders[0] || rider;
+  ensureAttentionOrders(site.id, attentionHost.id);
+  await ensureLayerAdjustments(token, attentionHost.id);
   await ensureSiteOwner(token, site.id);
   await ensureStalePayrolls(token, site.id);
   const lockRider = await ensureLockHardFailRider(token, site.id);
@@ -610,6 +904,15 @@ async function main() {
   );
   console.log(
     `  CDP_URL=http://127.0.0.1:9222 CDP_PASS=${ADMIN_PASS} CDP_SITE_ID=${site.id} CDP_MONTH=${MONTH} CDP_LOCK_HARD_FAIL_PERIOD_ID=${lockPeriod.id} node scripts/cdp/harness.mjs ops-lock-preflight-hard-fail`,
+  );
+  console.log(
+    `  node scripts/cdp/harness.mjs trial-case-gold   # Cycle2 金标`,
+  );
+  console.log(
+    `  node scripts/cdp/harness.mjs ops-plan-guarantee-last`,
+  );
+  console.log(
+    `  node scripts/cdp/harness.mjs ops-export-attention-parity`,
   );
 }
 
