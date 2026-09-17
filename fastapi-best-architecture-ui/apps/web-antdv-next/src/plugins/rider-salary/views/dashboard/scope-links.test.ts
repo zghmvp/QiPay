@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   noPlanBindingTarget,
   noPlanViewAllTarget,
+  pendingAdvanceRowTarget,
+  pendingAdvancesViewAllTarget,
   periodStaleListParams,
   stalePeriodCalcTarget,
   stalePeriodsViewAllTarget,
@@ -48,7 +50,35 @@ describe('stale dashboard targets', () => {
     expect(target.query.auto).toBeUndefined();
     expect(target.path).not.toMatch(/\/period$/);
   });
+});
 
+describe('pending advance dashboard targets', () => {
+  it('查看全部带 pending + 当前站月', () => {
+    const target = pendingAdvancesViewAllTarget(3, '2026-09');
+    expect(target.path).toBe('/rider-salary/advance');
+    expect(target.query.status).toBe('pending');
+    expect(target.query.site_id).toBe('3');
+    expect(target.query.month).toBe('2026-09');
+  });
+
+  it('无站仍带月份', () => {
+    const target = pendingAdvancesViewAllTarget(undefined, '2026-09');
+    expect(target.query.status).toBe('pending');
+    expect(target.query.month).toBe('2026-09');
+    expect(target.query.site_id).toBeUndefined();
+  });
+
+  it('该行带 id，能办这一条', () => {
+    const target = pendingAdvanceRowTarget(77, 3, '2026-09');
+    expect(target.path).toBe('/rider-salary/advance');
+    expect(target.query.id).toBe('77');
+    expect(target.query.status).toBe('pending');
+    expect(target.query.site_id).toBe('3');
+    expect(target.query.month).toBe('2026-09');
+  });
+});
+
+describe('stale list params', () => {
   it('周期列表请求带 stale 与站月', () => {
     const scoped = periodStaleListParams(3, '2026-09');
     expect(scoped.stale).toBe(true);

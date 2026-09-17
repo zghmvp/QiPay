@@ -151,6 +151,9 @@ export interface TrialSummary {
   daily_total: number | string;
   /** 方案期内单量（各段合计；强制全程生效试算通常等于周期有效单量） */
   plan_order_count?: number;
+  plan_period_order_count?: number;
+  /** 周期有效单量（后端 Cycle 13 别名） */
+  period_valid_order_count?: number;
   segment_order_counts?: TrialSegmentOrderCount[];
   /** 周期有效单量 */
   valid_order_count?: number;
