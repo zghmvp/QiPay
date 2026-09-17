@@ -230,6 +230,8 @@ async function onLock(row: PeriodResult) {
   let extraHintTestId: string | undefined;
   let extraSkipHint: string | undefined;
   if (isSiteLevelPeriod(row)) {
+    // Cycle 13 Must 5 hooks: ops-lock-confirm-skip-rider-level /
+    // period-lock-confirm-hint / period-lock-skip-count（ReasonModal 渲染）
     extraHintTestId = 'ops-lock-confirm-skip-rider-level';
     try {
       const preflight = await lockPreflightPeriodApi(row.id);

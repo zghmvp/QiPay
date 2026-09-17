@@ -23,6 +23,8 @@ const periodCount = computed(() => props.summary?.periods?.length ?? 0);
 
 async function openPayslip(periodId: number) {
   if (!props.riderId || !periodId) return;
+  // Cycle 13 Must 2：落到 /rider-salary/payroll/:id 或 /payroll?rider_id=&period_id=
+  // calendarPeriodPayslipTarget / resolveRiderPeriodPayslip — 禁止 /period?id= 全站抽屉
   router.push(await resolveRiderPeriodPayslip(props.riderId, periodId));
 }
 </script>

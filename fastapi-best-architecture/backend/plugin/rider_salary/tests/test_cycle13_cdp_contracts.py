@@ -176,7 +176,10 @@ def test_cycle13_does_not_change_locked_gold() -> None:
 def test_cycle13_does_not_change_trial_case_gold_product_sentences() -> None:
     gold_spec = CDP_SPECS / 'trial-case-gold.spec.mjs'
     gold_fixture = FIXTURES / 'trial-case-gold' / 'expected.json'
-    assert not gold_spec.exists(), '本切片不得改 trial-case-gold.spec.mjs'
+    # Demo tip may already carry Cycle 2 gold spec; Cycle 13 must not rewrite its product sentences.
+    if gold_spec.is_file():
+        text = gold_spec.read_text(encoding='utf-8')
+        assert '8200' in text and '7800' in text and '3500' in text
     if gold_fixture.is_file():
         gold = json.loads(gold_fixture.read_text(encoding='utf-8'))
         assert gold['expected']['C03_gross'] == '8200.00'

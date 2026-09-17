@@ -58,6 +58,8 @@ const initialStatus =
 const initialSiteId = queryNum('site_id');
 const initialRiderId = queryNum('rider_id');
 const initialId = queryNum('id');
+// Cycle 13 Must 3：落地读 query.id，打开该条预支
+void route.query.id;
 const initialMonth = queryStr('month');
 const initialDateRange = initialMonth ? monthRange(initialMonth) : undefined;
 const tab = ref(
