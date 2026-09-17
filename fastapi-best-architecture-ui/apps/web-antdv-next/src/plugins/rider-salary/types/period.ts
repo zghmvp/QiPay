@@ -84,6 +84,35 @@ export interface CalculatePeriodResult {
   warnings: string[];
 }
 
+export interface CalcPrecheckDeeplink {
+  path: string;
+  query?: null | Record<string, string>;
+}
+
+export interface CalcPrecheckBlocker {
+  code: string;
+  deeplink?: CalcPrecheckDeeplink | null;
+  job_no?: null | string;
+  messages: string[];
+  rider_id: number;
+  rider_name?: null | string;
+}
+
+export interface CalcPrecheckWarning {
+  code: string;
+  deeplink?: CalcPrecheckDeeplink | null;
+  messages: string[];
+}
+
+export interface CalcPrecheckResult {
+  blockers: CalcPrecheckBlocker[];
+  can_run: boolean;
+  eligible_rider_count: number;
+  period_id: number;
+  stale_count: number;
+  warnings: CalcPrecheckWarning[];
+}
+
 export interface ReversePeriodResult {
   reversal_count: number;
   reversal_net_total: MoneyValue;

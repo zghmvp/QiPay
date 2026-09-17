@@ -208,6 +208,72 @@ def _after_leave(leave_date: date | None, day: date) -> bool:
     return leave_date is not None and day > leave_date
 
 
+def missing_delivery_message(order_no: Any, day: date) -> str:
+    """与 run_calc_pipeline 硬失败文案同口径。"""
+    return f'订单 {order_no}（{day.isoformat()}）已完成但送达时间为空，无法计算配送时长'
+
+
+def no_plan_with_orders_message(parts: list[str]) -> str:
+    """与 run_calc_pipeline 硬失败文案同口径。"""
+    return f'算薪中止：以下日期有订单但无生效方案：{"、".join(parts)}'
+
+
+def collect_hard_fail_findings(data: CalcInput) -> list[tuple[str, list[str]]]:
+    """
+    扫描严格算薪硬失败（缺送达 / 有完成单无方案），不跑公式。
+
+    返回 [(code, messages), ...]；messages 与 RequestError.msg 同口径。
+    """
+    findings: list[tuple[str, list[str]]] = []
+    delivery_msgs: list[str] = []
+    covered: set[date] = set()
+    for segment in data.segments:
+        for day in iter_dates(segment.start_date, segment.end_date):
+            covered.add(day)
+            employ = _employ_on(data.employ_history, data.employ_type, day)
+            day_ctx = build_day_context(data.site_id, day, employ)
+            day_orders = [row for row in data.orders if row.biz_date == day]
+            completed = [row for row in day_orders if _is_completed(row) and not _after_leave(data.leave_date, day)]
+            for order in completed:
+                ctx = build_order_context(order, day_ctx)
+                if ctx.get('_missing_duration'):
+                    order_no = getattr(order, 'order_no', None) or getattr(order, 'id', None) or '未知'
+                    delivery_msgs.append(missing_delivery_message(order_no, day))
+    if delivery_msgs:
+        findings.append(('missing_delivery', delivery_msgs))
+
+    no_plan_parts: list[str] = []
+    for day in iter_dates(data.period_start, data.period_end):
+        if day in covered:
+            continue
+        day_completed = [
+            row
+            for row in data.orders
+            if row.biz_date == day and _is_completed(row) and not _after_leave(data.leave_date, day)
+        ]
+        if day_completed:
+            no_plan_parts.append(f'{day.isoformat()}（{len(day_completed)} 单）')
+    if no_plan_parts:
+        findings.append(('no_plan_with_orders', [no_plan_with_orders_message(no_plan_parts)]))
+    return findings
+
+
+async def load_calc_input_for_precheck(
+    db: AsyncSession,
+    *,
+    rider: RiderSalaryRider,
+    period: RiderSalarySettlePeriod,
+) -> CalcInput:
+    """预检只读加载算薪输入（不抵扣预支）。"""
+    return await _load_calc_input(
+        db,
+        rider=rider,
+        period=period,
+        forced_plan_version=None,
+        persist_advance=False,
+    )
+
+
 def _enabled_items(segment: Segment, stage: str) -> list[PlanItemView]:
     items = [item for item in segment.items if item.enabled and item.stage == stage]
     items.sort(key=lambda item: (item.sort_order, item.id or 0))
@@ -302,9 +368,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                 ctx = build_order_context(order, day_ctx)
                 if ctx.pop('_missing_duration', False):
                     order_no = getattr(order, 'order_no', None) or getattr(order, 'id', None) or '未知'
-                    raise errors.RequestError(
-                        msg=f'订单 {order_no}（{day.isoformat()}）已完成但送达时间为空，无法计算配送时长'
-                    )
+                    raise errors.RequestError(msg=missing_delivery_message(order_no, day))
                 for item in _enabled_items(segment, CalcStage.per_order.value):
                     hit, amount, trace = _eval_item(item, ctx, warnings)
                     if not hit:
@@ -418,7 +482,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             no_plan_days.add(day)
             no_plan_parts.append(f'{day.isoformat()}（{len(day_completed)} 单）')
     if no_plan_parts:
-        raise errors.RequestError(msg=f'算薪中止：以下日期有订单但无生效方案：{"、".join(no_plan_parts)}')
+        raise errors.RequestError(msg=no_plan_with_orders_message(no_plan_parts))
 
     for adj in data.adjustments:
         signed = q2(getattr(adj, 'signed_amount', ZERO) or ZERO)

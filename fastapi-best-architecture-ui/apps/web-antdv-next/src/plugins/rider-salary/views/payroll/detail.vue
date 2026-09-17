@@ -159,11 +159,16 @@ function goAdvance(advanceId?: null | number) {
 function goPeriod(stale?: boolean) {
   const d = detail.value;
   if (!d) return;
+  if (stale) {
+    router.push({
+      path: `/rider-salary/period/${d.period_id}/calculate`,
+    });
+    return;
+  }
   router.push({
     path: '/rider-salary/period',
     query: q({
       id: d.period_id,
-      stale: stale ? 'true' : undefined,
     }),
   });
 }
@@ -345,7 +350,7 @@ onMounted(() => {
               data-testid="payroll-recalc-cta"
               @click="goPeriod(true)"
             >
-              去周期重算
+              去算薪页重算
             </VbenButton>
           </template>
         </a-alert>

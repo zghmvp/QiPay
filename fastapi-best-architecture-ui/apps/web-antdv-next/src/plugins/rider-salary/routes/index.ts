@@ -79,6 +79,16 @@ const routes: RouteRecordRaw[] = [
         path: '/rider-salary/period',
       },
       {
+        component: () => import('../views/period/calculate.vue'),
+        meta: {
+          hideInMenu: true,
+          icon: 'lucide:calculator',
+          title: '周期算薪',
+        },
+        name: 'RiderSalaryPeriodCalculate',
+        path: '/rider-salary/period/:id/calculate',
+      },
+      {
         component: () => import('../views/payroll/index.vue'),
         meta: { icon: 'lucide:wallet', title: '薪资结果' },
         name: 'RiderSalaryPayroll',

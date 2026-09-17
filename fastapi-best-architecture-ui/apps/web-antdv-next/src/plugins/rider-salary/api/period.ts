@@ -1,5 +1,6 @@
 import type { PageResult } from '../types/common';
 import type {
+  CalcPrecheckResult,
   CalculatePeriodParam,
   CalculatePeriodResult,
   GeneratePeriodParam,
@@ -22,6 +23,10 @@ export async function getPeriodListApi(params: PeriodQuery) {
 
 export async function getPeriodApi(pk: number) {
   return requestClient.get<PeriodWithPayrolls>(`${BASE}/${pk}`);
+}
+
+export async function calcPrecheckApi(pk: number) {
+  return requestClient.get<CalcPrecheckResult>(`${BASE}/${pk}/calc-precheck`);
 }
 
 export async function generatePeriodsApi(data: GeneratePeriodParam) {
