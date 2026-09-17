@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  abnormalAttentionTarget,
+  abnormalOrderRowTarget,
+  importGapWizardPreset,
   noPlanBindingTarget,
   noPlanViewAllTarget,
+  orderImportTarget,
   pendingAdvanceRowTarget,
   pendingAdvancesViewAllTarget,
   periodStaleListParams,
@@ -75,6 +79,53 @@ describe('pending advance dashboard targets', () => {
     expect(target.query.status).toBe('pending');
     expect(target.query.site_id).toBe('3');
     expect(target.query.month).toBe('2026-09');
+  });
+});
+
+describe('import gap wizard preset', () => {
+  it('预填该行站+单日窗，不是订单空列表', () => {
+    const preset = importGapWizardPreset(
+      { date: '2026-09-12', site_id: 3 },
+      undefined,
+    );
+    expect(preset).toEqual({
+      date: '2026-09-12',
+      date_from: '2026-09-12',
+      date_to: '2026-09-12',
+      site_id: 3,
+    });
+  });
+
+  it('已选站时不得串到别站', () => {
+    const preset = importGapWizardPreset(
+      { date: '2026-09-12', site_id: 9 },
+      3,
+    );
+    expect(preset?.site_id).toBe(3);
+    expect(preset?.date).toBe('2026-09-12');
+  });
+
+  it('查看全部仍走带窗订单，不代替向导', () => {
+    const viewAll = orderImportTarget(3, '2026-09');
+    expect(viewAll.path).toBe('/rider-salary/order');
+    expect(viewAll.query.site_id).toBe('3');
+    expect(viewAll.query.date_from).toBeTruthy();
+    expect(viewAll.query.import).toBeUndefined();
+  });
+});
+
+describe('abnormal order row target', () => {
+  it('该行带 id，查看全部不带 id、仍 attention=1', () => {
+    const row = abnormalOrderRowTarget(55, 3, '2026-09', 'AB-1');
+    expect(row.path).toBe('/rider-salary/order');
+    expect(row.query.id).toBe('55');
+    expect(row.query.order_no).toBe('AB-1');
+    expect(row.query.attention).toBe('1');
+    expect(row.query.status).toBeUndefined();
+    const viewAll = abnormalAttentionTarget(3, '2026-09');
+    expect(viewAll.query.attention).toBe('1');
+    expect(viewAll.query.id).toBeUndefined();
+    expect(viewAll.query.site_id).toBe('3');
   });
 });
 

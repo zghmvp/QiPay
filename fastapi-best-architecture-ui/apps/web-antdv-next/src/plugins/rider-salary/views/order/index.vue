@@ -9,7 +9,7 @@ import type {
   VxeTableGridOptions,
 } from '#/adapter/vxe-table';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useAccess } from '@vben/access';
@@ -24,6 +24,7 @@ import { fetchLatestSiteRecalcJob } from '../../api/dashboard';
 import {
   deleteOrderApi,
   downloadImportTemplateApi,
+  getOrderApi,
   getOrderListApi,
 } from '../../api/order';
 import RecalcJobCard from '../../components/RecalcJobCard.vue';
@@ -78,6 +79,11 @@ const initialDate = queryStr('date');
 const initialDateFrom = queryStr('date_from');
 const initialDateTo = queryStr('date_to');
 const initialOrderNo = queryStr('order_no');
+const initialId = queryNum('id');
+const initialImport =
+  route.query.import === '1' ||
+  route.query.import === 'true' ||
+  route.query.wizard === '1';
 const initialMissingDelivery =
   route.query.missing_delivery === '1' ||
   route.query.missing_delivery === 'true';
@@ -219,7 +225,7 @@ const [BatchDrawer, batchApi] = useVbenDrawer({
   connectedComponent: BatchList,
 });
 
-onMounted(() => {
+onMounted(async () => {
   const values: Record<string, unknown> = {};
   if (initialStatus) values.status = initialStatus;
   if (initialSiteId) values.site_id = initialSiteId;
@@ -228,9 +234,29 @@ onMounted(() => {
   if (initialOrderNo) values.order_no = initialOrderNo;
   if (initialMissingDelivery) values.missing_delivery = true;
   if (Object.keys(values).length) {
-    void gridApi.formApi.setValues(values);
+    await gridApi.formApi.setValues(values);
   }
   void loadLastRecalcJob();
+  if (initialId) {
+    await nextTick();
+    try {
+      const order = await getOrderApi(initialId);
+      formDrawerApi.setData({ ...order, onSuccess: onRefresh }).open();
+    } catch {
+      /* 列表仍按 id/单号定位；打不开抽屉不算改 attention 谓词 */
+    }
+  }
+  if (initialImport) {
+    wizardApi
+      .setData({
+        date: initialDate,
+        date_from: initialDateFrom || initialDate,
+        date_to: initialDateTo || initialDate,
+        onSuccess: onImported,
+        site_id: initialSiteId,
+      })
+      .open();
+  }
 });
 </script>
 
@@ -268,6 +294,14 @@ onMounted(() => {
         </template>
       </a-alert>
     </div>
+    <a-alert
+      v-if="initialId"
+      class="mb-2"
+      data-testid="ops-abnormal-order-deeplink"
+      show-icon
+      type="info"
+      :message="`已按工作台异常订单跳转：打开该单 #${initialId}`"
+    />
     <a-alert
       v-if="initialAttention"
       class="mb-2"

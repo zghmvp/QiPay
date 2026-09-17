@@ -25,6 +25,11 @@ import {
   SUBJECT_DIRECTION_OPTIONS,
 } from '../../../constants/enums';
 import { toDateTimeString } from '../../../utils/date';
+import {
+  DAY_DRAWER_FORMULA_HINT,
+  DAY_DRAWER_NET_CARD_HINT,
+  DAY_DRAWER_NET_HINT,
+} from '../day-drawer-copy';
 import { resolveRiderPeriodPayslip } from '../payslip';
 
 const props = defineProps<{
@@ -270,6 +275,9 @@ function onKey(e: KeyboardEvent) {
             <div class="text-lg font-medium">
               <MoneyText :value="detail.totals.formula_amount" />
             </div>
+            <div class="text-muted-foreground mt-1 text-xs">
+              {{ DAY_DRAWER_FORMULA_HINT }}
+            </div>
           </a-card>
           <a-card size="small">
             <div class="text-muted-foreground text-xs">手工奖</div>
@@ -288,7 +296,16 @@ function onKey(e: KeyboardEvent) {
             <div class="text-lg font-medium">
               <MoneyText signed :value="detail.totals.net" />
             </div>
+            <div class="text-muted-foreground mt-1 text-xs">
+              {{ DAY_DRAWER_NET_CARD_HINT }}
+            </div>
           </a-card>
+        </div>
+        <div
+          class="text-muted-foreground text-xs"
+          data-testid="cdp-admin-day-drawer-not-daily-payslip"
+        >
+          {{ DAY_DRAWER_NET_HINT }}
         </div>
 
         <a-tabs>

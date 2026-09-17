@@ -5,7 +5,7 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useAccess } from '@vben/access';
-import { VbenButton, confirm } from '@vben/common-ui';
+import { useVbenModal, VbenButton, confirm } from '@vben/common-ui';
 
 import { message } from 'antdv-next';
 
@@ -16,14 +16,17 @@ import {
   previewStaleBatchRecalcApi,
   submitStaleBatchRecalcApi,
 } from '../../api/dashboard';
+import { getRiderListApi } from '../../api/rider';
 import SiteSelect from '../../components/SiteSelect.vue';
 import { currentMonth } from '../../utils/date';
 import { rememberRecalcJob } from '../../utils/last-recalc-job';
 import PageContainer from '../_shared/PageContainer.vue';
+import ImportWizard from '../order/components/ImportWizard.vue';
 import AttentionList from './components/AttentionList.vue';
 import StatCards from './components/StatCards.vue';
 import TopRiders from './components/TopRiders.vue';
 import TrendChart from './components/TrendChart.vue';
+import { applyRiderNames } from './period-row-level';
 import { orderImportTarget } from './scope-links';
 
 const route = useRoute();
@@ -162,14 +165,54 @@ function syncQuery() {
   });
 }
 
+async function enrichPeriodRowNames(data: DashboardSummary) {
+  const periodBlocks = (data.attention ?? []).filter(
+    (block) => block.key === 'due_periods' || block.key === 'stale_periods',
+  );
+  const missing = periodBlocks.some((block) =>
+    (block.items ?? []).some((item) => {
+      const riderId = Number(item.rider_id ?? 0);
+      return (
+        riderId > 0 &&
+        !String(item.rider_name ?? item.name ?? item.job_no ?? '').trim()
+      );
+    }),
+  );
+  if (!missing) return data;
+  try {
+    const res = await getRiderListApi({
+      page: 1,
+      site_id: siteId.value || undefined,
+      size: 200,
+    });
+    const names = new Map(
+      (res?.items ?? []).map((row) => [
+        row.id,
+        { job_no: row.job_no, name: row.name },
+      ]),
+    );
+    return {
+      ...data,
+      attention: (data.attention ?? []).map((block) =>
+        block.key === 'due_periods' || block.key === 'stale_periods'
+          ? { ...block, items: applyRiderNames(block.items ?? [], names) }
+          : block,
+      ),
+    };
+  } catch {
+    return data;
+  }
+}
+
 async function load() {
   loading.value = true;
   failed.value = false;
   try {
-    summary.value = await getDashboardSummaryApi({
+    const raw = await getDashboardSummaryApi({
       month: month.value,
       site_id: siteId.value ?? undefined,
     });
+    summary.value = await enrichPeriodRowNames(raw);
     await restoreLastJob();
   } catch {
     summary.value = undefined;
@@ -177,6 +220,29 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+const [WizardModal, wizardApi] = useVbenModal({
+  connectedComponent: ImportWizard,
+});
+
+function openGapWizard(payload: {
+  date: string;
+  date_from: string;
+  date_to: string;
+  site_id: number;
+}) {
+  wizardApi
+    .setData({
+      date: payload.date,
+      date_from: payload.date_from,
+      date_to: payload.date_to,
+      onSuccess: () => {
+        void load();
+      },
+      site_id: payload.site_id,
+    })
+    .open();
 }
 
 async function restoreLastJob() {
@@ -358,6 +424,7 @@ load();
             :month="month"
             :site-id="siteId"
             data-testid="dashboard-attention"
+            @open-import="openGapWizard"
           />
           <a-collapse
             v-if="insightVisible"
@@ -381,5 +448,6 @@ load();
         </div>
       </template>
     </div>
+    <WizardModal />
   </PageContainer>
 </template>
