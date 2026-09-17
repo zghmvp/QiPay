@@ -51,6 +51,7 @@ from backend.plugin.rider_salary.service.payroll_service import (
     payroll_service,
 )
 from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.calc_riders import normalize_calc_rider_ids
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
 
@@ -332,6 +333,11 @@ def serialize_calc_failures(failed_rows: list[dict[str, Any]]) -> list[dict[str,
 def persist_last_calc_failures(period: RiderSalarySettlePeriod, failed_rows: list[dict[str, Any]]) -> None:
     """把最近一次算薪 failed[] 写到周期，供 F5 / 回跳读取。"""
     period.last_calc_failures = serialize_calc_failures(failed_rows)
+
+
+def persist_last_calc_success_ids(period: RiderSalarySettlePeriod, rider_ids: list[int]) -> None:
+    """把最近一次算薪成功骑手 ID 写到周期，禁止只靠 toast 完成面。"""
+    period.last_calc_success_ids = [int(rider_id) for rider_id in rider_ids]
 
 
 def persist_last_calc_status(period: RiderSalarySettlePeriod, *, status: str, message: str) -> None:
@@ -1108,6 +1114,33 @@ async def _calculate_rider_period_inner(
     return result
 
 
+async def _covering_period_for_trial(
+    db: AsyncSession,
+    *,
+    rider: RiderSalaryRider,
+    start: date,
+    end: date,
+) -> RiderSalarySettlePeriod | None:
+    """同骑手同起止的周期（骑手级优先），供绑定感知试算与正式 calculate 对拍。"""
+    rows = list(
+        (
+            await db.scalars(
+                select(RiderSalarySettlePeriod).where(
+                    RiderSalarySettlePeriod.site_id == rider.site_id,
+                    RiderSalarySettlePeriod.start_date == start,
+                    RiderSalarySettlePeriod.end_date == end,
+                    RiderSalarySettlePeriod.deleted == 0,
+                    RiderSalarySettlePeriod.rider_id.in_([SITE_LEVEL_RIDER_ID, rider.id]),
+                )
+            )
+        ).all()
+    )
+    for row in rows:
+        if row.rider_id == rider.id:
+            return row
+    return rows[0] if rows else None
+
+
 async def trial_rider_range(
     db: AsyncSession,
     *,
@@ -1117,10 +1150,10 @@ async def trial_rider_range(
     forced_plan_version: RiderSalaryPlanVersion | None = None,
 ) -> CalcResult:
     """
-    试算，不落库、不抵扣预支。
+    试算，不落库、不抵扣预支。绑定感知（forced=None）走与正式 calculate 同一流水线。
 
     - forced_plan_version 有值：整版试算，假定该版本在区间内全程生效
-    - forced_plan_version 为 None：按骑手真实绑定分段试算（换绑时可分叉双单量）
+    - forced_plan_version 为 None：按骑手真实绑定分段试算，应发等于同骑手同周期 persist=False 的 calculate
     """
     from types import SimpleNamespace
 
@@ -1146,22 +1179,24 @@ async def trial_rider_range(
     )
     if order_count > trial_max_orders():
         raise errors.RequestError(msg=f'试算订单数超过上限 {trial_max_orders()}')
-    period_like = SimpleNamespace(
-        id=None,
-        site_id=rider.site_id,
-        start_date=start,
-        end_date=end,
-        status=PeriodStatus.open.value,
-        rider_id=SITE_LEVEL_RIDER_ID,
-    )
-    data = await _load_calc_input(
+    period = await _covering_period_for_trial(db, rider=rider, start=start, end=end)
+    if period is None:
+        period = SimpleNamespace(  # type: ignore[assignment]
+            id=None,
+            site_id=rider.site_id,
+            start_date=start,
+            end_date=end,
+            status=PeriodStatus.open.value,
+            rider_id=SITE_LEVEL_RIDER_ID,
+        )
+    return await _calculate_rider_period_inner(
         db,
         rider=rider,
-        period=period_like,  # type: ignore[arg-type]
+        period=period,  # type: ignore[arg-type]
+        persist=False,
         forced_plan_version=forced_plan_version,
-        persist_advance=False,
+        operator=None,
     )
-    return run_calc_pipeline(data)
 
 
 async def calculate_period(
@@ -1210,6 +1245,7 @@ async def calculate_period(
                 ),
             })
     persist_last_calc_failures(period, failed)
+    persist_last_calc_success_ids(period, [row.rider_id for row in results])
     status, message = finish_period_calc_status(calculated=len(results), failed_count=len(failed))
     persist_last_calc_status(period, status=status, message=message)
     await db.flush()
@@ -1221,6 +1257,7 @@ async def _riders_for_period(
     period: RiderSalarySettlePeriod,
     rider_ids: list[int] | None,
 ) -> list[int]:
+    rider_ids = normalize_calc_rider_ids(rider_ids)
     if period.rider_id and period.rider_id != SITE_LEVEL_RIDER_ID:
         if rider_ids is not None and period.rider_id not in rider_ids:
             return []

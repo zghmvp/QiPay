@@ -1,6 +1,9 @@
 /**
  * 小象波 CDP 夹具灌种（幂等）：FIX_C17_R1 无方案有单日 + site_owner_d2 + ≥2 stale
  * + FIX_C17_LOCK 骑手级开放周期（零 stale，供 ops-lock-preflight-hard-fail）。
+ * Cycle 3 具名 CDP：ops-calc-success-vs-existing / ops-export-adjustment-sheet /
+ *   trial-equals-calc / ops-plan-threshold-xor / ops-calc-rider-picker-not-truncated
+ *   （钩子见 #24；金标 C08/C05B/C11 与 calc-riders 依赖 #23）。
  *
  * 仅调用管理端/插件 API（admin token）；不改 FBA 框架、不 wipe 灯塔订单。
  * 正式验收禁止把 Must #5 改成超管登录。
@@ -913,6 +916,21 @@ async function main() {
   );
   console.log(
     `  node scripts/cdp/harness.mjs ops-export-attention-parity`,
+  );
+  console.log(
+    `  node scripts/cdp/harness.mjs ops-calc-success-vs-existing   # Cycle3 ②/③`,
+  );
+  console.log(
+    `  node scripts/cdp/harness.mjs ops-export-adjustment-sheet`,
+  );
+  console.log(
+    `  node scripts/cdp/harness.mjs trial-equals-calc`,
+  );
+  console.log(
+    `  node scripts/cdp/harness.mjs ops-plan-threshold-xor`,
+  );
+  console.log(
+    `  node scripts/cdp/harness.mjs ops-calc-rider-picker-not-truncated`,
   );
 }
 

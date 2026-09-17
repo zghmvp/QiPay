@@ -1,0 +1,26 @@
+{
+  "feature": "ops-calc-success-vs-existing",
+  "expected": {
+    "run_success_table_required": true,
+    "cannot_replace_with_existing_tag": true,
+    "existing_includes_just_calculated": true,
+    "failures_stay_in_section_2": true,
+    "success_columns": ["工号", "姓名", "单量", "应发", "代扣", "预支抵扣", "实发"],
+    "testid_run_success": "period-calc-run-success",
+    "testid_run_success_table": "period-calc-run-success-table",
+    "testid_existing": "period-calc-payrolls",
+    "testid_this_run_tag": "period-calc-payroll-this-run-tag",
+    "tag_alone_is_not_enough": true,
+    "testid_failed": "period-calc-failed",
+    "run_success_title": "本次成功",
+    "existing_title": "周期内已有薪资",
+    "fixture": {
+      "old_success_job_no": "FIX_C17_R1",
+      "this_run_success_job_no": "FIX_C03_R1",
+      "this_run_must_not_include_old": true
+    },
+    "skip_if_missing": false,
+    "no_new_page": true,
+    "last_calc_success_ids_field": "last_calc_success_ids"
+  }
+}
