@@ -157,16 +157,20 @@ async function exportMonth() {
   const dateFrom = `${month.value}-01`;
   const dateTo = dayjs(`${month.value}-01`).endOf('month').format('YYYY-MM-DD');
   try {
-    const { excludeAttention } = await promptExport({
+    const { excludeAttention, excludeAttentionAdjustments } = await promptExport({
       dateFrom,
       dateTo,
+      periodId: periods.length === 1 ? periods[0]?.id : undefined,
       siteId: siteId.value,
       title: `导出 ${month.value} 明细`,
     });
     exporting.value = true;
     try {
       for (const period of periods) {
-        await exportPeriodApi(period.id, { exclude_attention: excludeAttention });
+        await exportPeriodApi(period.id, {
+          exclude_attention: excludeAttention,
+          exclude_attention_adjustments: excludeAttentionAdjustments,
+        });
       }
       message.success(
         periods.length > 1 ? `已导出 ${periods.length} 个周期明细` : '已导出当月明细',

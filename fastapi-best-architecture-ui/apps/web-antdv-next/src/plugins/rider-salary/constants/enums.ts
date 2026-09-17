@@ -104,6 +104,14 @@ export const PERIOD_STATUS_OPTIONS = opts([
   ['reopened', '补发中', 'purple'],
 ]);
 
+/** 周期最近算薪态（与 RecalcJobStatus / last_calc_status 一致） */
+export const CALC_STATUS_OPTIONS = opts([
+  ['queued', '排队中', 'processing'],
+  ['running', '计算中', 'processing'],
+  ['done', '完成', 'success'],
+  ['failed', '失败', 'error'],
+]);
+
 export const PAYROLL_KIND_OPTIONS = opts([
   ['normal', '正常', 'success'],
   ['reversal', '反冲', 'error'],

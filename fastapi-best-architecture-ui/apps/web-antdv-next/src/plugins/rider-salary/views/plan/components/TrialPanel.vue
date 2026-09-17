@@ -157,7 +157,7 @@ const periodColumns = [
         show-icon
         :message="
           trialMode === 'binding_segments'
-            ? '按绑定分段试算：使用骑手真实方案绑定切段，含已录入奖惩，不含预支抵扣。换绑场景下「周期有效单量」与「方案期内单量」可不相等。本模式不写入启用门槛。'
+            ? '按绑定分段试算：应发与同骑手同周期正式 calculate 同源（预支仍不扣）。使用骑手真实方案绑定切段，含已录入奖惩。换绑场景下「周期有效单量」与「方案期内单量」可不相等。本模式不写入启用门槛。'
             : '整版试算：假定该版本在区间内全程生效，含已录入奖惩，不含预支抵扣。通过后可启用该版本。'
         "
       />
@@ -180,6 +180,13 @@ const periodColumns = [
           description="选择站点、骑手与日期后点击「开始试算」"
         />
         <div v-else class="flex flex-col gap-3" data-testid="trial-result">
+          <a-alert
+            v-if="result.matches_official_calculate"
+            type="success"
+            show-icon
+            data-testid="trial-matches-official-calculate"
+            message="应发与同骑手同周期正式 calculate 同源（预支仍不扣）"
+          />
           <a-card v-if="orderCompare" size="small" class="border-primary/30">
             <div class="mb-2 text-sm font-medium">单量口径对照</div>
             <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
