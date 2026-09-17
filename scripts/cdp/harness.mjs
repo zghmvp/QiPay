@@ -41,7 +41,9 @@
  * exclude_attention 须拿掉明细行（#20）；金标 C03/C04/C05A/C17 不得 skip。
  * Cycle 3：#23 后端 + #24 钩子不得 skip；C08/C05B/C11 金标；calc-riders 搜第 201 人。
  * Cycle 4：#27 选择器缺失即红，不得 skip。金标 8200/7800/3500 不改。
- * Cycle 5：status 钩子落地才强制新 testid；未落地断言计划合同（显示空日 / 绑定 Tab / 手工加项硬拦）。不得 skip。
+ * Cycle 5：#30 具名 testid 缺失即红，不得 skip。#32 保存/启用加项须失败
+ * （「手工明细已入账」「再加会双计」）；保底相减合法；C05A=3500；夹具 200 只入账一次。
+ * Must 2 无后端改动。金标 8200/7800/3500 不改。
  * trial-binding-segments 无数字 = FAIL（不得 WARN 过）。
  * 旧 import/stale spec 已改「完成」语义（夹具无方案骑手不得纯绿完成）。
  * 叠 PR #18+#19+#20+#21+#23+#24+#26+#27+#28：Cycle 1/2/3/4 CDP。Cycle 5 叠本文件。

@@ -1,4 +1,4 @@
-/** CDP: cdp-admin-payslip-hide-empty-days — /payroll/:id 按日空行默认折叠 */
+/** CDP: cdp-admin-payslip-hide-empty-days — /payroll/:id 按日空行默认折叠（#30 钩子） */
 import { apiFetch } from '../cycle1-lib.mjs';
 import {
   LAYER_TITLES,
@@ -10,12 +10,16 @@ import {
 } from '../cycle2-lib.mjs';
 import {
   DAILY_NET_COPY,
+  DAILY_NET_HINT,
   DAILY_NET_NOT_PERIOD_COPY,
+  PR30_PAYSLIP_HOOKS,
+  PR30_PAYSLIP_LAYER_HOOKS,
   SHOW_EMPTY_DAYS_COPY,
   assertLockedGoldUnchanged,
+  bizDateOf,
   classifyDailies,
-  requirePlanCopy,
-  requireStatusHooks,
+  requireHooks,
+  requireTestId,
   visibleDailyDates,
 } from '../cycle5-lib.mjs';
 
@@ -65,47 +69,50 @@ export async function run({ page, helpers, config }) {
   });
   helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());
 
+  await requireHooks(page, PR30_PAYSLIP_LAYER_HOOKS, 'Cycle 2 分层钩子缺失，不得 skip');
   const layers = page.getByTestId('payroll-layers');
-  try {
-    await layers.waitFor({ state: 'visible', timeout: 20000 });
-  } catch {
-    throw new Error('不得回退 Cycle 2 分层：须有 payroll-layers');
-  }
   const layersText = await layers.innerText();
   const missingTitles = LAYER_TITLES.filter((title) => !layersText.includes(title));
   if (missingTitles.length) {
     throw new Error(`payroll-layers 缺分区标题：${missingTitles.join('、')}`);
   }
   const recon = page.getByTestId('payroll-reconciliation');
-  try {
-    await recon.waitFor({ state: 'visible', timeout: 10000 });
-  } catch {
-    throw new Error('勾稽不得因折叠消失：须有 payroll-reconciliation');
-  }
   const reconBefore = await recon.innerText();
   if (!RECON_COPY.test(reconBefore)) {
     throw new Error(`勾稽句须仍是 应发 − 代扣 − 预支抵扣 = 实发：${reconBefore}`);
   }
   if (detail.stale) {
-    const banner = page.getByTestId('payroll-stale-banner');
-    if (!(await banner.isVisible().catch(() => false))) {
-      throw new Error('禁止用折叠掩饰 stale：须仍见 payroll-stale-banner');
-    }
+    await requireTestId(page, 'payroll-stale-banner', '禁止用折叠掩饰 stale：须仍见 payroll-stale-banner');
   }
 
   await page.getByRole('tab', { name: '按日' }).click();
-  await page.getByTestId('payroll-detail-tabs').waitFor({ state: 'visible', timeout: 10000 });
-  const body = await requirePlanCopy(
-    page,
-    SHOW_EMPTY_DAYS_COPY,
-    '按日 Tab 须有入口「显示空日（N）」。列表忽略该开关仍铺满空行 = FAIL，不得 skip',
-  );
-  if (!DAILY_NET_COPY.test(body) || !DAILY_NET_NOT_PERIOD_COPY.test(body)) {
-    throw new Error('折叠旁或列头须能读出：按日「净」= 当日公式+奖−惩，不是周期实发');
+  await requireTestId(page, 'payroll-detail-tabs', '未见 payroll-detail-tabs，不得 skip');
+  await requireHooks(page, PR30_PAYSLIP_HOOKS, '#30 按日空日钩子缺失，不得 skip');
+
+  const toggle = page.getByTestId('payroll-show-empty-days');
+  if (await toggle.isChecked()) {
+    throw new Error('payroll-show-empty-days 须默认未勾。列表忽略开关仍铺满空行 = FAIL');
+  }
+  const countText = (await page.getByTestId('payroll-empty-day-count').innerText()).trim();
+  if (String(classified.hidden.length) !== countText) {
+    throw new Error(
+      `「显示空日（N）」N 须=${classified.hidden.length}，实际=${countText}，不得 skip`,
+    );
+  }
+  const toolbar = await page.getByTestId('cdp-admin-payslip-hide-empty-days').innerText();
+  if (!SHOW_EMPTY_DAYS_COPY.test(toolbar)) {
+    throw new Error('按日 Tab 须有入口「显示空日（N）」。列表忽略该开关仍铺满空行 = FAIL，不得 skip');
+  }
+  const hint = await page.getByTestId('payroll-daily-net-hint').innerText();
+  if (!hint.includes(DAILY_NET_HINT) && (!DAILY_NET_COPY.test(hint) || !DAILY_NET_NOT_PERIOD_COPY.test(hint))) {
+    throw new Error('payroll-daily-net-hint 须能读出：按日「净」= 当日公式+奖−惩，不是周期实发');
+  }
+  if (await page.getByTestId('payroll-empty-day-row').count()) {
+    throw new Error('默认不见 payroll-empty-day-row。列表忽略「显示空日」仍铺满空行 = FAIL');
   }
 
-  const hiddenDates = classified.hidden.map((item) => bizDate(item.biz_date));
-  const visibleDates = classified.visible.map((item) => bizDate(item.biz_date));
+  const hiddenDates = classified.hidden.map((item) => bizDateOf(item.biz_date));
+  const visibleDates = classified.visible.map((item) => bizDateOf(item.biz_date));
   const shown = await visibleDailyDates(page);
   const leaked = hiddenDates.filter((date) => shown.includes(date));
   if (leaked.length) {
@@ -116,13 +123,16 @@ export async function run({ page, helpers, config }) {
   const missingVisible = visibleDates.filter((date) => !shown.includes(date));
   if (missingVisible.length) {
     throw new Error(
-      `有进应发奖 / 不进应发惩 / 预支 / no_plan 有完成单的日须默认可见。缺：${missingVisible.join('、')}`,
+      `有奖 / 有惩 / 预支 / no_plan 有完成单的日须默认可见。缺：${missingVisible.join('、')}`,
     );
   }
 
-  const toggle = page.getByText(SHOW_EMPTY_DAYS_COPY).first();
   await toggle.click();
   await page.waitForTimeout(400);
+  if (!(await toggle.isChecked())) {
+    throw new Error('勾选「显示空日」后开关须为勾选');
+  }
+  await requireTestId(page, 'payroll-empty-day-row', '打开「显示空日」后须出现 payroll-empty-day-row，不得 skip');
   const expanded = await visibleDailyDates(page);
   const stillHidden = hiddenDates.filter((date) => !expanded.includes(date));
   if (stillHidden.length) {
@@ -143,7 +153,7 @@ export async function run({ page, helpers, config }) {
     net: parseMoney(detail.net),
   });
 
-  const dateLink = page.locator('a').filter({ hasText: /^\d{4}-\d{2}-\d{2}$/ }).first();
+  const dateLink = page.getByTestId('payroll-dailies').locator('a').filter({ hasText: /^\d{4}-\d{2}-\d{2}$/ }).first();
   if (await dateLink.count()) {
     await dateLink.click();
     await page.waitForTimeout(500);
@@ -165,11 +175,6 @@ export async function run({ page, helpers, config }) {
     }
   }
 
-  await requireStatusHooks(page, 'status 已落地的按日空日钩子缺失，不得 skip');
   helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());
   await helpers.shot(page, 'cdp-admin-payslip-hide-empty-days');
-}
-
-function bizDate(value) {
-  return String(value ?? '').slice(0, 10);
 }

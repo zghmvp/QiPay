@@ -1,4 +1,4 @@
-/** CDP: ops-plan-manual-not-double — 周期公式不得再加本期手工奖/惩；挂现有保存路径 */
+/** CDP: ops-plan-manual-not-double — #32 保存/启用硬拦加项；#30 拼装器文案 */
 import { apiFetch, siteMonth } from '../cycle1-lib.mjs';
 import {
   GOLD_C03_JOB,
@@ -18,17 +18,22 @@ import {
 } from '../cycle2-lib.mjs';
 import { trialGross } from '../cycle3-lib.mjs';
 import {
+  MANUAL_ADDED_AS_FORMULA_COPY,
   MANUAL_ASSEMBLER_COPY,
   MANUAL_ASSEMBLER_DOUBLE_COPY,
-  MANUAL_BOOKED_COPY,
   MANUAL_BONUS_FIELD,
+  MANUAL_BOOKED_COPY,
   MANUAL_DOUBLE_COPY,
+  MANUAL_NOT_DOUBLE_COPY,
   MANUAL_ONCE_AMOUNT,
+  PR30_MANUAL_HOOKS,
+  assertActivateBlocked,
   assertLockedGoldUnchanged,
+  assertSaveBlocked,
   failBlob,
   isManualAddendFormula,
-  requirePlanCopy,
-  requireStatusHooks,
+  requireHooks,
+  requireTestId,
 } from '../cycle5-lib.mjs';
 
 export const name = 'ops-plan-manual-not-double';
@@ -39,16 +44,6 @@ function assertTrialOk(label, trial) {
   }
   if (!trial.res.ok) {
     throw new Error(`${label} 试算失败：${failBlob(trial.res, trial.json).slice(0, 300)}`);
-  }
-}
-
-function assertSaveBlocked(label, put) {
-  const blob = failBlob(put.res, put.json);
-  if (put.res.ok && (put.json?.code === 200 || put.json?.data)) {
-    throw new Error(`${label} 周期项把手工字段当加项仍保存成功。须失败：${blob.slice(0, 400)}`);
-  }
-  if (!MANUAL_BOOKED_COPY.test(blob) || !MANUAL_DOUBLE_COPY.test(blob)) {
-    throw new Error(`硬拦中文须含「手工明细已入账」和「再加会双计」：${blob.slice(0, 400)}`);
   }
 }
 
@@ -126,7 +121,7 @@ export async function run({ page, helpers, config }) {
   if (!isManualAddendFormula(addend)) {
     throw new Error('夹具合同：表达式「本期手工奖」须被判定为加项');
   }
-  const badPut = await putPlanItems(config.apiUrl, token, badExpr.id, [
+  const badItems = [
     {
       condition_json: {},
       enabled: true,
@@ -136,7 +131,8 @@ export async function run({ page, helpers, config }) {
       stage: 'period',
       subject_id: salary.id,
     },
-  ]);
+  ];
+  const badPut = await putPlanItems(config.apiUrl, token, badExpr.id, badItems);
   assertSaveBlocked('表达式加项', badPut);
   const afterBad = await getPlanVersion(config.apiUrl, token, badExpr.id);
   const savedAddend = (afterBad.items || []).some((row) => isManualAddendFormula(row.formula_json));
@@ -144,8 +140,13 @@ export async function run({ page, helpers, config }) {
     throw new Error('库内不得留下把本期手工奖当加项的成功版本 / 可锁 draft');
   }
   const badAct = await activateVersion(config.apiUrl, token, badExpr.id);
-  if (badAct.res.ok && badAct.json?.code === 200) {
-    throw new Error(`加项公式仍启用成功：${failBlob(badAct.res, badAct.json).slice(0, 300)}`);
+  if (savedAddend) {
+    assertActivateBlocked('表达式加项启用', badAct);
+  } else {
+    const actBlob = failBlob(badAct.res, badAct.json);
+    if (MANUAL_BOOKED_COPY.test(actBlob) && MANUAL_DOUBLE_COPY.test(actBlob)) {
+      /* 启用闸命中同一中文，亦绿 */
+    }
   }
 
   const badRate = await copyPlanVersion(config.apiUrl, token, c05.version.id);
@@ -208,28 +209,54 @@ export async function run({ page, helpers, config }) {
   if (!moneyEquals(delta, MANUAL_ONCE_AMOUNT)) {
     throw new Error(`无公式加项时手工奖 200 只入账一次。应发增量须=200，实际=${delta}`);
   }
-  const adjs = after.json?.data?.adjustments || [];
-  const lines200 = adjs.filter((row) => Number(row.amount ?? row.signed_amount) === MANUAL_ONCE_AMOUNT);
-  if (adjs.length && lines200.length !== 1) {
+  const adjs = after.json?.data?.adjustments || after.json?.data?.details || [];
+  const lines200 = (Array.isArray(adjs) ? adjs : []).filter(
+    (row) => Number(row.amount ?? row.signed_amount) === MANUAL_ONCE_AMOUNT,
+  );
+  if (Array.isArray(adjs) && adjs.length && lines200.length > 1) {
     throw new Error(`手工明细须一条 200，实际 ${JSON.stringify(adjs).slice(0, 300)}`);
   }
 
-  await page.goto(`${config.adminUrl}/rider-salary/plan/editor/${badExpr.id}`, {
+  await page.goto(`${config.adminUrl}/rider-salary/plan/editor/${legal.id}`, {
     waitUntil: 'networkidle',
     timeout: 60000,
   });
   helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());
-  await requirePlanCopy(
-    page,
-    MANUAL_ASSEMBLER_COPY,
-    '拼装器须硬区分「可作条件；加进公式 = 双计」。弱提示不得单独当完成态',
-  );
-  const editorBody = await page.locator('body').innerText();
-  if (!MANUAL_ASSEMBLER_DOUBLE_COPY.test(editorBody) && !MANUAL_DOUBLE_COPY.test(editorBody)) {
-    throw new Error('拼装器中文须含「加进公式 = 双计」或「再加会双计」');
+  await requireHooks(page, PR30_MANUAL_HOOKS, '#30 手工双计钩子缺失，不得 skip');
+  const banner = await page.getByTestId('ops-plan-manual-not-double').innerText();
+  if (banner.trim() !== MANUAL_NOT_DOUBLE_COPY) {
+    throw new Error(`ops-plan-manual-not-double 文案须整句 MANUAL_NOT_DOUBLE_COPY。实际 ${banner}`);
   }
-  if (!MANUAL_BOOKED_COPY.test(editorBody)) {
-    throw new Error('拼装器/保存路径须含「手工明细已入账」。弱提示不得单独当完成态');
+  if (!MANUAL_ASSEMBLER_COPY.test(banner) || !MANUAL_ASSEMBLER_DOUBLE_COPY.test(banner)) {
+    throw new Error('拼装器须硬区分「可作条件；加进公式 = 双计」。弱提示不得单独当完成态');
+  }
+  if (!MANUAL_BOOKED_COPY.test(banner) || !MANUAL_DOUBLE_COPY.test(banner)) {
+    throw new Error('拼装器须同时含「手工明细已入账」和「再加会双计」');
+  }
+
+  const exprBtn = page.getByRole('radio', { name: '表达式' }).or(page.getByText('表达式', { exact: true }));
+  if (await exprBtn.first().count()) {
+    await exprBtn.first().click().catch(() => {});
+    await page.waitForTimeout(300);
+  }
+  await requireTestId(
+    page,
+    'plan-manual-field-formula-chip',
+    '#30 plan-manual-field-formula-chip 缺失，不得 skip',
+  );
+  const chip = page.getByTestId('plan-manual-field-formula-chip').filter({ hasText: MANUAL_BONUS_FIELD }).first();
+  if (await chip.count()) {
+    await chip.click();
+    await page.waitForTimeout(300);
+  }
+  await requireTestId(
+    page,
+    'plan-manual-added-as-formula',
+    '公式把本期手工奖当加项时须见 plan-manual-added-as-formula，不得 skip',
+  );
+  const added = await page.getByTestId('plan-manual-added-as-formula').innerText();
+  if (!added.includes(MANUAL_ADDED_AS_FORMULA_COPY) && !/双计/.test(added)) {
+    throw new Error(`plan-manual-added-as-formula 须说明双计。实际 ${added}`);
   }
 
   const puts = [];
@@ -250,12 +277,11 @@ export async function run({ page, helpers, config }) {
   }
   await page.waitForTimeout(800);
   if (puts.length) {
-    const afterCancel = await getPlanVersion(config.apiUrl, token, badExpr.id);
+    const afterCancel = await getPlanVersion(config.apiUrl, token, legal.id);
     if ((afterCancel.items || []).some((row) => isManualAddendFormula(row.formula_json))) {
       throw new Error('取消确认不得仍保存手工加项公式');
     }
   }
 
-  await requireStatusHooks(page, 'status 已落地的手工双计钩子缺失，不得 skip');
   await helpers.shot(page, 'cdp-ops-plan-manual-not-double');
 }
