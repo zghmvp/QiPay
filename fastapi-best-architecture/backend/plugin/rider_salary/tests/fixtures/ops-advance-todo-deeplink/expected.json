@@ -1,0 +1,28 @@
+{
+  "feature": "ops-advance-todo-deeplink",
+  "expected": {
+    "skip_if_missing": false,
+    "row_must_carry_id": true,
+    "row_url": "/rider-salary/advance?id={id}",
+    "view_all_must_carry_site_month": true,
+    "view_all_url": "/rider-salary/advance?status=pending&site_id={site_id}&month={month}",
+    "view_all_no_site_still_carries_month": true,
+    "only_pending": true,
+    "to_pay_stays_count": true,
+    "do_not_change_quota_rules": true,
+    "do_not_stack_h5_15": true,
+    "do_not_make_to_pay_payout_block": true,
+    "testid_block": "ops-advance-todo-deeplink",
+    "testid_row": "dashboard-advance-row",
+    "testid_view_all": "dashboard-advance-view-all",
+    "testid_row_id_attr": "data-advance-id",
+    "helper_row_target": "pendingAdvanceRowTarget",
+    "helper_view_all_target": "pendingAdvancesViewAllTarget",
+    "landing_reads_query_id": true,
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

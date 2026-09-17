@@ -1,0 +1,30 @@
+{
+  "feature": "ops-lock-confirm-skip-rider-level",
+  "expected": {
+    "skip_if_missing": false,
+    "site_level_rider_id": 0,
+    "must_show_freeze_counts": ["order_count", "adjustment_count", "payroll_count"],
+    "must_show_lock_rider_count": true,
+    "must_show_skip_rider_count": true,
+    "skip_zero_still_required": true,
+    "skip_copy": "跳过骑手级覆盖",
+    "covered_copy": "骑手级已覆盖",
+    "numbers_from_backend_preflight": true,
+    "frontend_must_not_count_window_heads": true,
+    "window_full_rider_count_is_fail": true,
+    "do_not_change_decision_29": true,
+    "decision_29_helper": "site_level_lock_excluded_rider_ids",
+    "be_preflight_helper": "lock_preflight",
+    "do_not_open_lock_center": true,
+    "do_not_make_payout": true,
+    "testid_block": "ops-lock-confirm-skip-rider-level",
+    "testid_hint": "period-lock-confirm-hint",
+    "testid_skip": "period-lock-skip-count",
+    "helper_hint": "lockConfirmHintFromPreflight",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

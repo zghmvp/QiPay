@@ -1,0 +1,31 @@
+{
+  "feature": "ops-trial-period-vs-plan-order-count",
+  "expected": {
+    "skip_if_missing": false,
+    "period_valid_label": "周期有效单量",
+    "plan_period_label": "方案期内单量",
+    "single_order_count_card_is_fail": true,
+    "mid_month_rebind_must_diverge": true,
+    "trace_json_only_is_fail": true,
+    "old_order_count_may_remain": true,
+    "old_order_count_cannot_replace_named_cards": true,
+    "do_not_change_trial_case_gold": true,
+    "do_not_new_case_number": true,
+    "C17_period_valid_amount": "2310.00",
+    "C17_plan_period_amount": "100.00",
+    "C17_window_orders": 420,
+    "C17_segment_orders": 20,
+    "testid_block": "ops-trial-period-vs-plan-order-count",
+    "testid_period_valid": "trial-valid-order-count",
+    "testid_plan_period": "trial-plan-order-count",
+    "be_period_valid_field": "valid_order_count",
+    "be_plan_period_field": "plan_order_count",
+    "be_period_valid_description": "周期有效单量",
+    "be_plan_period_description": "方案期内单量",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}
