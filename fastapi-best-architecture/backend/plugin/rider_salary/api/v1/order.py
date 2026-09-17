@@ -44,7 +44,7 @@ async def get_orders_paginated(
     is_locked: Annotated[bool | None, Query(description='是否已锁账')] = None,
     attention: Annotated[
         bool | None,
-        Query(description='需关注：配送异常∪已退款∪配送时长>60分钟（与工作台同源）'),
+        Query(description='需关注：配送异常∪已退款∪已完成且时长>60分钟（与工作台同源）'),
     ] = None,
     missing_delivery: Annotated[
         bool | None,
