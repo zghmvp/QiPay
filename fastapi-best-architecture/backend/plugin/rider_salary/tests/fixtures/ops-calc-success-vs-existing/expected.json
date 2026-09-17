@@ -7,6 +7,7 @@
     "failures_stay_in_section_2": true,
     "success_columns": ["工号", "姓名", "单量", "应发", "代扣", "预支抵扣", "实发"],
     "testid_run_success": "period-calc-run-success",
+    "testid_run_success_table": "period-calc-run-success-table",
     "testid_existing": "period-calc-payrolls",
     "testid_this_run_tag": "period-calc-payroll-this-run-tag",
     "tag_alone_is_not_enough": true,

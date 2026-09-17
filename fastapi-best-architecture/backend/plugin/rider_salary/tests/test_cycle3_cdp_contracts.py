@@ -67,6 +67,7 @@ def test_cycle3_named_cdp_fixture_hooks() -> None:
     assert split['expected']['cannot_replace_with_existing_tag'] is True
     assert split['expected']['failures_stay_in_section_2'] is True
     assert split['expected']['testid_run_success'] == 'period-calc-run-success'
+    assert split['expected']['testid_run_success_table'] == 'period-calc-run-success-table'
     assert split['expected']['testid_existing'] == 'period-calc-payrolls'
     assert split['expected']['testid_this_run_tag'] == 'period-calc-payroll-this-run-tag'
     assert split['expected']['tag_alone_is_not_enough'] is True
@@ -171,6 +172,8 @@ def test_cycle3_frontend_hooks_from_pr24_must_not_skip() -> None:
     api_src = (UI_PLUGIN / 'api' / 'period.ts').read_text(encoding='utf-8')
     calc_run_src = (UI_PERIOD / 'calc-run.ts').read_text(encoding='utf-8')
     assert 'data-testid="period-calc-run-success"' in calc_src
+    assert 'data-testid="period-calc-run-success-table"' in calc_src
+    assert ':data-source="thisRunPayrolls"' in calc_src
     assert 'data-testid="period-calc-payrolls"' in calc_src
     assert 'data-testid="period-calc-payroll-this-run-tag"' in calc_src
     assert calc_src.index('period-calc-run-success') < calc_src.index('period-calc-payrolls')

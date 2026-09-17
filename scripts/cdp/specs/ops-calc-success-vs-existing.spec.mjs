@@ -119,16 +119,18 @@ export async function run({ page, helpers, config }) {
   if ((await tagOnly.count()) && !(await success.isVisible().catch(() => false))) {
     throw new Error('③ Tag「本轮新出」不够绿，必须另有 ② period-calc-run-success');
   }
+  const successTable = page.getByTestId('period-calc-run-success-table');
+  try {
+    await successTable.waitFor({ state: 'visible', timeout: 10000 });
+  } catch {
+    throw new Error('② 须绑定 period-calc-run-success-table（:data-source=thisRunPayrolls），不得空壳标题');
+  }
   const successText = await success.innerText();
   if (!RUN_SUCCESS_COPY.test(successText) && !successText.includes('本次成功')) {
     throw new Error(`period-calc-run-success 须标明本次成功：${successText.slice(0, 200)}`);
   }
-  if (
-    !successText.includes(NEW_JOB) &&
-    !successText.includes('金标C03') &&
-    !/本次成功（[1-9]/.test(successText)
-  ) {
-    throw new Error(`② 本次成功须含本轮算出的人（${NEW_JOB}），不得空表冒充完成`);
+  if (!successText.includes(NEW_JOB) && !successText.includes('金标C03')) {
+    throw new Error(`② 本次成功表须含本轮算出的人（${NEW_JOB}），不得空表 / 只靠计数冒充完成`);
   }
   if (successText.includes(OLD_JOB) && !successText.includes('失败')) {
     throw new Error(`② 本次成功不得把旧单 ${OLD_JOB} 当成刚算出`);
