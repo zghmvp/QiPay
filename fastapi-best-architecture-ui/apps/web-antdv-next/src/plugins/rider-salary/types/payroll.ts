@@ -31,6 +31,7 @@ export interface PayrollDetailItem {
   plan_item_name?: null | string;
   plan_version_id?: null | number;
   plan_version_name?: null | string;
+  remark?: null | string;
   rider_id: number;
   source: string;
   stage: string;
