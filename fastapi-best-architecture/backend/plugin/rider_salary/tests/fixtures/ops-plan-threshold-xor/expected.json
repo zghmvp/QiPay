@@ -1,0 +1,20 @@
+{
+  "feature": "ops-plan-threshold-xor",
+  "expected": {
+    "save_fails": true,
+    "activate_fails": true,
+    "cancel_must_not_save": true,
+    "fail_copy": "须互斥",
+    "double_count_copy": "否则会双计",
+    "weak_prompt_is_fail": true,
+    "skip_if_missing": false,
+    "C08_399_gross": "1995.00",
+    "C08_400_gross": "2400.00",
+    "C05B_1200_gross": "4200.00",
+    "C05B_topup": "0.00",
+    "C11_daily_total": "250.00",
+    "C11_gross": "4890.00",
+    "not_encyclopedia": true,
+    "overlap_399_must_not_be_4389": true
+  }
+}
