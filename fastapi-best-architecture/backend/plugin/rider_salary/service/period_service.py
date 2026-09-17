@@ -29,6 +29,8 @@ from backend.plugin.rider_salary.schema.period import (
     CalcPrecheckDeeplink,
     CalcPrecheckResult,
     CalcPrecheckWarning,
+    CalcRiderOption,
+    CalcRiderPageResult,
     CalculatePeriodParam,
     CalculatePeriodResult,
     CalculateRiderFailure,
@@ -56,9 +58,25 @@ from backend.plugin.rider_salary.service.calc_service import (
 )
 from backend.plugin.rider_salary.service.payroll_service import payroll_service
 from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
+from backend.plugin.rider_salary.utils.calc_riders import (
+    UNSELECTED_MEANS_ALL,
+    paginate_calc_riders,
+)
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
+from backend.plugin.rider_salary.utils.export_adjustment import (
+    AdjustmentSheetStats,
+    attention_rider_day_keys,
+    classify_adjustments,
+    list_payroll_manual_details,
+    list_period_window_adjustments,
+    manual_detail_keys,
+    sheet_stats,
+)
 from backend.plugin.rider_salary.utils.money import q2
-from backend.plugin.rider_salary.utils.order_attention import count_period_attention_orders
+from backend.plugin.rider_salary.utils.order_attention import (
+    count_period_attention_orders,
+    list_period_attention_orders,
+)
 from backend.plugin.rider_salary.utils.periods import compute_period_range
 from backend.utils.timezone import timezone
 
@@ -652,7 +670,12 @@ class PeriodService:
         ]
         result.last_calc_status = period.last_calc_status
         result.last_calc_status_message = period.last_calc_status_message
+        result.last_calc_success_ids = [int(x) for x in (period.last_calc_success_ids or [])]
         result.attention_order_count = await count_period_attention_orders(db, period)
+        adj_stats = await self._adjustment_sheet_stats(db, period, [row.id for row in payrolls])
+        result.booked_adjustment_count = adj_stats.booked_count
+        result.unbooked_adjustment_count = adj_stats.unbooked_count
+        result.attention_adjustment_count = adj_stats.attention_count
         return result
 
     async def calc_precheck(
@@ -695,6 +718,34 @@ class PeriodService:
             calc_status_message=period.last_calc_status_message,
             sync_limit=calc_sync_limit(),
             attention_order_count=await count_period_attention_orders(db, period),
+            unselected_means_all=UNSELECTED_MEANS_ALL,
+        )
+
+    async def list_calc_riders(
+        self,
+        *,
+        db: AsyncSession,
+        request: Request,
+        pk: int,
+        keyword: str | None,
+        page: int,
+        size: int,
+    ) -> CalcRiderPageResult:
+        """算薪骑手搜索分页；未选=全量，可搜到第 201+ 人。"""
+        period, _site, _rider = await self._load_visible(db, request, pk)
+        target_ids = await _riders_for_period(db, period, None)
+        rider_map = await self._rider_map(db, target_ids)
+        ordered = [rider_map[rid] for rid in target_ids if rid in rider_map]
+        paged = paginate_calc_riders(ordered, keyword=keyword, page=page, size=size)
+        return CalcRiderPageResult(
+            items=[CalcRiderOption(id=row.id, job_no=row.job_no, name=row.name) for row in paged.items],
+            total=paged.total,
+            page=paged.page,
+            size=paged.size,
+            listed_count=paged.listed_count,
+            truncated=paged.truncated,
+            truncated_hint=paged.truncated_hint,
+            unselected_means_all=paged.unselected_means_all,
         )
 
     async def get_for_date(
@@ -934,11 +985,14 @@ class PeriodService:
             return CalculatePeriodResult(
                 calculated=0,
                 warnings=warnings,
+                failed=[],
+                calculated_rider_ids=[],
                 queued=True,
                 calc_status=RecalcJobStatus.queued.value,
                 calc_status_label=RecalcJobStatus.queued.label,
                 sync_limit=limit,
                 target_rider_count=len(targets),
+                unselected_means_all=UNSELECTED_MEANS_ALL,
             )
         results, failed_rows = await calculate_period(
             db, period_id=period.id, rider_ids=obj.rider_ids, operator=request
@@ -971,11 +1025,13 @@ class PeriodService:
             calculated=len(results),
             warnings=warnings,
             failed=failed,
+            calculated_rider_ids=[row.rider_id for row in results],
             queued=False,
             calc_status=status,
             calc_status_label=calc_status_label(status),
             sync_limit=limit,
             target_rider_count=len(targets),
+            unselected_means_all=UNSELECTED_MEANS_ALL,
         )
 
     async def lock(
@@ -1415,6 +1471,22 @@ class PeriodService:
                 'rider_name': rider.name if rider is not None else None,
             }
         return names
+
+    @staticmethod
+    async def _adjustment_sheet_stats(
+        db: AsyncSession, period: RiderSalarySettlePeriod, payroll_ids: list[int]
+    ) -> AdjustmentSheetStats:
+        adjustments = await list_period_window_adjustments(db, period)
+        details = await list_payroll_manual_details(db, payroll_ids)
+        attention_orders = await list_period_attention_orders(db, period)
+        classified = classify_adjustments(
+            adjustments,
+            period_id=int(period.id),
+            manual_keys=manual_detail_keys(details),
+            attention_keys=attention_rider_day_keys(attention_orders),
+            exclude_attention_adjustments=False,
+        )
+        return sheet_stats(classified)
 
     @staticmethod
     async def _rider_map(db: AsyncSession, rider_ids: list[int]) -> dict[int, RiderSalaryRider]:
