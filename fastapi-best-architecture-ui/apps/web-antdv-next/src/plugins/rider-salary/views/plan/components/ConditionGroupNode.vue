@@ -9,6 +9,7 @@ import { IconifyIcon } from '@vben/icons';
 import { message } from 'antdv-next';
 
 import {
+  conditionFieldLabel,
   defaultOperatorForType,
   defaultValueFor,
   emptyGroup,
@@ -47,7 +48,7 @@ const fieldOptions = computed(() =>
     options: availableFields.value
       .filter((item) => group.names.includes(item.name))
       .map((item) => ({
-        label: item.unit ? `${item.name}（${item.unit}）` : item.name,
+        label: conditionFieldLabel(item.name, item.unit),
         value: item.name,
       })),
   })).filter((group) => group.options.length > 0),

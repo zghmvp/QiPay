@@ -52,6 +52,7 @@ function queryNum(key: string) {
 
 const initialStatus = queryStr('status');
 const initialSiteId = queryNum('site_id');
+const fromNoPlan = queryStr('from') === 'no_plan';
 
 const formOptions: VbenFormProps = {
   collapsed: true,
@@ -300,6 +301,14 @@ onMounted(() => {
 
 <template>
   <PageContainer>
+    <a-alert
+      v-if="fromNoPlan"
+      class="mb-2"
+      data-testid="rider-list-no-plan-scope"
+      show-icon
+      type="info"
+      message="无方案日待办：请点「方案绑定」进入该骑手绑定时间轴，不要只打开日历。"
+    />
     <a-alert
       v-if="initialStatus === 'on_job'"
       class="mb-2"

@@ -190,6 +190,15 @@ watch(riderId, () => {
   void loadPayrolls();
 });
 
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (typeof tab === 'string' && ['binding', 'employ', 'overview'].includes(tab)) {
+      activeTab.value = tab;
+    }
+  },
+);
+
 onMounted(async () => {
   const tab = route.query.tab;
   if (typeof tab === 'string' && ['binding', 'employ', 'overview'].includes(tab)) {
@@ -243,7 +252,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <a-tabs v-model:active-key="activeTab">
+      <a-tabs v-model:active-key="activeTab" data-testid="rider-profile-tabs">
         <a-tab-pane key="overview" tab="薪资概览">
           <div v-if="rider" class="flex flex-col gap-4">
             <a-alert type="info" show-icon>
@@ -354,7 +363,9 @@ onMounted(async () => {
         </a-tab-pane>
 
         <a-tab-pane key="binding" tab="方案绑定">
-          <BindingPanel v-if="rider" :rider="rider" @changed="onChildChanged" />
+          <div data-testid="rider-tab-binding">
+            <BindingPanel v-if="rider" :rider="rider" @changed="onChildChanged" />
+          </div>
         </a-tab-pane>
 
         <a-tab-pane key="employ" tab="用工类型">
