@@ -139,3 +139,43 @@ export function noPlanViewAllTarget(
     },
   };
 }
+
+/** 需重算「查看全部」：stale=1 必须带当前站+月（无站仍带月）。禁止只抛全站 stale。 */
+export function stalePeriodsViewAllTarget(
+  siteId?: null | number,
+  month?: string,
+): { path: string; query: Record<string, string> } {
+  return {
+    path: '/rider-salary/period',
+    query: {
+      stale: '1',
+      ...scopedSiteMonthQuery(siteId, month),
+    },
+  };
+}
+
+/**
+ * 需重算该行：进该周期算薪页。只开 /period?id= 抽屉 = FAIL。
+ * 禁止 auto=1，进页不自动开算。
+ */
+export function stalePeriodCalcTarget(periodId: number): {
+  path: string;
+  query: Record<string, string>;
+} {
+  return {
+    path: `/rider-salary/period/${periodId}/calculate`,
+    query: {},
+  };
+}
+
+/** 周期列表消费 stale=1 + 当前站月。忽略 query 仍全站 = FAIL。 */
+export function periodStaleListParams(
+  siteId?: null | number,
+  month?: string,
+): { month?: string; site_id?: number; stale: true } {
+  return {
+    stale: true,
+    ...(siteId && siteId > 0 ? { site_id: siteId } : {}),
+    ...(month ? { month } : {}),
+  };
+}
