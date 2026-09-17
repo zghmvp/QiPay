@@ -38,7 +38,8 @@ export const ATTENTION_ORDER_NOS = [ATT_OVERTIME_NO, ATT_REFUND_NO, ATT_ABNORMAL
 
 export const GUARANTEE_FAIL_COPY = /须放在周期阶段最后|须沉底/;
 export const CONTAINS_ATTENTION_COPY = /本文件含需关注/;
-export const RECON_COPY = /应发\s*[−\-–]\s*代扣\s*[−\-–]\s*预支抵扣\s*=\s*实发/;
+export const RECON_COPY =
+  /应发[\s\d.,]*[−\-–][\s\d.,]*代扣[\s\d.,]*[−\-–][\s\d.,]*预支抵扣[\s\d.,]*=[\s\d.,]*实发/;
 export const LAYER_TITLES = ['应发', '代扣', '预支抵扣', '实发'];
 export const EMPTY_REMARK_COPY = '无说明';
 export const QUEUED_COPY = /排队中|计算中|已转入后台/;
@@ -54,8 +55,11 @@ export function parseMoney(text) {
 }
 
 export function parseIntText(text) {
-  const n = Number(String(text || '').replace(/[^\d.-]/g, '').trim());
-  return n;
+  // 优先取「订单 N 条」类中文数量，避免把「超时>60 分钟」里的 60 拼进去
+  const labeled = String(text || '').match(/(?:订单|需关注|共|条数)\s*(\d+)/);
+  if (labeled) return Number(labeled[1]);
+  const first = String(text || '').match(/\d+/);
+  return first ? Number(first[0]) : NaN;
 }
 
 export function moneyEquals(actual, expected, { eps = 0.009 } = {}) {
@@ -108,7 +112,8 @@ export async function requireRiderByJobNo(apiUrl, token, siteId, jobNo) {
 }
 
 export async function findPlanByCode(apiUrl, token, code) {
-  const qs = new URLSearchParams({ page: '1', size: '50', name: code });
+  // name= 精确中文名；金标夹具用 code=FIX_C0x，改走 keyword 再按 code 精确匹配
+  const qs = new URLSearchParams({ page: '1', size: '50', keyword: code });
   const { res, json } = await apiFetch(apiUrl, token, 'GET', `/api/v1/rider-salary/plans?${qs}`);
   if (!res.ok) throw new Error(`方案列表失败 HTTP ${res.status}`);
   return (json?.data?.items || []).find((p) => p.code === code) || null;
@@ -396,32 +401,44 @@ export function xlsxText(buf) {
 }
 
 export async function clickPeriodExport(page, period) {
-  await page.keyboard.press('Escape').catch(() => {});
-  const drawerClose = page.locator('.ant-drawer-close, [data-slot="drawer"] button').first();
-  if (await drawerClose.isVisible().catch(() => false)) {
-    await drawerClose.click().catch(() => {});
+  for (let i = 0; i < 3; i += 1) {
+    await page.keyboard.press('Escape').catch(() => {});
+    await page.waitForTimeout(150);
+  }
+  const openLayer = page.locator(
+    '[data-state="open"][role="dialog"], .ant-drawer-open, [data-slot="drawer"][data-state="open"]',
+  );
+  if ((await openLayer.count()) > 0) {
+    await page.locator('.ant-drawer-close, [data-slot="drawer"] button').first().click({ force: true }).catch(() => {});
+    await page.keyboard.press('Escape').catch(() => {});
+    await openLayer.first().waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   }
   const rows = page.locator('.vxe-body--row, .vxe-table--body tr');
   const start = period?.start_date || '';
+  const siteHint = period?.site_name || period?.site_code || '福民|SZ0050';
   let row = start ? rows.filter({ hasText: start }) : rows;
+  row = row.filter({ hasText: new RegExp(siteHint) });
   const siteLevel = row.filter({ hasText: '—' });
   if ((await siteLevel.count()) > 0) row = siteLevel;
+  if ((await row.count()) === 0) {
+    row = start ? rows.filter({ hasText: start }).filter({ hasText: '—' }) : rows;
+  }
   const target = row.first();
   await target.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
   const exportInRow = target.getByText('导出', { exact: true });
   if ((await exportInRow.count()) > 0) {
-    await exportInRow.first().click();
+    await exportInRow.first().click({ force: true });
     return;
   }
   const more = target.getByText(/更多|更多操作/);
   if ((await more.count()) > 0) {
-    await more.first().click();
+    await more.first().click({ force: true });
     await page.getByRole('menuitem', { name: /^导出$/ }).click();
     return;
   }
   const anyExport = page.getByRole('button', { name: /导出/ }).first();
   await anyExport.waitFor({ state: 'visible', timeout: 15000 });
-  await anyExport.click();
+  await anyExport.click({ force: true });
 }
 
 export function xlsxContainsOrderNo(buf, orderNo) {
@@ -441,27 +458,27 @@ export async function fillTrialTargets(page, { siteCode, jobNo, start, end }) {
   const selects = page.locator('.ant-select');
   if ((await selects.count()) > 0) {
     await selects.nth(0).click();
+    await page.waitForTimeout(200);
+    await page.keyboard.type(String(siteCode), { delay: 20 });
+    await page.waitForTimeout(400);
     const siteOpt = page
       .locator('.ant-select-dropdown:visible .ant-select-item-option')
       .filter({ hasText: new RegExp(siteCode) })
       .first();
-    if (await siteOpt.count()) {
-      await siteOpt.click();
-    } else {
-      await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-    }
+    await siteOpt.waitFor({ state: 'visible', timeout: 15000 });
+    await siteOpt.click({ force: true });
   }
   if ((await selects.count()) > 1) {
     await selects.nth(1).click();
+    await page.waitForTimeout(200);
+    await page.keyboard.type(String(jobNo), { delay: 20 });
+    await page.waitForTimeout(400);
     const riderOpt = page
       .locator('.ant-select-dropdown:visible .ant-select-item-option')
       .filter({ hasText: new RegExp(jobNo) })
       .first();
-    if (await riderOpt.count()) {
-      await riderOpt.click();
-    } else {
-      await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-    }
+    await riderOpt.waitFor({ state: 'visible', timeout: 15000 });
+    await riderOpt.click({ force: true });
   }
   const startInput = page.locator('.ant-picker input').first();
   const endInput = page.locator('.ant-picker input').nth(1);
@@ -499,13 +516,15 @@ export async function waitTrialNumbers(page) {
 
 export async function readTrialGross(page) {
   const result = page.getByTestId('trial-result');
-  await result.waitFor({ state: 'visible', timeout: 30000 });
-  const grossCard = result.locator('div, .ant-card').filter({ hasText: /^应发$/ }).first();
-  const scoped = (await grossCard.count())
-    ? grossCard
-    : result.getByText('应发', { exact: true }).locator('xpath=..');
-  const text = await (await scoped.count() ? scoped : result).innerText();
-  const amount = parseMoney(text);
+  await result.waitFor({ state: 'visible', timeout: 60000 });
+  // 等应发金额出现（卡片标题「应发」旁会出数字）
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="trial-result"]');
+    return el && /应发[\s\S]{0,40}\d/.test(el.innerText || '');
+  }, null, { timeout: 60000 }).catch(() => {});
+  const text = await result.innerText();
+  const m = String(text).match(/应发[^\d\-]*(-?\d[\d,]*(?:\.\d+)?)/);
+  const amount = m ? parseMoney(m[1]) : parseMoney(text);
   if (!Number.isFinite(amount)) {
     throw new Error(`试算结果未见应发数字：${text.slice(0, 200)}`);
   }

@@ -131,9 +131,11 @@ def build_trial_result(
     calc: CalcResult,
     trial_hash: str | None,
     *,
-    mode: TrialMode = TrialMode.full_version,
+    mode: TrialMode | str = TrialMode.full_version,
 ) -> TrialResult:
     """将 CalcResult 转为试算接口结构"""
+    if isinstance(mode, str):
+        mode = TrialMode(mode)
     per_order_map: dict[tuple[Any, ...], TrialPerOrderRow] = {}
     period_items: list[TrialPeriodItem] = []
     daily_items: dict[date, list[TrialPerOrderItem]] = {}

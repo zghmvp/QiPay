@@ -108,7 +108,7 @@ export async function run({ page, helpers, config }) {
   });
 
   await page.goto(
-    `${config.adminUrl}/rider-salary/period?site_id=${siteId}&month=${month}&id=${period.id}`,
+    `${config.adminUrl}/rider-salary/period?site_id=${siteId}&month=${month}`,
     { waitUntil: 'networkidle', timeout: 60000 },
   );
   await clickPeriodExport(page, period);
@@ -122,11 +122,23 @@ export async function run({ page, helpers, config }) {
 
   const countEl = page.getByTestId('period-export-attention-count');
   await countEl.waitFor({ state: 'visible', timeout: 15000 });
-  const countText = await countEl.innerText();
+  // 打开时先显示 0，等 spin 结束再读中文条数（避免把加载中的 0 当结果）
+  await page
+    .locator('.ant-spin-spinning')
+    .first()
+    .waitFor({ state: 'detached', timeout: 15000 })
+    .catch(() => {});
+  await page.waitForTimeout(400);
+  let countText = await countEl.innerText();
+  let uiCount = parseIntText(countText);
+  if (uiCount === 0 && attentionCount > 0) {
+    await page.waitForTimeout(1200);
+    countText = await countEl.innerText();
+    uiCount = parseIntText(countText);
+  }
   if (!/本周期需关注订单/.test(countText) || !/\d+/.test(countText)) {
     throw new Error(`period-export-attention-count 须含「本周期需关注订单 N 条」：${countText}`);
   }
-  const uiCount = parseIntText(countText);
   if (
     Number.isFinite(uiCount) &&
     uiCount !== attentionCount &&
@@ -155,7 +167,8 @@ export async function run({ page, helpers, config }) {
 
   const copy = await box.innerText();
   helpers.assertNoPaymentTaxCopy(copy);
-  if (/银行代发|打款文件|个税/.test(copy)) {
+  // 允许中文声明「不是打款文件」；禁止正面冒充打款/代发/个税
+  if (/银行代发|个税/.test(copy) || (/打款文件/.test(copy) && !/不是打款文件/.test(copy))) {
     throw new Error('应发导出不得冒充打款文件');
   }
 

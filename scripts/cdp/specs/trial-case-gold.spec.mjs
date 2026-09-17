@@ -89,13 +89,13 @@ export async function run({ page, helpers, config }) {
     waitUntil: 'networkidle',
     timeout: 60000,
   });
-  const row = page.locator('.vxe-body--row, tr').filter({ hasText: /FIX_C03|底薪 \+ 单量阶梯/ }).first();
+  const row = page.locator('.vxe-body--row, tr').filter({ hasText: 'FIX_C03' }).first();
   const trialBtn = (await row.count())
     ? row.getByRole('button', { name: /^试算$/ }).first()
     : page.getByRole('button', { name: /^试算$/ }).first();
   await trialBtn.click();
   await page.getByTestId('trial-mode').waitFor({ state: 'visible', timeout: 30000 });
-  await page.getByText('整版试算').click();
+  await page.getByTestId('trial-mode').getByText('整版试算').first().click();
   await fillTrialTargets(page, {
     siteCode,
     jobNo: GOLD_C03_JOB,
@@ -103,6 +103,9 @@ export async function run({ page, helpers, config }) {
     end,
   });
   await clickStartTrial(page);
+  // 试算结果异步渲染
+  await page.getByText(/应发/).first().waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(800);
   const gross = await readTrialGross(page);
   assertGross('C03 UI', gross, GOLD_C03_GROSS);
   await waitTrialNumbers(page).catch(() => {
