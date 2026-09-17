@@ -32,6 +32,10 @@
  *   ops-plan-manual-not-double（挂现有方案保存 spec，不新造 XOR/金标/启用闸 Must 名）
  * Cycle 6 具名：ops-dashboard-stale-to-calc（#33 查看全部 stale=1+站月；该行进算薪页；
  *   抽屉-only = FAIL；auto=1 仍禁。不新造 XOR/金标/启用闸/手工 Must 名）
+ * Cycle 13 具名：ops-import-wizard-lighthouse / cdp-admin-calendar-month-not-payslip /
+ *   ops-advance-todo-deeplink / ops-trial-period-vs-plan-order-count /
+ *   ops-lock-confirm-skip-rider-level。Must 1 必须走向导+灯塔 xlsx；API importCsv 绿 = FAIL。
+ *   钩子缺失即红，不得 skip。金标 8200/7800/3500 不改。不自动开 Cycle 14。
  * 钩子对齐 #19+#24+#27：period-export-* / period-export-adj-* /
  *   period-export-period-row / calendar-export-month /
  *   dashboard-insight-card-* / dashboard-empty-import / dashboard-top-riders /
