@@ -30,8 +30,8 @@ import {
   getPeriodApi,
   getPeriodListApi,
   lockPeriodApi,
+  lockPreflightPeriodApi,
   markPaidPeriodApi,
-  previewLockPeriodApi,
   reversePeriodApi,
 } from '../../api/period';
 import MoneyText from '../../components/MoneyText.vue';
@@ -43,7 +43,7 @@ import PeriodDetail from './components/PeriodDetail.vue';
 import { useExportConfirm } from './components/use-export-confirm';
 import { querySchema, useColumns } from './data';
 import {
-  SITE_LEVEL_LOCK_PREVIEW_FALLBACK,
+  SITE_LEVEL_LOCK_PREFLIGHT_FALLBACK,
   buildLockConfirmHint,
   isSiteLevelPeriod,
 } from './lock-confirm';
@@ -231,9 +231,9 @@ async function onLock(row: PeriodResult) {
   if (isSiteLevelPeriod(row)) {
     extraHintTestId = 'period-lock-skip-hint';
     try {
-      extraHint = buildLockConfirmHint(await previewLockPeriodApi(row.id));
+      extraHint = buildLockConfirmHint(await lockPreflightPeriodApi(row.id));
     } catch {
-      extraHint = SITE_LEVEL_LOCK_PREVIEW_FALLBACK;
+      extraHint = SITE_LEVEL_LOCK_PREFLIGHT_FALLBACK;
     }
   }
   const { reason } = await prompt({
