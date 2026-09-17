@@ -75,10 +75,22 @@ export async function run({ page, helpers, config }) {
     );
   }
 
+  // 开框态 viewport 证据（cancel 前）；勿在 overlay 关闭后 fullPage
+  await helpers.shot(page, 'cdp-ops-stale-batch-recalc-confirm', {
+    fullPage: false,
+    timeout: 10_000,
+  });
+
   // Vben Alert 按钮 accessible name 常为「取 消」（字间空白）；勿用 /^取消$/
   await dialog.first().getByRole('button', { name: /^取\s*消$/ }).click();
   await dialog.first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
-  await helpers.shot(page, 'cdp-ops-stale-batch-recalc-confirm');
+
+  // 取消后辅证：viewport + optional（失败 WARN，不 FAIL）
+  await helpers.shot(page, 'cdp-ops-stale-batch-recalc-after-cancel', {
+    fullPage: false,
+    timeout: 10_000,
+    optional: true,
+  });
 
   const bodyAfter = await page.locator('body').innerText();
   if (bodyAfter.includes('已提交批量重算')) {

@@ -78,12 +78,30 @@ export async function injectAdmin(page, token, sessionUuid = null) {
   );
 }
 
-export async function shot(page, name) {
+/**
+ * 截图证据。默认 fullPage；证据场景可传 opts：
+ *   { fullPage, timeout, optional }
+ * optional=true → 失败只 WARN，不推翻已绿功能断言。
+ */
+export async function shot(page, name, opts = {}) {
+  const {
+    fullPage = true,
+    timeout = 30_000,
+    optional = false,
+  } = opts;
   fs.mkdirSync(CONFIG.mediaDir, { recursive: true });
   const file = path.join(CONFIG.mediaDir, `${name}.png`);
-  await page.screenshot({ path: file, fullPage: true });
-  console.log('SHOT', file);
-  return file;
+  try {
+    await page.screenshot({ path: file, fullPage, timeout });
+    console.log('SHOT', file);
+    return file;
+  } catch (err) {
+    if (optional) {
+      console.warn(`SHOT optional skip: ${name}`, err.message);
+      return null;
+    }
+    throw err;
+  }
 }
 
 export async function connectBrowser() {
