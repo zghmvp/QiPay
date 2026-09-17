@@ -7,6 +7,7 @@ from sqlalchemy_crud_plus import CRUDPlus
 
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod
+from backend.plugin.rider_salary.utils.order_attention import due_period_sql_filters
 from backend.utils.timezone import timezone
 
 SITE_LEVEL_RIDER_ID = 0
@@ -93,6 +94,7 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
         month_end: date | None,
         site_ids: set[int] | None,
         stale: bool | None = None,
+        lock_due: bool | None = None,
     ) -> Select:
         """
         周期列表查询
@@ -104,6 +106,7 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
         :param month_end: 筛选月份结束
         :param site_ids: 可见站点，None 表示全部
         :param stale: 仅含需重算薪资单的周期
+        :param lock_due: 锁账倒计时（含已过期未锁，不含远周期）
         :return:
         """
         filters: dict = {'deleted': 0}
@@ -131,6 +134,8 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
                     )
                 )
             )
+        if lock_due:
+            stmt = stmt.where(*due_period_sql_filters(timezone.now().date()))
         return stmt
 
     async def create(

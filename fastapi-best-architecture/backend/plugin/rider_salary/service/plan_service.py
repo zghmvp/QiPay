@@ -41,6 +41,12 @@ from backend.plugin.rider_salary.schema.trial import (
 from backend.plugin.rider_salary.service.calc_service import CalcResult, trial_rider_range
 from backend.plugin.rider_salary.utils.audit import audit_service
 from backend.plugin.rider_salary.utils.money import q2
+from backend.plugin.rider_salary.utils.plan_activate import (
+    assert_activate_trial_is_binding_aware,
+    clear_activation_trial_stamp,
+    partial_segment_fixed_amount_warning,
+    stamp_trial_for_activate,
+)
 from backend.plugin.rider_salary.utils.plan_guarantee import assert_accrued_guarantee_is_last_period_item
 from backend.plugin.rider_salary.utils.plan_threshold import assert_threshold_price_period_items_xor
 from backend.utils.timezone import timezone
@@ -421,7 +427,7 @@ class PlanService:
             )
         new_hash = items_hash_of([item.model_dump() for item, _c, _f in compiled])
         if version.items_hash != new_hash:
-            version.trial_passed = False
+            clear_activation_trial_stamp(version)
         version.items_hash = new_hash
         await db.flush()
         await audit_service.record(
@@ -445,7 +451,7 @@ class PlanService:
         request: Request,
         mode: TrialMode = TrialMode.full_version,
     ) -> TrialResult:
-        """试算；整版模式回写 trial_hash，分段模式仅对照不写启用门槛"""
+        """试算；整版是 what-if，绑定感知才写入启用闸门认的模式。"""
         version = await PlanService.get_version_model(db, pk)
         items = await plan_item_dao.list_by_version(db, pk)
         if not items:
@@ -459,17 +465,27 @@ class PlanService:
             forced_plan_version=forced,
         )
         current_hash = items_hash_of(orm_items_as_dicts(items))
-        if mode == TrialMode.full_version:
-            version.items_hash = current_hash
-            version.trial_hash = current_hash
-            version.trial_passed = True
-            result = build_trial_result(calc, current_hash, mode=mode)
-            version.trial_snapshot = result.summary.model_dump(mode='json')
-            await db.flush()
-            action = '试算方案'
-        else:
-            result = build_trial_result(calc, None, mode=mode)
-            action = '按绑定分段试算'
+        result = build_trial_result(calc, current_hash, mode=mode)
+        if mode == TrialMode.binding_segments:
+            warn = partial_segment_fixed_amount_warning(
+                items,
+                start_date,
+                end_date,
+                calc.segment_order_counts,
+            )
+            if warn:
+                if warn not in result.warnings:
+                    result.warnings.append(warn)
+                if warn not in result.summary.warnings:
+                    result.summary.warnings.append(warn)
+        stamp_trial_for_activate(
+            version,
+            mode=mode,
+            current_hash=current_hash,
+            summary=result.summary.model_dump(mode='json'),
+        )
+        await db.flush()
+        action = '试算方案' if mode == TrialMode.full_version else '按绑定分段试算'
         plan = await plan_dao.get(db, version.plan_id)
         await audit_service.record(
             db,
@@ -502,10 +518,7 @@ class PlanService:
         assert_threshold_price_period_items_xor(items)
         current_hash = items_hash_of(orm_items_as_dicts(items))
         version.items_hash = current_hash
-        if not version.trial_passed:
-            raise errors.RequestError(msg='请先完成试算再启用')
-        if version.trial_hash != current_hash:
-            raise errors.RequestError(msg='方案内容已变更，请重新试算')
+        assert_activate_trial_is_binding_aware(version, current_hash)
         version.status = PlanVersionStatus.active.value
         version.activated_time = timezone.now()
         await db.flush()
