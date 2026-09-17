@@ -26,6 +26,14 @@ class GetRecalcJobDetail(SchemaBase):
     finished_time: datetime | None = Field(None, description='结束时间')
     created_time: datetime = Field(description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
+    payload: dict | None = Field(None, description='任务快照（含失败清单）')
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def failed_rider_count(self) -> int:
+        """失败骑手数"""
+        raw = self.payload or {}
+        return int(raw.get('failed_rider_count') or 0)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -46,6 +46,7 @@ async def get_periods_paginated(
     rider_id: Annotated[int | None, Query(description='骑手 ID，0 表示站点级')] = None,
     status: Annotated[str | None, Query(description='状态')] = None,
     month: Annotated[str | None, Query(description='年月 YYYY-MM')] = None,
+    stale: Annotated[bool | None, Query(description='仅需重算周期')] = None,
 ) -> ResponseSchemaModel[PageData[GetPeriodListItem]]:
     data = await period_service.get_list(
         db=db,
@@ -54,6 +55,7 @@ async def get_periods_paginated(
         rider_id=rider_id,
         status=status,
         month=month,
+        stale=stale,
     )
     return response_base.success(data=data)
 

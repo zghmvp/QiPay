@@ -24,6 +24,7 @@ import { message } from 'antdv-next';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 
 import {
+  calcPrecheckApi,
   deletePeriodApi,
   exportPeriodApi,
   getPeriodApi,
@@ -72,9 +73,10 @@ const gridOptions: VxeTableGridOptions<PeriodResult> = {
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
-        const res = await getPeriodListApi({
+        return await getPeriodListApi({
           page: page.currentPage,
           size: page.pageSize,
+          stale: onlyStale.value || undefined,
           ...(formValues as {
             month?: string;
             rider_id?: number;
@@ -82,11 +84,6 @@ const gridOptions: VxeTableGridOptions<PeriodResult> = {
             status?: string;
           }),
         });
-        if (!onlyStale.value) return res;
-        const items = (res?.items ?? []).filter(
-          (item) => (item.stale_count ?? 0) > 0,
-        );
-        return { ...res, items, total: items.length };
       },
     },
   },
@@ -103,6 +100,11 @@ const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 const staleHint = computed(() =>
   onlyStale.value ? '已按工作台跳转筛选：需重算周期' : '',
 );
+const missingPayrollHint = computed(() =>
+  route.query.from === 'payroll-missing'
+    ? '薪资单不存在或未落库。请打开对应周期的算薪页查看失败清单。'
+    : '',
+);
 
 function onRefresh() {
   gridApi.query();
@@ -113,14 +115,16 @@ function openDetail(row: PeriodResult) {
 }
 
 async function onLock(row: PeriodResult) {
-  if (!(row.payroll_count ?? 0)) {
-    await confirm({
-      content: '当前周期没有薪资结果，仍要锁账吗？',
-      icon: 'warning',
-    });
+  const pre = await calcPrecheckApi(row.id);
+  const issues = (pre.blockers ?? []).flatMap((item) => item.messages);
+  if (issues.length) {
+    message.error(
+      `不能锁账：存在未算出的有单骑手。${issues.join('；')}`,
+    );
+    return;
   }
   const { reason } = await prompt({
-    extraHint: `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。若存在需重算结果，后端会拒绝并列出工号。`,
+    extraHint: `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。有完成单却未算出的骑手会被拒绝。`,
     title: '锁账原因',
   });
   await lockPeriodApi(row.id, reason);
@@ -252,6 +256,10 @@ async function openPeriodByQueryId() {
   detailApi.setData({ id }).open();
 }
 
+watch(onlyStale, () => {
+  void gridApi.query();
+});
+
 watch(
   () => route.query.id,
   () => {
@@ -277,6 +285,13 @@ onMounted(() => {
       type="warning"
       :message="staleHint"
       @close="onlyStale = false"
+    />
+    <a-alert
+      v-if="missingPayrollHint"
+      class="mb-2"
+      show-icon
+      type="warning"
+      :message="missingPayrollHint"
     />
     <Grid>
       <template #toolbar-actions>

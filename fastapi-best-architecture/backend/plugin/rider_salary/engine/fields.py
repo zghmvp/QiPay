@@ -100,6 +100,13 @@ DATE_FIELDS: frozenset[str] = frozenset(item.name for item in FIELDS if item.typ
 
 ALL_FIELD_NAMES: frozenset[str] = frozenset(FIELD_MAP)
 
+RETIRED_FIELDS: frozenset[str] = frozenset({'是否恶劣天气', '是否高温', '是否大促'})
+
+
+def retired_field_message(name: str) -> str:
+    """已下线字段的可见硬失败文案"""
+    return f'字段「{name}」已下线，不可用于方案项'
+
 
 def get_field(name: str) -> FieldSpec | None:
     """按中文名取字段定义"""

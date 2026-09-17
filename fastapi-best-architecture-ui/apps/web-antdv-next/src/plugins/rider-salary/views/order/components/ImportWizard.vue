@@ -5,6 +5,7 @@ import type { RecalcJobDetail } from '../../../types/dashboard';
 import type { ImportErrorItem, ImportResult } from '../../../types/order';
 
 import { computed, onUnmounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { useVbenModal } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
@@ -22,6 +23,7 @@ import { IMPORT_BATCH_STATUS_OPTIONS } from '../../../constants/enums';
 
 const MAX_SIZE = 10 * 1024 * 1024;
 const ACCEPT = '.xlsx,.xls,.csv';
+const router = useRouter();
 
 const step = ref(0);
 const siteId = ref<number>();
@@ -45,6 +47,28 @@ const recalcStatusText = computed(() => {
   if (!job) return '';
   return job.status_label || job.status;
 });
+
+const failedPeriodIds = computed(() => {
+  const payload = recalcJob.value?.payload;
+  const ids = payload?.failed_period_ids ?? [];
+  const extra = (payload?.failed ?? [])
+    .map((row) => Number(row.period_id))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return [...new Set([...ids.map(Number), ...extra].filter((n) => n > 0))];
+});
+
+const recalcFailed = computed(() => {
+  const job = recalcJob.value;
+  if (!job) return false;
+  return (
+    job.status === 'failed' ||
+    (job.failed_rider_count ?? job.payload?.failed_rider_count ?? 0) > 0
+  );
+});
+
+function goCalcPage(periodId: number) {
+  void router.push({ path: `/rider-salary/period/${periodId}/calculate` });
+}
 
 const errorColumns = [
   { dataIndex: 'row', title: '行号', width: 80 },
@@ -277,19 +301,31 @@ onUnmounted(stopPoll);
             :description="recalcJob.message || '正在计算相关开放周期…'"
           />
           <a-alert
-            v-else-if="recalcJob.status === 'done'"
+            v-else-if="recalcJob.status === 'done' && !recalcFailed"
             show-icon
             type="success"
             message="重算状态：完成"
             :description="recalcJob.message || '相关周期已重算完成'"
           />
           <a-alert
-            v-else-if="recalcJob.status === 'failed'"
+            v-else-if="recalcFailed"
             show-icon
             type="error"
-            message="重算状态：失败"
-            :description="recalcJob.message || '重算失败，可重试'"
+            data-testid="import-recalc-failed"
+            :message="`重算状态：${recalcJob.message?.includes('部分失败') ? '部分失败' : '失败'}`"
+            :description="recalcJob.message || '重算失败，可到算薪页查看失败清单'"
           />
+          <div v-if="recalcFailed && failedPeriodIds.length" class="mt-2 flex flex-wrap gap-2">
+            <a-button
+              v-for="pid in failedPeriodIds"
+              :key="pid"
+              size="small"
+              data-testid="import-recalc-goto-calc"
+              @click="goCalcPage(pid)"
+            >
+              去算薪页 #{{ pid }}
+            </a-button>
+          </div>
           <a-button
             v-if="recalcJob?.status === 'failed'"
             class="mt-2"

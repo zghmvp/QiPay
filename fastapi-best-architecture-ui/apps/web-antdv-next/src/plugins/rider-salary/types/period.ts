@@ -33,6 +33,7 @@ export interface PeriodResult {
 }
 
 export interface PeriodWithPayrolls extends PeriodResult {
+  last_calc_failures?: CalculateRiderFailure[];
   payrolls: PayrollSummary[];
 }
 
@@ -40,6 +41,7 @@ export interface PeriodQuery extends PageParams {
   month?: string;
   rider_id?: number;
   site_id?: number;
+  stale?: boolean | string;
   status?: string;
 }
 

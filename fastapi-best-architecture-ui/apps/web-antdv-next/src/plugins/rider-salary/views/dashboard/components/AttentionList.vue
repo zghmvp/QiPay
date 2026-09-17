@@ -1,15 +1,10 @@
 <script lang="ts" setup>
 import type { DashboardAttentionBlock } from '../../../types/dashboard';
 
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { useAccess } from '@vben/access';
-import { confirm } from '@vben/common-ui';
-
-import { message } from 'antdv-next';
-
-import { calculatePeriodApi } from '../../../api/period';
 import MoneyText from '../../../components/MoneyText.vue';
 import StatusTag from '../../../components/StatusTag.vue';
 import {
@@ -22,14 +17,8 @@ const props = defineProps<{
   blocks: DashboardAttentionBlock[];
 }>();
 
-const emit = defineEmits<{
-  refreshed: [];
-}>();
-
 const router = useRouter();
 const { hasAccessByCodes } = useAccess();
-const recalculating = ref<null | number>(null);
-
 const visible = computed(() =>
   props.blocks.filter((block) => block.count > 0),
 );
@@ -141,8 +130,16 @@ function rowLink(block: DashboardAttentionBlock, record: Record<string, unknown>
     }
     case 'no_plan_days': {
       const riderId = Number(record.rider_id);
+      const siteId = Number(record.site_id);
+      const month = String(record.month ?? '');
+      const params = new URLSearchParams({ tab: 'binding' });
+      if (Number.isFinite(riderId) && riderId > 0)
+        params.set('rider_id', String(riderId));
+      if (Number.isFinite(siteId) && siteId > 0)
+        params.set('site_id', String(siteId));
+      if (month) params.set('month', month);
       return Number.isFinite(riderId) && riderId > 0
-        ? `/rider-salary/rider?rider_id=${riderId}&tab=binding`
+        ? `/rider-salary/rider?${params}`
         : block.link;
     }
     case 'pending_advances':
@@ -167,44 +164,16 @@ function onRowClick(block: DashboardAttentionBlock, record: Record<string, unkno
   go(rowLink(block, record));
 }
 
-async function onRecalculate(
+function onRecalculate(
   event: Event,
   record: Record<string, unknown>,
 ) {
   event.stopPropagation();
   const periodId = Number(record.period_id);
   if (!Number.isFinite(periodId) || periodId <= 0) return;
-  try {
-    await confirm({
-      content: `确认立即重算周期「${String(record.range ?? periodId)}」？将按当前数据重新计算该周期内骑手薪资。`,
-      icon: 'warning',
-    });
-  } catch {
-    return;
-  }
-  recalculating.value = periodId;
-  try {
-    const res = await calculatePeriodApi(periodId, {});
-    const failedCount = res.failed?.length ?? 0;
-    if (res.queued) {
-      message.info('算薪已转入后台处理');
-    } else if (failedCount > 0) {
-      const detail = (res.failed ?? [])
-        .map((row) => {
-          const who = row.job_no ? `工号 ${row.job_no}` : `骑手 #${row.rider_id}`;
-          return `${who}：${(row.errors ?? []).join('；')}`;
-        })
-        .join('；');
-      message.error(
-        `算薪部分失败：成功 ${res.calculated} 人，失败 ${failedCount} 人。${detail}`,
-      );
-    } else {
-      message.success(`已计算 ${res.calculated} 名骑手`);
-    }
-    emit('refreshed');
-  } finally {
-    recalculating.value = null;
-  }
+  void router.push({
+    path: `/rider-salary/period/${periodId}/calculate`,
+  });
 }
 
 function daysLeftText(value: unknown) {
@@ -277,7 +246,7 @@ function daysLeftText(value: unknown) {
                 v-if="canCalculate"
                 size="small"
                 type="link"
-                :loading="recalculating === Number(record.period_id)"
+                data-testid="stale-goto-calculate"
                 @click="(e: Event) => onRecalculate(e, record)"
               >
                 立即重算
