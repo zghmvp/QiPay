@@ -11,6 +11,7 @@ from backend.plugin.rider_salary.model.payroll_detail import RiderSalaryPayrollD
 from backend.plugin.rider_salary.model.plan import RiderSalaryPlan as RiderSalaryPlan
 from backend.plugin.rider_salary.model.plan_item import RiderSalaryPlanItem as RiderSalaryPlanItem
 from backend.plugin.rider_salary.model.plan_version import RiderSalaryPlanVersion as RiderSalaryPlanVersion
+from backend.plugin.rider_salary.model.recalc_job import RiderSalaryRecalcJob as RiderSalaryRecalcJob
 from backend.plugin.rider_salary.model.rider import RiderSalaryRider as RiderSalaryRider
 from backend.plugin.rider_salary.model.rider_employ_history import (
     RiderSalaryRiderEmployHistory as RiderSalaryRiderEmployHistory,

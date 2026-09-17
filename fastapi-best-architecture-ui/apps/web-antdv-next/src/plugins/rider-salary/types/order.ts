@@ -60,6 +60,7 @@ export interface ImportResult {
   batch_id?: null | number;
   errors: ImportErrorItem[];
   failed_rows: number;
+  recalc_job_id?: null | number;
   status: string;
   success_rows: number;
   total_rows: number;

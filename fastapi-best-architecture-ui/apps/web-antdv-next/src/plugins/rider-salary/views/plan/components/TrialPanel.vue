@@ -22,6 +22,8 @@ const siteId = ref<number>();
 const riderId = ref<number>();
 const range = ref<[string, string]>(lastNaturalMonth());
 const result = ref<TrialResult>();
+/** full_version = 整版试算；binding_segments = 按绑定分段 */
+const trialMode = ref<'binding_segments' | 'full_version'>('full_version');
 
 const [Drawer, drawerApi] = useVbenDrawer({
   class: 'w-[960px]',
@@ -37,6 +39,7 @@ const [Drawer, drawerApi] = useVbenDrawer({
     riderId.value = undefined;
     range.value = lastNaturalMonth();
     result.value = undefined;
+    trialMode.value = 'full_version';
   },
 });
 
@@ -97,14 +100,21 @@ async function runTrial() {
   try {
     const data = await trialPlanVersionApi(pk, {
       end_date: range.value[1],
+      mode: trialMode.value,
       rider_id: riderId.value,
       start_date: range.value[0],
     });
     result.value = data;
     if (data.passed) {
-      message.success('试算通过');
-      drawerApi.getData<{ onSuccess?: () => void }>()?.onSuccess?.();
-      emit('success');
+      message.success(
+        trialMode.value === 'binding_segments'
+          ? '分段试算完成'
+          : '试算通过',
+      );
+      if (trialMode.value === 'full_version') {
+        drawerApi.getData<{ onSuccess?: () => void }>()?.onSuccess?.();
+        emit('success');
+      }
     } else {
       message.warning('试算未通过，请查看警告');
     }
@@ -145,8 +155,20 @@ const periodColumns = [
       <a-alert
         type="info"
         show-icon
-        message="试算含已录入奖惩，不含预支抵扣。假定该版本在区间内全程生效。"
+        :message="
+          trialMode === 'binding_segments'
+            ? '按绑定分段试算：使用骑手真实方案绑定切段，含已录入奖惩，不含预支抵扣。换绑场景下「周期有效单量」与「方案期内单量」可不相等。本模式不写入启用门槛。'
+            : '整版试算：假定该版本在区间内全程生效，含已录入奖惩，不含预支抵扣。通过后可启用该版本。'
+        "
       />
+      <a-radio-group
+        v-model:value="trialMode"
+        button-style="solid"
+        data-testid="trial-mode"
+      >
+        <a-radio-button value="full_version">整版试算</a-radio-button>
+        <a-radio-button value="binding_segments">按绑定分段试算</a-radio-button>
+      </a-radio-group>
       <div class="flex flex-wrap gap-2">
         <SiteSelect v-model:value="siteId" />
         <RiderSelect v-model:value="riderId" :site-id="siteId" />
@@ -157,13 +179,16 @@ const periodColumns = [
           v-if="!result"
           description="选择站点、骑手与日期后点击「开始试算」"
         />
-        <div v-else class="flex flex-col gap-3">
+        <div v-else class="flex flex-col gap-3" data-testid="trial-result">
           <a-card v-if="orderCompare" size="small" class="border-primary/30">
             <div class="mb-2 text-sm font-medium">单量口径对照</div>
             <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
               <div class="rounded bg-muted/40 px-3 py-2">
                 <div class="text-muted-foreground text-xs">周期有效单量</div>
-                <div class="text-xl font-semibold tabular-nums">
+                <div
+                  class="text-xl font-semibold tabular-nums"
+                  data-testid="trial-valid-order-count"
+                >
                   {{ orderCompare.valid }}
                 </div>
                 <div class="text-muted-foreground mt-1 text-xs">
@@ -172,11 +197,14 @@ const periodColumns = [
               </div>
               <div class="rounded bg-muted/40 px-3 py-2">
                 <div class="text-muted-foreground text-xs">方案期内单量</div>
-                <div class="text-xl font-semibold tabular-nums">
+                <div
+                  class="text-xl font-semibold tabular-nums"
+                  data-testid="trial-plan-order-count"
+                >
                   {{ orderCompare.plan }}
                 </div>
                 <div class="text-muted-foreground mt-1 text-xs">
-                  本版本生效段内 completed 单量（多段为合计）
+                  各绑定生效段内 completed 单量合计（无方案日不计）
                 </div>
               </div>
             </div>
@@ -187,19 +215,23 @@ const periodColumns = [
               :message="
                 orderCompare.differs
                   ? '两值不同：阶梯/提成请确认公式字段选「周期有效单量」还是「方案期内单量」。'
-                  : '试算假定本版本全程生效，两值通常相等；跨段换绑后「方案期内单量」按段独立，会与整期有效单量不同。'
+                  : trialMode === 'full_version'
+                    ? '整版试算假定本版本全程生效，两值通常相等；请切换「按绑定分段试算」验证换绑分叉。'
+                    : '当前绑定在区间内未产生口径分叉（可能无换绑或无方案日无单）。'
               "
             />
             <div
               v-if="orderCompare.segments.length > 1"
               class="text-muted-foreground mt-2 space-y-1 text-xs"
+              data-testid="trial-segment-counts"
             >
               <div
                 v-for="seg in orderCompare.segments"
                 :key="`${seg.plan_version_id}-${seg.start_date}`"
               >
-                段 v{{ seg.plan_version_id }} {{ seg.start_date }}~{{ seg.end_date }}：方案期内
-                {{ seg.plan_order_count }} 单
+                段 {{ seg.start_date }}~{{ seg.end_date }}（版本
+                {{ seg.plan_version_id }}）：方案期内单量
+                {{ seg.plan_order_count }}
               </div>
             </div>
           </a-card>

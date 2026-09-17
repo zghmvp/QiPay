@@ -120,6 +120,17 @@ function onSelect(date: string, inMonth: boolean) {
   drawerOpen.value = true;
 }
 
+function goBindingFromCell(_date: string) {
+  if (!riderId.value) {
+    message.warning('请先选择骑手');
+    return;
+  }
+  void router.push({
+    path: `/rider-salary/rider/${riderId.value}`,
+    query: { tab: 'binding' },
+  });
+}
+
 function onShiftDate(date: string) {
   selectedDate.value = date;
   drawerOpen.value = true;
@@ -243,6 +254,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           :month="month"
           :plan-bands="data?.plan_bands ?? []"
           :selected-date="selectedDate"
+          @bind-plan="goBindingFromCell"
           @select="onSelect"
         />
       </div>

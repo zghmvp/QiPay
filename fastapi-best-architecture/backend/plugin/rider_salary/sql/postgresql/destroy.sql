@@ -14,6 +14,7 @@ drop table if exists rs_payroll_daily;
 drop table if exists rs_payroll;
 drop table if exists rs_adjustment;
 drop table if exists rs_order;
+drop table if exists rs_recalc_job;
 drop table if exists rs_import_batch;
 drop table if exists rs_advance;
 drop table if exists rs_day_flag;

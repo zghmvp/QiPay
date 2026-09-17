@@ -4,7 +4,7 @@ from typing import Any, Self
 from pydantic import ConfigDict, Field, model_validator
 
 from backend.common.schema import SchemaBase
-from backend.plugin.rider_salary.enums import CalcStage
+from backend.plugin.rider_salary.enums import CalcStage, TrialMode
 from backend.plugin.rider_salary.schema.plan import GetPlanBrief
 from backend.plugin.rider_salary.utils.item_summary import build_item_summary
 
@@ -89,3 +89,7 @@ class TrialPlanVersionParam(SchemaBase):
     rider_id: int = Field(description='骑手 ID')
     start_date: date = Field(description='开始日期')
     end_date: date = Field(description='结束日期')
+    mode: TrialMode = Field(
+        TrialMode.full_version,
+        description='试算模式：整版试算（假定本版本全程生效）或按绑定分段试算',
+    )

@@ -42,3 +42,44 @@ export interface DashboardSummary {
   top_riders: DashboardTopRiders;
   trend: DashboardTrendPoint[];
 }
+
+export interface BatchRecalcStaleParam {
+  month: string;
+  site_id: number;
+}
+
+export interface BatchRecalcStalePreview {
+  month: string;
+  period_count: number;
+  period_ranges: string[];
+  site_id: number;
+  site_name: string;
+  stale_rider_count: number;
+}
+
+export interface BatchRecalcStaleResult {
+  job_id: number;
+  message: string;
+  period_count: number;
+  queued: boolean;
+  rider_count: number;
+  site_name: string;
+}
+
+export interface RecalcJobDetail {
+  done_periods: number;
+  finished_time?: null | string;
+  id: number;
+  message?: null | string;
+  month?: null | string;
+  operator_id: number;
+  rider_count: number;
+  site_id: number;
+  source: string;
+  source_id?: null | number;
+  source_label?: string;
+  started_time?: null | string;
+  status: string;
+  status_label?: string;
+  total_periods: number;
+}

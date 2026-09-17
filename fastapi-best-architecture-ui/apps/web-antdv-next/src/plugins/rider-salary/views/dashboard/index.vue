@@ -4,9 +4,16 @@ import type { DashboardSummary } from '../../types/dashboard';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { VbenButton } from '@vben/common-ui';
+import { useAccess } from '@vben/access';
+import { VbenButton, confirm } from '@vben/common-ui';
 
-import { getDashboardSummaryApi } from '../../api/dashboard';
+import { message } from 'antdv-next';
+
+import {
+  getDashboardSummaryApi,
+  previewStaleBatchRecalcApi,
+  submitStaleBatchRecalcApi,
+} from '../../api/dashboard';
 import SiteSelect from '../../components/SiteSelect.vue';
 import { currentMonth } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
@@ -17,6 +24,7 @@ import TrendChart from './components/TrendChart.vue';
 
 const route = useRoute();
 const router = useRouter();
+const { hasAccessByCodes } = useAccess();
 
 function queryNum(key: string) {
   const raw = route.query[key];
@@ -35,6 +43,16 @@ const month = ref(queryStr('month') || currentMonth());
 const loading = ref(false);
 const failed = ref(false);
 const summary = ref<DashboardSummary>();
+const batchRecalcing = ref(false);
+
+const canCalculate = computed(() =>
+  hasAccessByCodes(['rs:period:calculate']),
+);
+
+const staleCount = computed(() => {
+  const block = summary.value?.attention?.find((b) => b.key === 'stale_periods');
+  return block?.count ?? 0;
+});
 
 const trendVisible = computed(() => {
   const points = summary.value?.trend ?? [];
@@ -100,6 +118,45 @@ async function load() {
   }
 }
 
+async function onBatchRecalcStale() {
+  if (!siteId.value) {
+    message.warning('请先选择单个站点后再批量重算');
+    return;
+  }
+  let preview;
+  try {
+    preview = await previewStaleBatchRecalcApi({
+      month: month.value,
+      site_id: siteId.value,
+    });
+  } catch {
+    return;
+  }
+  if (!preview.period_count) {
+    message.info('本站本月暂无需要重算的周期');
+    return;
+  }
+  try {
+    await confirm({
+      content: `确认对站点「${preview.site_name}」${preview.month} 批量重算？涉及 ${preview.period_count} 个周期、${preview.stale_rider_count} 名骑手需重算。取消则数据不变。`,
+      icon: 'warning',
+    });
+  } catch {
+    return;
+  }
+  batchRecalcing.value = true;
+  try {
+    const res = await submitStaleBatchRecalcApi({
+      month: month.value,
+      site_id: siteId.value,
+    });
+    message.success(res.message || '已提交批量重算');
+    await load();
+  } finally {
+    batchRecalcing.value = false;
+  }
+}
+
 watch([siteId, month], () => {
   syncQuery();
   load();
@@ -119,9 +176,17 @@ load();
           value-format="YYYY-MM"
         />
         <VbenButton variant="outline" @click="load">刷新</VbenButton>
+        <VbenButton
+          v-if="canCalculate"
+          :disabled="!siteId || staleCount === 0"
+          :loading="batchRecalcing"
+          data-testid="stale-batch-recalc"
+          @click="onBatchRecalcStale"
+        >
+          本站本月批量重算
+        </VbenButton>
       </div>
 
-      <!-- 模块级 skeleton：首屏加载 -->
       <div v-if="loading && !summary" class="flex flex-col gap-4">
         <a-skeleton active :paragraph="{ rows: 2 }" />
         <a-card size="small">
@@ -158,6 +223,7 @@ load();
           <AttentionList
             v-if="attentionVisible"
             :blocks="summary.attention ?? []"
+            data-testid="dashboard-attention"
             @refreshed="load"
           />
           <a-collapse

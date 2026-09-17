@@ -930,9 +930,14 @@ async def trial_rider_range(
     rider_id: int,
     start: date,
     end: date,
-    forced_plan_version: RiderSalaryPlanVersion,
+    forced_plan_version: RiderSalaryPlanVersion | None = None,
 ) -> CalcResult:
-    """试算：假定该版本在区间内全程生效，不落库、不抵扣预支"""
+    """
+    试算，不落库、不抵扣预支。
+
+    - forced_plan_version 有值：整版试算，假定该版本在区间内全程生效
+    - forced_plan_version 为 None：按骑手真实绑定分段试算（换绑时可分叉双单量）
+    """
     from types import SimpleNamespace
 
     rider = await db.scalar(

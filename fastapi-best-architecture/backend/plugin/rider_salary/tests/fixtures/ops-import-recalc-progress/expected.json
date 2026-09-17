@@ -1,0 +1,12 @@
+{
+  "feature": "ops-import-recalc-progress",
+  "min_rows": 500,
+  "duplicate_order_no": "DUP-RECALC-001",
+  "expected": {
+    "statuses": ["queued", "running", "done", "failed"],
+    "status_labels": ["排队中", "计算中", "完成", "失败"],
+    "import_result_has_recalc_job_id": true,
+    "failed_retryable": true,
+    "no_celery": true
+  }
+}

@@ -16,6 +16,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  bindPlan: [];
   click: [];
 }>();
 
@@ -39,11 +40,16 @@ const showNet = computed(() => {
 const tooltip = computed(() => {
   if (!props.inMonth) return undefined;
   if (status.value === 'not_imported') return '未导入';
-  if (status.value === 'no_plan') return '无方案';
+  if (status.value === 'no_plan') return '无方案：可点击「去绑方案」';
   if (status.value === 'no_orders') return '无数据';
   if (props.item?.is_locked) return '已锁账';
   return undefined;
 });
+
+function onBind(e: Event) {
+  e.stopPropagation();
+  emit('bindPlan');
+}
 </script>
 
 <template>
@@ -60,6 +66,8 @@ const tooltip = computed(() => {
         'bg-primary/5': selected && inMonth,
       }"
       type="button"
+      :data-testid="inMonth ? `calendar-day-${date}` : undefined"
+      :data-day-status="status"
       @click="emit('click')"
     >
       <div class="absolute left-1.5 top-5 text-xs leading-none">{{ dayNo }}</div>
@@ -86,7 +94,20 @@ const tooltip = computed(() => {
         {{ orderText }}
       </div>
       <div
-        v-if="inMonth && item && (showNet || subjects.length)"
+        v-if="inMonth && status === 'no_plan'"
+        class="mt-1"
+      >
+        <a
+          class="text-primary text-[11px] leading-tight underline"
+          data-testid="calendar-bind-plan"
+          href="javascript:void(0)"
+          @click="onBind"
+        >
+          去绑方案
+        </a>
+      </div>
+      <div
+        v-else-if="inMonth && item && (showNet || subjects.length)"
         class="mt-1 truncate text-[11px] leading-tight"
       >
         <MoneyText v-if="showNet" signed :value="item.net_adjust" />

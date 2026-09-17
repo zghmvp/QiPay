@@ -1,15 +1,20 @@
 <script lang="ts" setup>
 import type { UploadChangeParam, UploadFile } from 'antdv-next';
 
+import type { RecalcJobDetail } from '../../../types/dashboard';
 import type { ImportErrorItem, ImportResult } from '../../../types/order';
 
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
 import { message } from 'antdv-next';
 
+import {
+  getRecalcJobApi,
+  retryRecalcJobApi,
+} from '../../../api/dashboard';
 import { downloadErrorReportApi, importOrdersApi } from '../../../api/order';
 import SiteSelect from '../../../components/SiteSelect.vue';
 import StatusTag from '../../../components/StatusTag.vue';
@@ -25,6 +30,9 @@ const autoRecalc = ref(false);
 const fileList = ref<UploadFile[]>([]);
 const submitting = ref(false);
 const result = ref<ImportResult>();
+const recalcJob = ref<RecalcJobDetail>();
+const retrying = ref(false);
+let pollTimer: null | ReturnType<typeof setInterval> = null;
 
 const confirmText = computed(() => {
   if (step.value === 0) return '开始导入';
@@ -32,11 +40,41 @@ const confirmText = computed(() => {
   return '查看本批次订单';
 });
 
+const recalcStatusText = computed(() => {
+  const job = recalcJob.value;
+  if (!job) return '';
+  return job.status_label || job.status;
+});
+
 const errorColumns = [
   { dataIndex: 'row', title: '行号', width: 80 },
   { dataIndex: 'order_no', title: '订单号' },
   { dataIndex: 'reason', title: '失败原因' },
 ];
+
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+async function refreshRecalcJob(jobId: number) {
+  const job = await getRecalcJobApi(jobId);
+  recalcJob.value = job;
+  if (job.status === 'done' || job.status === 'failed') {
+    stopPoll();
+  }
+  return job;
+}
+
+function startPoll(jobId: number) {
+  stopPoll();
+  void refreshRecalcJob(jobId);
+  pollTimer = setInterval(() => {
+    void refreshRecalcJob(jobId).catch(() => stopPoll());
+  }, 1500);
+}
 
 function currentFile(): File | undefined {
   const item = fileList.value[0];
@@ -86,6 +124,10 @@ async function doImport() {
       site_id: siteId.value,
       skip_errors: skipErrors.value,
     });
+    const jobId = result.value?.recalc_job_id;
+    if (jobId) {
+      startPoll(jobId);
+    }
     return true;
   } finally {
     submitting.value = false;
@@ -100,6 +142,20 @@ async function downloadReport() {
     return;
   }
   await downloadErrorReportApi(batchId);
+}
+
+async function onRetryRecalc() {
+  const jobId = recalcJob.value?.id ?? result.value?.recalc_job_id;
+  if (!jobId) return;
+  retrying.value = true;
+  try {
+    const job = await retryRecalcJobApi(jobId);
+    recalcJob.value = job;
+    message.info('已重新排队重算');
+    startPoll(job.id);
+  } finally {
+    retrying.value = false;
+  }
 }
 
 const [Modal, modalApi] = useVbenModal({
@@ -125,16 +181,22 @@ const [Modal, modalApi] = useVbenModal({
     await modalApi.close();
   },
   onOpenChange(isOpen) {
-    if (!isOpen) return;
+    if (!isOpen) {
+      stopPoll();
+      return;
+    }
     step.value = 0;
     siteId.value = undefined;
     skipErrors.value = false;
     autoRecalc.value = false;
     fileList.value = [];
     result.value = undefined;
+    recalcJob.value = undefined;
     modalApi.setState({ confirmText: '开始导入' });
   },
 });
+
+onUnmounted(stopPoll);
 </script>
 
 <template>
@@ -195,14 +257,49 @@ const [Modal, modalApi] = useVbenModal({
           :row-key="(row: ImportErrorItem) => `${row.row}-${row.order_no}`"
         />
         <a-empty v-else-if="result && result.failed_rows === 0" class="mt-3" description="全部导入成功" />
-        <a-alert
+        <div
           v-if="result && autoRecalc && result.success_rows > 0"
           class="mt-3"
-          show-icon
-          type="info"
-          message="已触发后台重算"
-          description="导入成功后的重算在服务端后台执行，当前无进度条（未启用独立任务队列）。完成后请到结算周期页查看是否仍有「需重算」。"
-        />
+          data-testid="import-recalc-status"
+        >
+          <a-alert
+            v-if="!recalcJob || recalcJob.status === 'queued'"
+            show-icon
+            type="info"
+            :message="`重算状态：${recalcStatusText || '排队中'}`"
+            description="导入已入库，正在排队重算。完成前请勿当作已出账。"
+          />
+          <a-alert
+            v-else-if="recalcJob.status === 'running'"
+            show-icon
+            type="info"
+            :message="`重算状态：计算中（${recalcJob.done_periods}/${recalcJob.total_periods}）`"
+            :description="recalcJob.message || '正在计算相关开放周期…'"
+          />
+          <a-alert
+            v-else-if="recalcJob.status === 'done'"
+            show-icon
+            type="success"
+            message="重算状态：完成"
+            :description="recalcJob.message || '相关周期已重算完成'"
+          />
+          <a-alert
+            v-else-if="recalcJob.status === 'failed'"
+            show-icon
+            type="error"
+            message="重算状态：失败"
+            :description="recalcJob.message || '重算失败，可重试'"
+          />
+          <a-button
+            v-if="recalcJob?.status === 'failed'"
+            class="mt-2"
+            :loading="retrying"
+            data-testid="import-recalc-retry"
+            @click="onRetryRecalc"
+          >
+            重试重算
+          </a-button>
+        </div>
         <a-button
           v-if="result?.batch_id && result.failed_rows > 0"
           class="mt-3"
@@ -214,8 +311,13 @@ const [Modal, modalApi] = useVbenModal({
     </div>
     <div v-else class="py-6 text-center">
       <p>导入流程已完成。</p>
-      <p v-if="autoRecalc && result && result.success_rows > 0" class="text-muted-foreground mt-2 text-sm">
-        若勾选了自动重算，请稍后到结算周期页确认结果。
+      <p
+        v-if="recalcJob"
+        class="text-muted-foreground mt-2 text-sm"
+        data-testid="import-recalc-final"
+      >
+        重算：{{ recalcStatusText }}
+        <template v-if="recalcJob.message">（{{ recalcJob.message }}）</template>
       </p>
       <p v-if="result?.batch_id" class="text-muted-foreground mt-2 text-sm">
         点击下方按钮查看本批次订单
