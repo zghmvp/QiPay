@@ -30,6 +30,7 @@ _SITE_FIELDS = (
     'settle_cycle',
     'cycle_config',
     'advance_limit',
+    'monthly_advance_limit',
     'dept_id',
     'status',
     'remark',
@@ -123,6 +124,8 @@ class SiteService:
         if await site_dao.get_by_code(db, obj.code):
             raise errors.ConflictError(msg='站点编码已存在')
         SiteService._validate_cycle(obj.settle_cycle, obj.cycle_config)
+        if obj.monthly_advance_limit is None:
+            obj = obj.model_copy(update={'monthly_advance_limit': 1})
         site = await site_dao.create(db, obj)
         await audit_service.record(
             db,
@@ -172,6 +175,8 @@ class SiteService:
             )
             if locked is not None:
                 extra_desc = '仅影响未来周期'
+        if obj.monthly_advance_limit is None and 'monthly_advance_limit' in obj.model_fields_set:
+            obj = obj.model_copy(update={'monthly_advance_limit': 1})
         before = snapshot(site, _SITE_FIELDS)
         count = await site_dao.update(db, pk, obj)
         updated = await site_dao.get(db, pk)

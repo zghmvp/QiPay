@@ -5,7 +5,7 @@ import anyio
 from backend.utils.sql_parser import parse_sql_script
 
 SQL_ROOT = Path(__file__).resolve().parents[1] / 'sql'
-SQL_FILES = sorted(SQL_ROOT.glob('*/*.sql'))
+SQL_FILES = sorted(path for dialect in ('mysql', 'postgresql') for path in (SQL_ROOT / dialect).glob('*.sql'))
 
 
 def test_plugin_sql_files_exist() -> None:
