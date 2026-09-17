@@ -61,6 +61,11 @@ export async function deletePeriodApi(pk: number) {
   return requestClient.delete(`${BASE}/${pk}`);
 }
 
-export async function exportPeriodApi(pk: number) {
-  return downloadNamedBlob(`${BASE}/${pk}/export`, `周期薪资-${pk}.xlsx`);
+export async function exportPeriodApi(
+  pk: number,
+  params?: { exclude_attention?: boolean },
+) {
+  return downloadNamedBlob(`${BASE}/${pk}/export`, `周期薪资-${pk}.xlsx`, {
+    params: { exclude_attention: Boolean(params?.exclude_attention) },
+  });
 }
