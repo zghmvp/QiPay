@@ -60,10 +60,20 @@ const initialSubjectId = queryNum('subject_id');
 const initialId = queryNum('id');
 const initialDateFrom = queryStr('date_from');
 const initialDateTo = queryStr('date_to');
+const initialDate = queryStr('date');
 const initialDateRange =
-  initialDateFrom && initialDateTo
-    ? [initialDateFrom, initialDateTo]
-    : undefined;
+  initialDateFrom || initialDateTo
+    ? [initialDateFrom || initialDateTo, initialDateTo || initialDateFrom]
+    : initialDate
+      ? [initialDate, initialDate]
+      : undefined;
+const dateWindowHint = computed(() => {
+  if (!initialDateRange) return '';
+  const [from, to] = initialDateRange;
+  return from === to
+    ? `已按日历日期筛选 ${from}`
+    : `已按日期筛选 ${from} ~ ${to}`;
+});
 
 const formOptions: VbenFormProps = {
   collapsed: true,
@@ -220,6 +230,15 @@ const [BatchModalComp, batchModalApi] = useVbenModal({
 
 <template>
   <PageContainer>
+    <a-alert
+      v-if="dateWindowHint"
+      class="mb-2"
+      closable
+      show-icon
+      type="info"
+      data-testid="adjustment-date-window"
+      :message="dateWindowHint"
+    />
     <Grid>
       <template #toolbar-actions>
         <VbenButton

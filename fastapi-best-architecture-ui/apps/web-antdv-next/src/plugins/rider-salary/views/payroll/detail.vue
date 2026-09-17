@@ -50,6 +50,19 @@ const filteredDetails = computed(() => {
   return rows.filter((row) => row.subject_id === subjectFilter.value);
 });
 
+const subjectFilterName = computed(() => {
+  const id = subjectFilter.value;
+  if (id == null) return '';
+  const hit = (detail.value?.subject_breakdown ?? []).find(
+    (item) => item.subject_id === id,
+  );
+  if (hit?.subject_name) return hit.subject_name;
+  const row = Object.values(detail.value?.details ?? {})
+    .flat()
+    .find((item) => item.subject_id === id);
+  return row?.subject_name || row?.subject_code || '';
+});
+
 const detailColumns = [
   { dataIndex: 'biz_date', title: '日期', width: 110 },
   { dataIndex: 'name', key: 'name', title: '项名称' },
@@ -565,9 +578,13 @@ onMounted(() => {
           </a-tab-pane>
 
           <a-tab-pane key="details" tab="阶段明细">
-            <div v-if="subjectFilter != null" class="mb-2">
+            <div
+              v-if="subjectFilter != null"
+              class="mb-2"
+              data-testid="payroll-subject-filter"
+            >
               <a-tag closable @close="clearSubjectFilter">
-                已筛选科目 ID {{ subjectFilter }}
+                已筛选：{{ subjectFilterName || '当前科目' }}
               </a-tag>
             </div>
             <a-table

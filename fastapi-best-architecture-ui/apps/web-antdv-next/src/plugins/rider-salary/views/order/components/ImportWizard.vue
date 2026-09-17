@@ -16,10 +16,16 @@ import {
   getRecalcJobApi,
   retryRecalcJobApi,
 } from '../../../api/dashboard';
-import { downloadErrorReportApi, importOrdersApi } from '../../../api/order';
+import { downloadErrorReportApi, getImportBatchApi, importOrdersApi } from '../../../api/order';
+import { getPeriodListApi } from '../../../api/period';
 import SiteSelect from '../../../components/SiteSelect.vue';
 import StatusTag from '../../../components/StatusTag.vue';
 import { IMPORT_BATCH_STATUS_OPTIONS } from '../../../constants/enums';
+import { currentMonth } from '../../../utils/date';
+import {
+  rememberImportCalcTarget,
+  rememberRecalcJob,
+} from '../../../utils/last-recalc-job';
 
 const MAX_SIZE = 10 * 1024 * 1024;
 const ACCEPT = '.xlsx,.xls,.csv';
@@ -34,11 +40,14 @@ const submitting = ref(false);
 const result = ref<ImportResult>();
 const recalcJob = ref<RecalcJobDetail>();
 const retrying = ref(false);
+const calcPeriodIds = ref<number[]>([]);
 let pollTimer: null | ReturnType<typeof setInterval> = null;
 
 const confirmText = computed(() => {
   if (step.value === 0) return '开始导入';
-  if (step.value === 1) return '下一步';
+  if (step.value === 1) {
+    return calcPeriodIds.value.length ? '去周期算薪页' : '下一步';
+  }
   return '查看本批次订单';
 });
 
@@ -46,15 +55,6 @@ const recalcStatusText = computed(() => {
   const job = recalcJob.value;
   if (!job) return '';
   return job.status_label || job.status;
-});
-
-const failedPeriodIds = computed(() => {
-  const payload = recalcJob.value?.payload;
-  const ids = payload?.failed_period_ids ?? [];
-  const extra = (payload?.failed ?? [])
-    .map((row) => Number(row.period_id))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  return [...new Set([...ids.map(Number), ...extra].filter((n) => n > 0))];
 });
 
 const recalcFailed = computed(() => {
@@ -66,8 +66,64 @@ const recalcFailed = computed(() => {
   );
 });
 
+const recalcFailCount = computed(
+  () =>
+    recalcJob.value?.failed_rider_count ??
+    recalcJob.value?.payload?.failed_rider_count ??
+    0,
+);
+
 function goCalcPage(periodId: number) {
   void router.push({ path: `/rider-salary/period/${periodId}/calculate` });
+}
+
+function goPrimaryCalcPage() {
+  const first = calcPeriodIds.value[0];
+  if (first) goCalcPage(first);
+}
+
+async function resolveCalcPeriodIds(site: number, job?: RecalcJobDetail) {
+  const fromJob = [
+    ...(job?.payload?.failed_period_ids ?? []),
+    ...(job?.payload?.period_ids ?? []),
+    ...(job?.payload?.failed ?? []).map((row) => Number(row.period_id)),
+  ]
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (fromJob.length) {
+    calcPeriodIds.value = [...new Set(fromJob)];
+    rememberImportCalcTarget(site, calcPeriodIds.value);
+    return;
+  }
+  let month = currentMonth();
+  const batchId = result.value?.batch_id;
+  if (batchId) {
+    try {
+      const batch = await getImportBatchApi(batchId);
+      if (batch.date_from) month = batch.date_from.slice(0, 7);
+    } catch {
+      /* 批次日期拿不到时用本月 */
+    }
+  }
+  try {
+    const res = await getPeriodListApi({
+      month,
+      page: 1,
+      site_id: site,
+      size: 50,
+    });
+    const items = res?.items ?? [];
+    const openish = items.filter(
+      (row) => row.status === 'open' || row.status === 'reopened',
+    );
+    const siteLevel = openish.filter((row) => !row.rider_id);
+    calcPeriodIds.value = (siteLevel.length ? siteLevel : openish).map(
+      (row) => row.id,
+    );
+    rememberImportCalcTarget(site, calcPeriodIds.value);
+  } catch {
+    calcPeriodIds.value = [];
+  }
 }
 
 const errorColumns = [
@@ -86,6 +142,10 @@ function stopPoll() {
 async function refreshRecalcJob(jobId: number) {
   const job = await getRecalcJobApi(jobId);
   recalcJob.value = job;
+  if (siteId.value) {
+    rememberRecalcJob(siteId.value, job.id);
+    await resolveCalcPeriodIds(siteId.value, job);
+  }
   if (job.status === 'done' || job.status === 'failed') {
     stopPoll();
   }
@@ -149,6 +209,10 @@ async function doImport() {
       skip_errors: skipErrors.value,
     });
     const jobId = result.value?.recalc_job_id;
+    if (siteId.value) {
+      if (jobId) rememberRecalcJob(siteId.value, jobId);
+      await resolveCalcPeriodIds(siteId.value);
+    }
     if (jobId) {
       startPoll(jobId);
     }
@@ -195,6 +259,14 @@ const [Modal, modalApi] = useVbenModal({
       return;
     }
     if (step.value === 1) {
+      if (calcPeriodIds.value.length) {
+        goPrimaryCalcPage();
+        modalApi
+          .getData<{ onSuccess?: (batchId?: null | number) => void }>()
+          ?.onSuccess?.(result.value?.batch_id);
+        await modalApi.close();
+        return;
+      }
       step.value = 2;
       modalApi.setState({ confirmText: confirmText.value });
       return;
@@ -216,6 +288,7 @@ const [Modal, modalApi] = useVbenModal({
     fileList.value = [];
     result.value = undefined;
     recalcJob.value = undefined;
+    calcPeriodIds.value = [];
     modalApi.setState({ confirmText: '开始导入' });
   },
 });
@@ -281,6 +354,25 @@ onUnmounted(stopPoll);
           :row-key="(row: ImportErrorItem) => `${row.row}-${row.order_no}`"
         />
         <a-empty v-else-if="result && result.failed_rows === 0" class="mt-3" description="全部导入成功" />
+        <a-alert
+          v-if="result && !autoRecalc"
+          class="mt-3"
+          show-icon
+          type="warning"
+          data-testid="import-not-payroll"
+          message="导入完成 ≠ 已出账"
+          description="订单已入库，尚未计算薪资。请到周期算薪页开算，不要把导入成功当成已出账。"
+        >
+          <template v-if="calcPeriodIds.length" #action>
+            <a-button
+              type="primary"
+              data-testid="import-goto-calculate"
+              @click="goPrimaryCalcPage"
+            >
+              去周期算薪页
+            </a-button>
+          </template>
+        </a-alert>
         <div
           v-if="result && autoRecalc && result.success_rows > 0"
           class="mt-3"
@@ -312,12 +404,15 @@ onUnmounted(stopPoll);
             show-icon
             type="error"
             data-testid="import-recalc-failed"
-            :message="`重算状态：${recalcJob.message?.includes('部分失败') ? '部分失败' : '失败'}`"
+            :message="`重算状态：${recalcJob?.message?.includes('部分失败') ? '部分失败' : '失败'}${recalcFailCount ? `，失败 ${recalcFailCount} 人` : ''}`"
             :description="recalcJob.message || '重算失败，可到算薪页查看失败清单'"
           />
-          <div v-if="recalcFailed && failedPeriodIds.length" class="mt-2 flex flex-wrap gap-2">
+          <div
+            v-if="(recalcFailed || calcPeriodIds.length) && calcPeriodIds.length"
+            class="mt-2 flex flex-wrap gap-2"
+          >
             <a-button
-              v-for="pid in failedPeriodIds"
+              v-for="pid in calcPeriodIds"
               :key="pid"
               size="small"
               data-testid="import-recalc-goto-calc"
@@ -346,7 +441,7 @@ onUnmounted(stopPoll);
       </a-spin>
     </div>
     <div v-else class="py-6 text-center">
-      <p>导入流程已完成。</p>
+      <p data-testid="import-not-payroll">导入完成 ≠ 已出账。订单已入库，须到周期算薪页计算后才有薪资结果。</p>
       <p
         v-if="recalcJob"
         class="text-muted-foreground mt-2 text-sm"
@@ -355,6 +450,15 @@ onUnmounted(stopPoll);
         重算：{{ recalcStatusText }}
         <template v-if="recalcJob.message">（{{ recalcJob.message }}）</template>
       </p>
+      <div v-if="calcPeriodIds.length" class="mt-3 flex justify-center gap-2">
+        <a-button
+          type="primary"
+          data-testid="import-goto-calculate"
+          @click="goPrimaryCalcPage"
+        >
+          去周期算薪页
+        </a-button>
+      </div>
       <p v-if="result?.batch_id" class="text-muted-foreground mt-2 text-sm">
         点击下方按钮查看本批次订单
       </p>

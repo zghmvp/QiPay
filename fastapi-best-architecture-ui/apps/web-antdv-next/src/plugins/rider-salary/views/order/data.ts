@@ -75,6 +75,15 @@ export const querySchema: VbenFormSchema[] = [
     fieldName: 'is_locked',
     label: '是否锁账',
   },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: [{ label: '已完成且送达为空', value: true }],
+    },
+    fieldName: 'missing_delivery',
+    label: '缺送达',
+  },
 ];
 
 export const orderFormSchema: VbenFormSchema[] = [

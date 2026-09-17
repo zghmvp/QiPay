@@ -13,6 +13,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 
+import { getPeriodApi } from '../../api/period';
 import { getPayrollListApi } from '../../api/payroll';
 import MoneyText from '../../components/MoneyText.vue';
 import PageContainer from '../_shared/PageContainer.vue';
@@ -115,9 +116,19 @@ const [Grid, gridApi] = useVbenVxeGrid({
 });
 
 onMounted(async () => {
+  let siteId = initialSiteId;
+  let periodId = initialPeriodId;
+  if (periodId && !siteId) {
+    try {
+      const period = await getPeriodApi(periodId);
+      siteId = period.site_id;
+    } catch {
+      periodId = undefined;
+    }
+  }
   const values: Record<string, unknown> = {};
-  if (initialSiteId) values.site_id = initialSiteId;
-  if (initialPeriodId) values.period_id = initialPeriodId;
+  if (siteId) values.site_id = siteId;
+  if (periodId) values.period_id = periodId;
   if (initialRiderId) values.rider_id = initialRiderId;
   if (initialStatus) values.status = initialStatus;
   if (initialKind) values.kind = initialKind;
