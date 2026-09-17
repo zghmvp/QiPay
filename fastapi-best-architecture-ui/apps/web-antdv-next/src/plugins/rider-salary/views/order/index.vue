@@ -9,9 +9,10 @@ import type {
   VxeTableGridOptions,
 } from '#/adapter/vxe-table';
 
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useAccess } from '@vben/access';
 import { useVbenDrawer, useVbenModal, VbenButton } from '@vben/common-ui';
 import { IconifyIcon, MaterialSymbolsAdd } from '@vben/icons';
 
@@ -19,7 +20,7 @@ import { message } from 'antdv-next';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 
-import { getRecalcJobApi } from '../../api/dashboard';
+import { fetchLatestSiteRecalcJob } from '../../api/dashboard';
 import {
   deleteOrderApi,
   downloadImportTemplateApi,
@@ -45,9 +46,13 @@ function isUserCancelled(error: unknown) {
 
 const route = useRoute();
 const router = useRouter();
+const { hasAccessByCodes } = useAccess();
 const { ReasonModal, prompt } = useReasonModal();
 const lastRecalcJob = ref<RecalcJobDetail>();
 const lastImportPeriodIds = ref<number[]>([]);
+const canViewRecalcJob = computed(() =>
+  hasAccessByCodes(['rs:period:calculate']),
+);
 
 function queryStr(key: string) {
   const raw = route.query[key];
@@ -191,18 +196,13 @@ async function onImported(batchId?: null | number) {
 
 async function loadLastRecalcJob() {
   const siteId = initialSiteId || readLastRecalcJob()?.siteId;
-  const stored = readLastRecalcJob(siteId);
   lastImportPeriodIds.value =
     readLastImportCalcTarget(siteId)?.periodIds ?? [];
-  if (!stored) {
+  if (!siteId || !canViewRecalcJob.value) {
     lastRecalcJob.value = undefined;
     return;
   }
-  try {
-    lastRecalcJob.value = await getRecalcJobApi(stored.jobId);
-  } catch {
-    lastRecalcJob.value = undefined;
-  }
+  lastRecalcJob.value = (await fetchLatestSiteRecalcJob(siteId)) ?? undefined;
 }
 
 function goStoredCalc(periodId: number) {

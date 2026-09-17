@@ -10,6 +10,7 @@ import { VbenButton, confirm } from '@vben/common-ui';
 import { message } from 'antdv-next';
 
 import {
+  fetchLatestSiteRecalcJob,
   getDashboardSummaryApi,
   getRecalcJobApi,
   previewStaleBatchRecalcApi,
@@ -17,10 +18,7 @@ import {
 } from '../../api/dashboard';
 import SiteSelect from '../../components/SiteSelect.vue';
 import { currentMonth } from '../../utils/date';
-import {
-  readLastRecalcJob,
-  rememberRecalcJob,
-} from '../../utils/last-recalc-job';
+import { rememberRecalcJob } from '../../utils/last-recalc-job';
 import PageContainer from '../_shared/PageContainer.vue';
 import AttentionList from './components/AttentionList.vue';
 import StatCards from './components/StatCards.vue';
@@ -189,19 +187,13 @@ async function restoreLastJob() {
   if (batchJob.value && batchJob.value.site_id !== siteId.value) {
     batchJob.value = undefined;
   }
-  const stored = readLastRecalcJob(siteId.value);
-  if (!stored) return;
-  if (batchJob.value?.id === stored.jobId) return;
-  try {
-    batchJob.value = await getRecalcJobApi(stored.jobId);
-    if (
-      batchJob.value.status === 'queued' ||
-      batchJob.value.status === 'running'
-    ) {
-      startBatchPoll(stored.jobId);
-    }
-  } catch {
-    /* 最近任务已不存在时保持工作台可用 */
+  if (!canCalculate.value) return;
+  const job = await fetchLatestSiteRecalcJob(siteId.value);
+  if (!job) return;
+  if (batchJob.value?.id === job.id) return;
+  batchJob.value = job;
+  if (job.status === 'queued' || job.status === 'running') {
+    startBatchPoll(job.id);
   }
 }
 
