@@ -1,0 +1,49 @@
+{
+  "feature": "ops-plan-manual-not-double",
+  "extends": "ops-plan-guarantee-last",
+  "expected": {
+    "skip_if_missing": false,
+    "save_fails_on_manual_addend": true,
+    "activate_fails_on_manual_addend": true,
+    "cancel_must_not_save": true,
+    "fail_copy_booked": "手工明细已入账",
+    "fail_copy_double": "再加会双计",
+    "assembler_copy": "可作条件；加进公式 = 双计",
+    "weak_prompt_is_fail": true,
+    "condition_reference_still_legal": true,
+    "guarantee_subtract_still_legal": true,
+    "guarantee_subtract_expr": "最大值(0, 3500 − 本期已计金额 − 本期手工奖)",
+    "manual_bonus_once_amount": "200.00",
+    "manual_detail_one_line": true,
+    "gross_contains_200_once": true,
+    "formula_addend_must_not_persist": true,
+    "do_not_write_lockable_draft_manual_400": true,
+    "do_not_invent_case_no": true,
+    "do_not_gold_4629_33": true,
+    "do_not_gold_advance_800": true,
+    "do_not_relock_xor": true,
+    "do_not_relock_trial_equals_calc": true,
+    "do_not_relock_activate_not_full_trial": true,
+    "do_not_move_guarantee_after_manual": true,
+    "do_not_change_manual_include_in_gross": true,
+    "do_not_forbid_manual_entry": true,
+    "do_not_forbid_condition_reference": true,
+    "do_not_include_daily_xor": true,
+    "no_new_xor_or_gold_must_name": true,
+    "hangs_on_existing_plan_save_spec": true,
+    "existing_must_names_unchanged": [
+      "ops-plan-threshold-xor",
+      "trial-case-gold",
+      "trial-equals-calc",
+      "ops-plan-activate-not-full-trial",
+      "ops-plan-guarantee-last"
+    ],
+    "manual_fields": ["本期手工奖", "本期手工惩"],
+    "C05A_gross": "3500.00",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}
