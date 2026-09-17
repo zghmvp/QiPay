@@ -1,6 +1,7 @@
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
@@ -78,6 +79,87 @@ class CRUDAdvance(CRUDPlus[RiderSalaryAdvance]):
             )
         )
         return list(rows.all())
+
+    async def count_monthly_consumed(
+        self,
+        db: AsyncSession,
+        *,
+        rider_id: int,
+        site_id: int,
+        month_start: datetime,
+        month_end: datetime,
+        statuses: Sequence[str],
+    ) -> int:
+        """
+        骑手在某站点自然月内占用次数的预支单数量
+
+        :param db: 数据库会话
+        :param rider_id: 骑手 ID
+        :param site_id: 站点 ID
+        :param month_start: 自然月起（含）
+        :param month_end: 自然月止（不含）
+        :param statuses: 占用次数的状态
+        :return:
+        """
+        result = await db.scalar(
+            select(func.count())
+            .select_from(RiderSalaryAdvance)
+            .where(
+                RiderSalaryAdvance.rider_id == rider_id,
+                RiderSalaryAdvance.site_id == site_id,
+                RiderSalaryAdvance.status.in_(list(statuses)),
+                RiderSalaryAdvance.submit_time >= month_start,
+                RiderSalaryAdvance.submit_time < month_end,
+                RiderSalaryAdvance.deleted == 0,
+            )
+        )
+        return int(result or 0)
+
+    async def count_monthly_consumed_grouped(
+        self,
+        db: AsyncSession,
+        *,
+        rider_site_ids: set[tuple[int, int]],
+        month_start: datetime,
+        month_end: datetime,
+        statuses: Sequence[str],
+    ) -> dict[tuple[int, int], int]:
+        """
+        批量统计骑手×站点在自然月内占用的次数
+
+        :param db: 数据库会话
+        :param rider_site_ids: (骑手 ID, 站点 ID) 集合
+        :param month_start: 自然月起（含）
+        :param month_end: 自然月止（不含）
+        :param statuses: 占用次数的状态
+        :return:
+        """
+        if not rider_site_ids:
+            return {}
+        rider_ids = {rider_id for rider_id, _site_id in rider_site_ids}
+        site_ids = {site_id for _rider_id, site_id in rider_site_ids}
+        rows = await db.execute(
+            select(
+                RiderSalaryAdvance.rider_id,
+                RiderSalaryAdvance.site_id,
+                func.count(),
+            )
+            .where(
+                RiderSalaryAdvance.rider_id.in_(list(rider_ids)),
+                RiderSalaryAdvance.site_id.in_(list(site_ids)),
+                RiderSalaryAdvance.status.in_(list(statuses)),
+                RiderSalaryAdvance.submit_time >= month_start,
+                RiderSalaryAdvance.submit_time < month_end,
+                RiderSalaryAdvance.deleted == 0,
+            )
+            .group_by(RiderSalaryAdvance.rider_id, RiderSalaryAdvance.site_id)
+        )
+        result: dict[tuple[int, int], int] = {}
+        for rider_id, site_id, count in rows.all():
+            key = (int(rider_id), int(site_id))
+            if key in rider_site_ids:
+                result[key] = int(count)
+        return result
 
     async def list_by_rider(self, db: AsyncSession, rider_id: int) -> list[RiderSalaryAdvance]:
         """

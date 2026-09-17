@@ -18,7 +18,7 @@ from backend.plugin.rider_salary.model.notice import RiderSalaryNotice
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.model.rider import RiderSalaryRider
 from backend.plugin.rider_salary.model.subject import RiderSalarySubject
-from backend.plugin.rider_salary.schema.advance import CreateMeAdvanceParam, GetAdvanceDetail
+from backend.plugin.rider_salary.schema.advance import CreateMeAdvanceParam, GetAdvanceDetail, GetAdvanceMonthlyQuota
 from backend.plugin.rider_salary.schema.calendar import GetCalendarDayDetail, GetCalendarMonth
 from backend.plugin.rider_salary.schema.me import (
     GetMeAdjustmentItem,
@@ -273,6 +273,9 @@ class MeService:
     async def advance_limit(self, *, db: AsyncSession, rider: RiderSalaryRider) -> GetMeAdvanceLimit:
         data = await advance_service.limit_for_rider(db=db, rider=rider)
         return GetMeAdvanceLimit(**data)
+
+    async def advance_quota(self, *, db: AsyncSession, rider: RiderSalaryRider) -> GetAdvanceMonthlyQuota:
+        return await advance_service.monthly_quota_for_rider(db=db, rider=rider)
 
     async def advances(self, *, db: AsyncSession, rider: RiderSalaryRider) -> list[GetAdvanceDetail]:
         return await advance_service.list_for_rider(db=db, rider_id=rider.id)

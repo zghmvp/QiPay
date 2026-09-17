@@ -7,7 +7,7 @@ from backend.common.response.response_schema import ResponseModel, ResponseSchem
 from backend.common.security.jwt import DependsJwtAuth
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.model.rider import RiderSalaryRider as Rider
-from backend.plugin.rider_salary.schema.advance import CreateMeAdvanceParam, GetAdvanceDetail
+from backend.plugin.rider_salary.schema.advance import CreateMeAdvanceParam, GetAdvanceDetail, GetAdvanceMonthlyQuota
 from backend.plugin.rider_salary.schema.calendar import GetCalendarDayDetail, GetCalendarMonth
 from backend.plugin.rider_salary.schema.me import (
     GetMeAdjustmentItem,
@@ -119,7 +119,7 @@ async def get_me_notices(
 
 @router.get(
     '/advance-limit',
-    summary='获取预支额度',
+    summary='获取预支额度（金额上限与本月次数）',
     dependencies=[DependsJwtAuth],
 )
 async def get_me_advance_limit(
@@ -127,6 +127,19 @@ async def get_me_advance_limit(
     rider: Annotated[Rider, DependsCurrentRider],
 ) -> ResponseSchemaModel[GetMeAdvanceLimit]:
     data = await me_service.advance_limit(db=db, rider=rider)
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/advance-quota',
+    summary='获取本月预支次数',
+    dependencies=[DependsJwtAuth],
+)
+async def get_me_advance_quota(
+    db: CurrentSession,
+    rider: Annotated[Rider, DependsCurrentRider],
+) -> ResponseSchemaModel[GetAdvanceMonthlyQuota]:
+    data = await me_service.advance_quota(db=db, rider=rider)
     return response_base.success(data=data)
 
 

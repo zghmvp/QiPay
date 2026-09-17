@@ -11,7 +11,12 @@ from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
-from backend.plugin.rider_salary.schema.advance import AdvanceActionParam, AdvanceReasonParam, GetAdvanceDetail
+from backend.plugin.rider_salary.schema.advance import (
+    AdvanceActionParam,
+    AdvanceReasonParam,
+    GetAdvanceDetail,
+    GetAdvanceMonthlyQuota,
+)
 from backend.plugin.rider_salary.service.advance_service import advance_service
 
 router = APIRouter()
@@ -48,6 +53,25 @@ async def export_advances(
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': f"attachment; filename*=UTF-8''{quote(filename)}"},
     )
+
+
+@router.get(
+    '/quota',
+    summary='获取骑手本月预支次数',
+    dependencies=[
+        DependsJwtAuth,
+        Depends(RequestPermission('rs:advance:approve')),
+        DependsRBAC,
+    ],
+)
+async def get_advance_quota(
+    db: CurrentSession,
+    request: Request,
+    rider_id: Annotated[int, Query(description='骑手 ID')],
+    site_id: Annotated[int | None, Query(description='站点 ID')] = None,
+) -> ResponseSchemaModel[GetAdvanceMonthlyQuota]:
+    data = await advance_service.quota_for_admin(db=db, request=request, rider_id=rider_id, site_id=site_id)
+    return response_base.success(data=data)
 
 
 @router.get(

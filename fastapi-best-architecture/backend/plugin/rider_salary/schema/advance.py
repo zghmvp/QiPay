@@ -26,6 +26,26 @@ class CreateMeAdvanceParam(SchemaBase):
     reason: str = Field(description='申请原因')
 
 
+class GetAdvanceMonthlyQuota(SchemaBase):
+    """本月预支次数额度（管理端 /advances/quota 与骑手 /me/advance-quota 同一口径）"""
+
+    monthly_advance_limit: int = Field(description='每月可预支次数')
+    used: int = Field(description='本月已用次数')
+    remaining: int = Field(description='本月剩余次数')
+    month: str | None = Field(None, description='自然月 YYYY-MM')
+    rider_id: int | None = Field(None, description='骑手 ID')
+    site_id: int | None = Field(None, description='站点 ID')
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def limit(self) -> int:
+        """与 monthly_advance_limit 同值，供管理端 AdvanceQuota.limit 使用"""
+        return self.monthly_advance_limit
+
+
+GetAdvanceQuota = GetAdvanceMonthlyQuota
+
+
 class AdvanceTimelineItem(SchemaBase):
     """预支操作时间线"""
 
@@ -65,6 +85,10 @@ class GetAdvanceDetail(SchemaBase):
     timeline: list[AdvanceTimelineItem] = Field(default_factory=list, description='操作时间线')
     created_time: datetime | None = Field(None, description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
+    quota: GetAdvanceMonthlyQuota | None = Field(None, description='本月预支次数')
+    monthly_advance_limit: int | None = Field(None, description='每月可预支次数')
+    monthly_advance_used: int | None = Field(None, description='本月已用次数')
+    monthly_advance_remaining: int | None = Field(None, description='本月剩余次数')
 
     @computed_field  # type: ignore[prop-decorator]
     @property
