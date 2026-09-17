@@ -157,23 +157,31 @@ async function exportMonth() {
   const dateFrom = `${month.value}-01`;
   const dateTo = dayjs(`${month.value}-01`).endOf('month').format('YYYY-MM-DD');
   try {
-    const { excludeAttention, excludeAttentionAdjustments } = await promptExport({
+    const confirmed = await promptExport({
       dateFrom,
       dateTo,
       periodId: periods.length === 1 ? periods[0]?.id : undefined,
+      periods: periods.map((period) => ({
+        id: period.id,
+        range: period.range,
+      })),
       siteId: siteId.value,
+      source: 'calendar',
       title: `导出 ${month.value} 明细`,
     });
     exporting.value = true;
     try {
-      for (const period of periods) {
-        await exportPeriodApi(period.id, {
-          exclude_attention: excludeAttention,
-          exclude_attention_adjustments: excludeAttentionAdjustments,
+      const ids = confirmed.periodIds.length
+        ? confirmed.periodIds
+        : periods.map((period) => period.id);
+      for (const id of ids) {
+        await exportPeriodApi(id, {
+          exclude_attention: confirmed.excludeAttention,
+          exclude_attention_adjustments: confirmed.excludeAttentionAdjustments,
         });
       }
       message.success(
-        periods.length > 1 ? `已导出 ${periods.length} 个周期明细` : '已导出当月明细',
+        ids.length > 1 ? `已导出 ${ids.length} 个周期明细` : '已导出当月明细',
       );
     } finally {
       exporting.value = false;
@@ -254,6 +262,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           v-access:code="'rs:period:export'"
           :disabled="!riderId"
           :loading="exporting"
+          data-testid="calendar-export-month"
           variant="outline"
           @click="exportMonth"
         >

@@ -300,15 +300,30 @@ export function canEditVersion(status?: string, isUsed?: boolean) {
   return status === 'draft' && !isUsed;
 }
 
+export const FULL_TRIAL_NOT_PAYROLL = '整版试算通过 ≠ 按当前绑定出账';
+
+export const BINDING_FIXED_FULL_AMOUNT =
+  '周期「固定金额」项按绑定分段各计一次全额，不是整月分摊一次。两段固定 2000 → 底薪合计 4000。';
+
+export const PERIOD_FIXED_AMOUNT_HINT =
+  '非整周期绑定时，本段将按全额计一次，不是按方案生效天数分摊。';
+
+export const ACTIVATE_CONFIRM_CONTENT =
+  '确认启用该方案版本？整版试算通过 ≠ 按当前绑定出账。启用后正式 calculate 按真实绑定分段；周期固定金额每段各计一次全额。启用后内容不可再改。';
+
 export function trialLabel(options: {
+  bindingTrialPassed?: boolean | null;
   dirty?: boolean;
   itemsHash?: null | string;
   trialHash?: null | string;
   trialPassed?: boolean;
 }) {
   if (options.dirty) return { color: 'warning', text: '需重新试算' };
+  if (options.bindingTrialPassed) {
+    return { color: 'success', text: '按当前绑定已对拍' };
+  }
   if (options.trialPassed && options.trialHash && options.trialHash === options.itemsHash) {
-    return { color: 'success', text: '试算通过 ✓' };
+    return { color: 'warning', text: FULL_TRIAL_NOT_PAYROLL };
   }
   if (options.trialPassed && options.trialHash && options.trialHash !== options.itemsHash) {
     return { color: 'warning', text: '需重新试算' };
@@ -320,6 +335,7 @@ export function trialLabel(options: {
 }
 
 export function activateHint(options: {
+  bindingTrialPassed?: boolean | null;
   dirty?: boolean;
   itemsHash?: null | string;
   trialHash?: null | string;
@@ -328,6 +344,9 @@ export function activateHint(options: {
   if (options.dirty) return '请先保存方案项';
   if (!options.trialPassed) return '请先完成试算再启用';
   if (options.trialHash !== options.itemsHash) return '方案内容已变更，请重新试算';
+  if (options.bindingTrialPassed === false) {
+    return `${FULL_TRIAL_NOT_PAYROLL}，请先做按绑定分段试算`;
+  }
   return '';
 }
 
