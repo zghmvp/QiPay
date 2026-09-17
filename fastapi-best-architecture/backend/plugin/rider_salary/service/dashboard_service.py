@@ -286,7 +286,7 @@ class DashboardService:
             title='需重算周期',
             count=len(rows),
             items=items,
-            link='/rider-salary/period?stale=1',
+            link=stale_periods_view_all_link(site_id=_single_site_id(site_ids), month=f'{start:%Y-%m}'),
         )
 
     async def _no_plan_days(
@@ -761,6 +761,16 @@ async def _site_import_gap_days(
         ).all()
     )
     return [day for day in iter_dates(start, gap_end) if day not in covered and day not in order_dates]
+
+
+def stale_periods_view_all_link(*, site_id: int | None, month: str | None) -> str:
+    """需重算查看全部：stale=1 必须带本站本月；无站仍带月。不改 #9 stale 谓词。"""
+    parts = ['stale=1']
+    if site_id is not None:
+        parts.append(f'site_id={int(site_id)}')
+    if month:
+        parts.append(f'month={month.strip()}')
+    return '/rider-salary/period?' + '&'.join(parts)
 
 
 def _import_gap_view_all(
