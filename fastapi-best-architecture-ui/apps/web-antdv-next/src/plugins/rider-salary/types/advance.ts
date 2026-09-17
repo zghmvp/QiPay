@@ -40,6 +40,7 @@ export interface AdvanceResult {
 export interface AdvanceQuery extends PageParams {
   date_from?: string;
   date_to?: string;
+  id?: number;
   rider_id?: number;
   site_id?: number;
   status?: string;

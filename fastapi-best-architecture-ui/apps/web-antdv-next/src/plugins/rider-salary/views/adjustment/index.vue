@@ -9,7 +9,8 @@ import type {
   VxeTableGridOptions,
 } from '#/adapter/vxe-table';
 
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { useVbenDrawer, useVbenModal, VbenButton } from '@vben/common-ui';
 import { IconifyIcon, MaterialSymbolsAdd } from '@vben/icons';
@@ -33,6 +34,7 @@ import PageContainer from '../_shared/PageContainer.vue';
 import BatchModal from './components/BatchModal.vue';
 import { adjustmentFormSchema, querySchema, useColumns } from './data';
 
+const route = useRoute();
 const { ReasonModal, prompt } = useReasonModal();
 const subjects = ref<SubjectResult[]>([]);
 getAllSubjectsApi()
@@ -41,9 +43,45 @@ getAllSubjectsApi()
   })
   .catch(() => undefined);
 
+function queryStr(key: string) {
+  const raw = route.query[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === 'string' && v ? v : undefined;
+}
+
+function queryNum(key: string) {
+  const n = Number(queryStr(key));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+const initialSiteId = queryNum('site_id');
+const initialRiderId = queryNum('rider_id');
+const initialSubjectId = queryNum('subject_id');
+const initialId = queryNum('id');
+const initialDateFrom = queryStr('date_from');
+const initialDateTo = queryStr('date_to');
+const initialDateRange =
+  initialDateFrom && initialDateTo
+    ? [initialDateFrom, initialDateTo]
+    : undefined;
+
 const formOptions: VbenFormProps = {
   collapsed: true,
-  schema: querySchema,
+  schema: querySchema.map((item) => {
+    if (item.fieldName === 'site_id' && initialSiteId) {
+      return { ...item, defaultValue: initialSiteId };
+    }
+    if (item.fieldName === 'rider_id' && initialRiderId) {
+      return { ...item, defaultValue: initialRiderId };
+    }
+    if (item.fieldName === 'subject_id' && initialSubjectId) {
+      return { ...item, defaultValue: initialSubjectId };
+    }
+    if (item.fieldName === 'date_range' && initialDateRange) {
+      return { ...item, defaultValue: initialDateRange };
+    }
+    return item;
+  }),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
 };
@@ -60,6 +98,7 @@ const gridOptions: VxeTableGridOptions<AdjustmentResult> = {
         return await getAdjustmentListApi({
           date_from: toDateString(date_range?.[0]),
           date_to: toDateString(date_range?.[1]),
+          id: initialId,
           page: page.currentPage,
           size: page.pageSize,
           ...rest,
@@ -76,6 +115,17 @@ const gridOptions: VxeTableGridOptions<AdjustmentResult> = {
 };
 
 const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
+
+onMounted(async () => {
+  const values: Record<string, unknown> = {};
+  if (initialSiteId) values.site_id = initialSiteId;
+  if (initialRiderId) values.rider_id = initialRiderId;
+  if (initialSubjectId) values.subject_id = initialSubjectId;
+  if (initialDateRange) values.date_range = initialDateRange;
+  if (Object.keys(values).length) {
+    await gridApi.formApi.setValues(values);
+  }
+});
 
 function onRefresh() {
   gridApi.query();

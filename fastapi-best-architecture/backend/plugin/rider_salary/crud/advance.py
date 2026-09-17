@@ -34,6 +34,7 @@ class CRUDAdvance(CRUDPlus[RiderSalaryAdvance]):
         date_from: date | None,
         date_to: date | None,
         site_ids: set[int] | None,
+        pk: int | None = None,
     ) -> Select:
         """
         预支列表查询
@@ -44,9 +45,12 @@ class CRUDAdvance(CRUDPlus[RiderSalaryAdvance]):
         :param date_from: 申请日起
         :param date_to: 申请日止
         :param site_ids: 可见站点，None 表示全部
+        :param pk: 预支单 ID（精确）
         :return:
         """
         filters: dict = {'deleted': 0}
+        if pk is not None:
+            filters['id'] = pk
         if site_id is not None:
             filters['site_id'] = site_id
         if rider_id is not None:

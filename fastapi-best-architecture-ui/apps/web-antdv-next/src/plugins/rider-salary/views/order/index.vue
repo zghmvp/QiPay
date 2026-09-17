@@ -58,8 +58,18 @@ const initialStatus = initialAttention
   ? '__attention__'
   : queryStr('status');
 const initialSiteId = queryNum('site_id');
+const initialRiderId = queryNum('rider_id');
 const initialDate = queryStr('date');
+const initialDateFrom = queryStr('date_from');
+const initialDateTo = queryStr('date_to');
 const initialOrderNo = queryStr('order_no');
+
+const initialDateRange =
+  initialDateFrom && initialDateTo
+    ? [initialDateFrom, initialDateTo]
+    : initialDate
+      ? [initialDate, initialDate]
+      : undefined;
 
 const formOptions: VbenFormProps = {
   collapsed: true,
@@ -70,8 +80,11 @@ const formOptions: VbenFormProps = {
     if (item.fieldName === 'site_id' && initialSiteId) {
       return { ...item, defaultValue: initialSiteId };
     }
-    if (item.fieldName === 'date_range' && initialDate) {
-      return { ...item, defaultValue: [initialDate, initialDate] };
+    if (item.fieldName === 'rider_id' && initialRiderId) {
+      return { ...item, defaultValue: initialRiderId };
+    }
+    if (item.fieldName === 'date_range' && initialDateRange) {
+      return { ...item, defaultValue: initialDateRange };
     }
     if (item.fieldName === 'order_no' && initialOrderNo) {
       return { ...item, defaultValue: initialOrderNo };
@@ -171,7 +184,8 @@ onMounted(() => {
   const values: Record<string, unknown> = {};
   if (initialStatus) values.status = initialStatus;
   if (initialSiteId) values.site_id = initialSiteId;
-  if (initialDate) values.date_range = [initialDate, initialDate];
+  if (initialRiderId) values.rider_id = initialRiderId;
+  if (initialDateRange) values.date_range = initialDateRange;
   if (initialOrderNo) values.order_no = initialOrderNo;
   if (Object.keys(values).length) {
     void gridApi.formApi.setValues(values);

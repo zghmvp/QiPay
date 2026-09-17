@@ -79,6 +79,22 @@ const routes: RouteRecordRaw[] = [
         path: '/rider-salary/period',
       },
       {
+        component: () => import('../views/payroll/index.vue'),
+        meta: { icon: 'lucide:wallet', title: '薪资结果' },
+        name: 'RiderSalaryPayroll',
+        path: '/rider-salary/payroll',
+      },
+      {
+        component: () => import('../views/payroll/detail.vue'),
+        meta: {
+          hideInMenu: true,
+          icon: 'lucide:file-text',
+          title: '薪资明细',
+        },
+        name: 'RiderSalaryPayrollDetail',
+        path: '/rider-salary/payroll/:id',
+      },
+      {
         component: () => import('../views/calendar/index.vue'),
         meta: { icon: 'lucide:calendar', title: '薪资日历' },
         name: 'RiderSalaryCalendar',

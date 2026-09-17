@@ -30,6 +30,7 @@ class CRUDAdjustment(CRUDPlus[RiderSalaryAdjustment]):
         date_from: str | None,
         date_to: str | None,
         site_ids: set[int] | None,
+        pk: int | None = None,
     ) -> Select:
         """
         奖惩记录列表查询
@@ -40,9 +41,12 @@ class CRUDAdjustment(CRUDPlus[RiderSalaryAdjustment]):
         :param date_from: 开始日期
         :param date_to: 结束日期
         :param site_ids: 可见站点，None 表示全部
+        :param pk: 奖惩单 ID（精确）
         :return:
         """
         filters: dict = {'deleted': 0}
+        if pk is not None:
+            filters['id'] = pk
         if site_id is not None:
             filters['site_id'] = site_id
         if rider_id is not None:
