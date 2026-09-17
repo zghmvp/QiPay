@@ -145,7 +145,10 @@ export async function run({ page, helpers, config }) {
 
   const copy = await page.getByTestId('period-export-confirm').innerText();
   helpers.assertNoPaymentTaxCopy(copy);
-  if (/银行代发|打款文件/.test(copy)) throw new Error('应发导出不得冒充打款文件');
+  // 允许中文声明「不是打款文件」；禁止正面冒充打款/代发/个税（同 Cycle 2/3 LIVE）
+  if (/银行代发|个税/.test(copy) || (/打款文件/.test(copy) && !/不是打款文件/.test(copy))) {
+    throw new Error('应发导出不得冒充打款文件');
+  }
 
   await page.getByRole('button', { name: /确认导出/ }).first().click();
   await page.waitForTimeout(800);

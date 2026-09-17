@@ -100,6 +100,8 @@ export async function run({ page, helpers, config }) {
     'ops-dashboard-abnormal-attention-landing',
     '未见 #27 块 ops-dashboard-abnormal-attention-landing',
   );
+  // a-collapse 默认折叠，查看全部在 panel 体内
+  await page.getByTestId('ops-dashboard-abnormal-attention-landing').first().click();
   await requireTestId(page, 'dashboard-abnormal-view-all', '未见 dashboard-abnormal-view-all');
   await page.getByTestId('dashboard-abnormal-view-all').first().click();
 

@@ -101,6 +101,8 @@ export async function run({ page, helpers, config }) {
   if (titleText.trim() !== LOCK_TITLE) {
     throw new Error(`dashboard-lock-title 须为「${LOCK_TITLE}」。实际 ${titleText}`);
   }
+  // a-collapse 默认折叠；过期/剩余行与查看全部在 panel 体内
+  await page.getByTestId('ops-dashboard-lock-overdue-visible').first().click();
   await requireTestId(page, 'dashboard-lock-overdue', '未见过期行 dashboard-lock-overdue');
   const overdueText = await page.getByTestId('dashboard-lock-overdue').first().innerText();
   if (!LOCK_OVERDUE_COPY.test(overdueText)) {
@@ -131,6 +133,8 @@ export async function run({ page, helpers, config }) {
     `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
     { waitUntil: 'networkidle', timeout: 60000 },
   );
+  await requireTestId(page, 'ops-dashboard-lock-overdue-visible', '返回工作台未见锁账倒计时块');
+  await page.getByTestId('ops-dashboard-lock-overdue-visible').first().click();
   await requireTestId(page, 'dashboard-lock-view-all', '未见 dashboard-lock-view-all');
   await page.getByTestId('dashboard-lock-view-all').first().click();
   const allUrl = await waitPath(page, /\/rider-salary\/period/);

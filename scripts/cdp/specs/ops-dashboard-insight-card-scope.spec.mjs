@@ -148,6 +148,18 @@ export async function run({ page, helpers, config }) {
   });
 
   await page.unroute('**/api/v1/rider-salary/dashboard/summary**').catch(() => {});
+  // pageEmpty 还要求无 batchJob；现网 restoreLastJob 会盖住空态 CTA
+  await page.route('**/api/v1/rider-salary/recalc-jobs/**', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 200, msg: '成功', data: null }),
+    });
+  });
   await page.route('**/api/v1/rider-salary/dashboard/summary**', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.continue();

@@ -452,6 +452,8 @@ class PlanService:
         mode: TrialMode = TrialMode.full_version,
     ) -> TrialResult:
         """试算；整版是 what-if，绑定感知才写入启用闸门认的模式。"""
+        if isinstance(mode, str):
+            mode = TrialMode(mode)
         version = await PlanService.get_version_model(db, pk)
         items = await plan_item_dao.list_by_version(db, pk)
         if not items:

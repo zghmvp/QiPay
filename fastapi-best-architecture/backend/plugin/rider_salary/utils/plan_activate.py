@@ -55,16 +55,23 @@ def binding_trial_passed(version: Any) -> bool:
     )
 
 
+def _trial_mode_value(mode: TrialMode | str) -> str:
+    """SchemaBase use_enum_values=True 时接口传入的是 str，不是 Enum。"""
+    if isinstance(mode, TrialMode):
+        return mode.value
+    return str(getattr(mode, 'value', mode))
+
+
 def stamp_trial_for_activate(
     version: Any,
     *,
-    mode: TrialMode,
+    mode: TrialMode | str,
     current_hash: str,
     summary: dict[str, Any],
 ) -> None:
     """整版与绑定感知都写 trial_passed；启用只认 binding_segments。"""
     snapshot = dict(summary)
-    snapshot[ACTIVATION_TRIAL_MODE_KEY] = mode.value
+    snapshot[ACTIVATION_TRIAL_MODE_KEY] = _trial_mode_value(mode)
     version.items_hash = current_hash
     version.trial_hash = current_hash
     version.trial_passed = True
