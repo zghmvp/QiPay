@@ -84,8 +84,20 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec('出勤天数', TYPE_NUMBER, (STAGE_PERIOD,), '天', '周期内有有效单的天数'),
     FieldSpec('本期已计金额', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本薪资单中排序在前且进应发的明细之和'),
     FieldSpec('本期逐单金额', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本薪资单已产生的逐单项进应发合计'),
-    FieldSpec('本期手工奖', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本周期手工奖进应发合计'),
-    FieldSpec('本期手工惩', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本周期手工惩进应发合计（带符号）'),
+    FieldSpec(
+        '本期手工奖',
+        TYPE_NUMBER,
+        (STAGE_PERIOD,),
+        '元',
+        '本周期手工奖合计；可作条件。手工明细已入账，再加会双计',
+    ),
+    FieldSpec(
+        '本期手工惩',
+        TYPE_NUMBER,
+        (STAGE_PERIOD,),
+        '元',
+        '本周期手工惩合计（带符号）；可作条件。手工明细已入账，再加会双计',
+    ),
     FieldSpec('工龄月数', TYPE_NUMBER, (STAGE_PERIOD,), '月', '入职日到周期末的整月数'),
     FieldSpec('入职天数', TYPE_NUMBER, (STAGE_PERIOD,), '天', '入职日到周期末的日历天数（含入职当日）'),
 )
