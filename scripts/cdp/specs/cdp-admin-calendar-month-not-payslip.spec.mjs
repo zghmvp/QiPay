@@ -85,7 +85,22 @@ export async function run({ page, helpers, config }) {
     await day.click();
   }
   await requireTestId(page, 'calendar-view-period', '日抽屉「查看周期」钩子缺失即红，不得 skip');
-  await page.getByTestId('calendar-view-period').first().click();
+  // 日抽屉动画未稳时 mask / 兄弟按钮会挡指针；钩子已在 DOM 即 force 点击
+  const viewPeriod = page.getByTestId('calendar-view-period').first();
+  await viewPeriod.waitFor({ state: 'visible', timeout: 15000 });
+  await page
+    .locator('.ant-drawer-open .ant-drawer-content-wrapper')
+    .first()
+    .waitFor({ state: 'visible', timeout: 15000 })
+    .catch(() => {});
+  await page
+    .waitForFunction(
+      () => !document.querySelector('.ant-drawer-mask-motion-appear-active, .ant-drawer-mask-motion-enter-active'),
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  await viewPeriod.scrollIntoViewIfNeeded().catch(() => {});
+  await viewPeriod.click({ force: true });
   const viewUrl = await waitPath(page, /\/rider-salary\/payroll/, 20000);
   assertChipGoesToPayslip(viewUrl, {
     riderId,

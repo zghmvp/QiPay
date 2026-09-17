@@ -44,12 +44,13 @@ export async function importOrdersApi(data: {
   site_id: number;
   skip_errors: boolean;
 }) {
-  const formData = new FormData();
-  formData.append('file', data.file);
-  formData.append('site_id', String(data.site_id));
-  formData.append('skip_errors', data.skip_errors ? 'true' : 'false');
-  formData.append('auto_recalc', data.auto_recalc ? 'true' : 'false');
-  return requestClient.post<ImportResult>(`${BASE}/import`, formData, {
+  // 须走 upload：默认 post 会带 application/json，file 字段丢成 JSON → 422
+  return requestClient.upload<ImportResult>(`${BASE}/import`, {
+    auto_recalc: data.auto_recalc ? 'true' : 'false',
+    file: data.file,
+    site_id: String(data.site_id),
+    skip_errors: data.skip_errors ? 'true' : 'false',
+  }, {
     timeout: 180_000,
   });
 }
