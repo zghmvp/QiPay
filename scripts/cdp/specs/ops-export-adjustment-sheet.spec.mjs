@@ -115,8 +115,9 @@ export async function run({ page, helpers, config }) {
     });
   });
 
+  // 勿带 ?id=（会额外开抽屉挡住行内「导出」）
   await page.goto(
-    `${config.adminUrl}/rider-salary/period?site_id=${siteId}&month=${month}&id=${period.id}`,
+    `${config.adminUrl}/rider-salary/period?site_id=${siteId}&month=${month}`,
     { waitUntil: 'networkidle', timeout: 60000 },
   );
   await clickPeriodExport(page, period);
@@ -181,7 +182,8 @@ export async function run({ page, helpers, config }) {
 
   const copy = await box.innerText();
   helpers.assertNoPaymentTaxCopy(copy);
-  if (/银行代发|打款文件/.test(copy)) {
+  // 允许中文声明「不是打款文件」
+  if (/银行代发|个税/.test(copy) || (/打款文件/.test(copy) && !/不是打款文件/.test(copy))) {
     throw new Error('应发导出不得冒充打款文件');
   }
 

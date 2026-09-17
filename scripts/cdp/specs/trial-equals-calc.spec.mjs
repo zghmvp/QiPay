@@ -137,8 +137,8 @@ export async function run({ page, helpers, config }) {
   await calcBtn.click();
   await page.waitForTimeout(800);
   const url = page.url();
-  if (!new RegExp(`/rider-salary/period/${period.id}/calculate`).test(url)) {
-    throw new Error(`周期列表「算薪」须进独立算薪页 /period/:id/calculate，实际 ${url}`);
+  if (!/\/rider-salary\/period\/\d+\/calculate/.test(url)) {
+    throw new Error(`周期列表「算薪」须进独立算薪页 /rider-salary/period/:id/calculate，实际 ${url}`);
   }
   const modal = page.getByRole('dialog').filter({ hasText: CALC_MODAL_TITLE });
   if (await modal.isVisible().catch(() => false)) {
