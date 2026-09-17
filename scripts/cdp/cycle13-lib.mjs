@@ -199,16 +199,26 @@ export async function pickAntOption(page, root, optionRe) {
   const select = root.locator('.ant-select').first();
   await select.waitFor({ state: 'visible', timeout: 20000 });
   await select.click();
-  // SiteSelect 开启 show-search：先输入缩小虚拟列表，再点选项
-  const search = page.locator('.ant-select-dropdown:visible input').first();
-  if (await search.count()) {
-    const hint = String(optionRe).replace(/^\/|\/[a-z]*$/g, '').split('|')[0] || 'SZ0050';
-    await search.fill(hint.replace(/\\/g, ''));
-    await page.waitForTimeout(300);
+  const hint =
+    String(optionRe).match(/SZ\d{4}|福民|[A-Z]{2}\d{4}/)?.[0] ||
+    String(optionRe).replace(/^\/|\/[a-z]*$/g, '').split('|')[0] ||
+    'SZ0050';
+  // antdv Select show-search：焦点在选择器上直接键盘输入过滤虚拟列表
+  const combo = select.locator('input').first();
+  if (await combo.count()) {
+    await combo.fill(String(hint).replace(/\\/g, ''));
+  } else {
+    await page.keyboard.type(String(hint).replace(/\\/g, ''), { delay: 20 });
   }
+  await page.waitForTimeout(400);
   const opt = page
     .locator('.ant-select-dropdown:visible .ant-select-item-option')
     .filter({ hasText: optionRe })
+    .or(
+      page
+        .locator('.ant-select-dropdown:visible .ant-select-item-option')
+        .filter({ hasText: new RegExp(String(hint).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }),
+    )
     .first();
   await opt.waitFor({ state: 'visible', timeout: 30000 });
   await opt.click();
