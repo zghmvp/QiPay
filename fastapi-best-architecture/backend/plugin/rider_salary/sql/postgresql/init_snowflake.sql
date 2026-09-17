@@ -18,7 +18,8 @@ values
 (2060000000000091012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 13, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 14, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null),
-(2060000000000091017, '薪资明细', 'RiderSalaryPayrollDetail', '/rider-salary/payroll/:id', 16, 'lucide:file-text', 1, '/plugins/rider-salary/views/payroll/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null);
+(2060000000000091017, '薪资明细', 'RiderSalaryPayrollDetail', '/rider-salary/payroll/:id', 16, 'lucide:file-text', 1, '/plugins/rider-salary/views/payroll/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091018, '周期算薪', 'RiderSalaryPeriodCalculate', '/rider-salary/period/:id/calculate', 17, 'lucide:calculator', 1, '/plugins/rider-salary/views/period/calculate', null, 1, 0, 1, '', null, 2060000000000091000, now(), null);
 
 insert into sys_menu (id, title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
 values
@@ -220,7 +221,10 @@ values
 (2060000000000093156, 2060000000000092003, 2060000000000091015),
 (2060000000000093160, 2060000000000092001, 2060000000000091017),
 (2060000000000093161, 2060000000000092002, 2060000000000091017),
-(2060000000000093162, 2060000000000092003, 2060000000000091017);
+(2060000000000093162, 2060000000000092003, 2060000000000091017),
+(2060000000000093163, 2060000000000092001, 2060000000000091018),
+(2060000000000093164, 2060000000000092002, 2060000000000091018),
+(2060000000000093165, 2060000000000092003, 2060000000000091018);
 
 insert into rs_subject (id, code, name, direction, fee_mode, fixed_amount, include_in_gross, entry_granularity, scope_sites, scope_employ_types, is_builtin, status, sort_order, remark, created_time, updated_time)
 values

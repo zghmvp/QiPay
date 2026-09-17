@@ -179,6 +179,43 @@ class CalculatePeriodResult(SchemaBase):
     queued: bool = Field(False, description='是否转入后台')
 
 
+class CalcPrecheckDeeplink(SchemaBase):
+    """预检深链"""
+
+    path: str = Field(description='前端路径')
+    query: dict[str, str] | None = Field(None, description='查询参数')
+
+
+class CalcPrecheckBlocker(SchemaBase):
+    """算前硬风险条目"""
+
+    code: str = Field(description='阻断码')
+    rider_id: int = Field(description='骑手 ID')
+    job_no: str | None = Field(None, description='工号')
+    rider_name: str | None = Field(None, description='姓名')
+    messages: list[str] = Field(default_factory=list, description='中文说明')
+    deeplink: CalcPrecheckDeeplink | None = Field(None, description='修复深链')
+
+
+class CalcPrecheckWarning(SchemaBase):
+    """算前警告条目"""
+
+    code: str = Field(description='警告码')
+    messages: list[str] = Field(default_factory=list, description='中文说明')
+    deeplink: CalcPrecheckDeeplink | None = Field(None, description='相关深链')
+
+
+class CalcPrecheckResult(SchemaBase):
+    """周期算薪预检结果"""
+
+    period_id: int = Field(description='周期 ID')
+    can_run: bool = Field(description='周期级是否允许调用 calculate')
+    blockers: list[CalcPrecheckBlocker] = Field(default_factory=list, description='骑手级硬风险')
+    warnings: list[CalcPrecheckWarning] = Field(default_factory=list, description='非阻断警告')
+    eligible_rider_count: int = Field(description='默认将计算的骑手数')
+    stale_count: int = Field(0, description='需重算薪资单数')
+
+
 class ReversePeriodResult(SchemaBase):
     """反冲补发结果"""
 

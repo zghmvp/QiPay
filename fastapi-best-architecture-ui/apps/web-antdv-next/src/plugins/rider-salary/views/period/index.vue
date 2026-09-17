@@ -9,7 +9,7 @@ import type {
 } from '#/adapter/vxe-table';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import {
   confirm,
@@ -35,7 +35,6 @@ import {
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
 import PageContainer from '../_shared/PageContainer.vue';
-import CalculateModal from './components/CalculateModal.vue';
 import GenerateModal from './components/GenerateModal.vue';
 import PeriodDetail from './components/PeriodDetail.vue';
 import { querySchema, useColumns } from './data';
@@ -46,6 +45,7 @@ function isUserCancelled(error: unknown) {
 }
 
 const route = useRoute();
+const router = useRouter();
 const { ReasonModal, prompt } = useReasonModal();
 const onlyStale = ref(
   route.query.stale === '1' || route.query.stale === 'true',
@@ -163,7 +163,9 @@ async function onActionClick({
       return;
     }
     if (code === 'calculate') {
-      calcApi.setData({ ...row, onSuccess: onRefresh }).open();
+      router.push({
+        path: `/rider-salary/period/${row.id}/calculate`,
+      });
       return;
     }
     if (code === 'lock') {
@@ -202,9 +204,6 @@ const [DetailDrawer, detailApi] = useVbenDrawer({
 });
 const [GenModal, genApi] = useVbenModal({
   connectedComponent: GenerateModal,
-});
-const [CalcModal, calcApi] = useVbenModal({
-  connectedComponent: CalculateModal,
 });
 
 function queryId(): number | undefined {
@@ -303,7 +302,6 @@ onMounted(() => {
     </Grid>
     <DetailDrawer />
     <GenModal />
-    <CalcModal />
     <ReasonModal />
   </PageContainer>
 </template>

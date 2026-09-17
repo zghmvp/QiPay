@@ -18,7 +18,8 @@ values
 (91012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 13, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 14, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 91000, now(), null),
-(91017, '薪资明细', 'RiderSalaryPayrollDetail', '/rider-salary/payroll/:id', 16, 'lucide:file-text', 1, '/plugins/rider-salary/views/payroll/detail', null, 1, 0, 1, '', null, 91000, now(), null);
+(91017, '薪资明细', 'RiderSalaryPayrollDetail', '/rider-salary/payroll/:id', 16, 'lucide:file-text', 1, '/plugins/rider-salary/views/payroll/detail', null, 1, 0, 1, '', null, 91000, now(), null),
+(91018, '周期算薪', 'RiderSalaryPeriodCalculate', '/rider-salary/period/:id/calculate', 17, 'lucide:calculator', 1, '/plugins/rider-salary/views/period/calculate', null, 1, 0, 1, '', null, 91000, now(), null);
 
 insert into sys_menu (id, title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
 values
@@ -220,7 +221,10 @@ values
 (93156, 92003, 91015),
 (93160, 92001, 91017),
 (93161, 92002, 91017),
-(93162, 92003, 91017);
+(93162, 92003, 91017),
+(93163, 92001, 91018),
+(93164, 92002, 91018),
+(93165, 92003, 91018);
 
 insert into rs_subject (id, code, name, direction, fee_mode, fixed_amount, include_in_gross, entry_granularity, scope_sites, scope_employ_types, is_builtin, status, sort_order, remark, created_time, updated_time)
 values

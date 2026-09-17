@@ -11,6 +11,7 @@ from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.schema.period import (
+    CalcPrecheckResult,
     CalculatePeriodParam,
     CalculatePeriodResult,
     GeneratePeriodParam,
@@ -134,6 +135,24 @@ async def get_period(
     pk: Annotated[int, Path(description='周期 ID')],
 ) -> ResponseSchemaModel[GetPeriodWithPayrolls]:
     data = await period_service.get(db=db, request=request, pk=pk)
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/{pk}/calc-precheck',
+    summary='算薪预检',
+    description='只读聚合硬风险与警告，不写薪资结果；不要求算薪权限',
+    dependencies=[
+        DependsJwtAuth,
+        DependsRBAC,
+    ],
+)
+async def calc_precheck_period(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+) -> ResponseSchemaModel[CalcPrecheckResult]:
+    data = await period_service.calc_precheck(db=db, request=request, pk=pk)
     return response_base.success(data=data)
 
 
