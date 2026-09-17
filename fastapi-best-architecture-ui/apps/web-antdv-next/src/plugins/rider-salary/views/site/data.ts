@@ -11,6 +11,7 @@ import {
   enumTagOptions,
 } from '../../constants/enums';
 import { formatCycleSummary } from '../../utils/date';
+import { formatMonthlyAdvanceLimit } from './helpers';
 
 export const querySchema: VbenFormSchema[] = [
   {
@@ -82,7 +83,28 @@ export const siteFormSchema: VbenFormSchema[] = [
       style: { width: '100%' },
     },
     fieldName: 'advance_limit',
-    label: '预支上限',
+    help: '单笔预支金额上限（元）。空则用全局金额默认。与每月次数无关。',
+    label: '预支金额上限',
+    renderComponentContent: () => ({
+      addonAfter: () => '元',
+    }),
+  },
+  {
+    component: 'InputNumber',
+    componentProps: {
+      min: 0,
+      placeholder: '空则按 1 保存',
+      precision: 0,
+      step: 1,
+      style: { width: '100%' },
+    },
+    defaultValue: 1,
+    fieldName: 'monthly_advance_limit',
+    help: '每个骑手每个自然月可申请次数。空则按 1 保存。0 表示本站禁止预支。与金额上限无关。',
+    label: '每月可预支次数',
+    renderComponentContent: () => ({
+      addonAfter: () => '次',
+    }),
   },
   {
     component: 'RadioGroup',
@@ -130,8 +152,15 @@ export function useColumns(
     {
       field: 'advance_limit',
       slots: { default: 'advance_limit' },
-      title: '预支上限',
-      width: 120,
+      title: '预支金额上限',
+      width: 130,
+    },
+    {
+      field: 'monthly_advance_limit',
+      formatter: ({ row }: { row: SiteResult }) =>
+        formatMonthlyAdvanceLimit(row.monthly_advance_limit),
+      title: '每月可预支次数',
+      width: 150,
     },
     {
       cellRender: {

@@ -6,6 +6,8 @@ export interface SiteResult {
   dept_id?: null | number;
   id: number;
   manager_count?: number;
+  /** 每月可预支次数；空/未返回按 1。0 = 本站禁止预支 */
+  monthly_advance_limit?: null | number;
   name: string;
   remark?: null | string;
   settle_cycle: string;
@@ -20,6 +22,7 @@ export interface SiteForm {
   code: string;
   cycle_config?: null | Record<string, unknown>;
   dept_id?: null | number;
+  monthly_advance_limit?: null | number;
   name: string;
   remark?: null | string;
   settle_cycle: string;
