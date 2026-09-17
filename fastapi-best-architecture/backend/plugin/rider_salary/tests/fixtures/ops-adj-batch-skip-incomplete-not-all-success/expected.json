@@ -1,0 +1,35 @@
+{
+  "feature": "ops-adj-batch-skip-incomplete-not-all-success",
+  "expected": {
+    "skip_if_missing": false,
+    "must_drive_batch_modal": true,
+    "must_drive_incomplete_row": true,
+    "fixture_rows": 3,
+    "fixture_complete_rows": 2,
+    "fixture_incomplete_rows": 1,
+    "incomplete_shape": "rider_and_date_without_subject",
+    "empty_new_row_may_ignore": true,
+    "created_count": 2,
+    "skipped_count": 1,
+    "backend_receives_only_complete_rows": 2,
+    "all_success_copy_is_fail": "批量录入成功",
+    "partial_as_whole_table_is_fail": true,
+    "raise_whole_batch_422_is_fail": true,
+    "rewrite_subject_or_amount_predicate_is_fail": true,
+    "do_not_make_payout": true,
+    "do_not_relock_cycle5_manual_not_double": true,
+    "do_not_relock_cycle14_skip_errors": true,
+    "do_not_write_as_calendar_date_from": true,
+    "testid_block": "ops-adj-batch-skip-incomplete-not-all-success",
+    "testid_modal": "adj-batch-modal",
+    "testid_incomplete": "adj-batch-incomplete-row",
+    "testid_created": "adj-batch-created-count",
+    "testid_skipped": "adj-batch-skipped-count",
+    "helper_half_success": "assertBatchSkipIncomplete",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

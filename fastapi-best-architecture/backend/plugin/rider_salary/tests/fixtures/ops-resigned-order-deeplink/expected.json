@@ -1,0 +1,32 @@
+{
+  "feature": "ops-resigned-order-deeplink",
+  "expected": {
+    "skip_if_missing": false,
+    "row_must_carry_rider_id": true,
+    "row_must_open_this_rider": true,
+    "allowed_landings": ["rider_profile", "rider_month_orders"],
+    "view_all_stays_status_resigned_site_month": true,
+    "resigned_list_without_this_rider_is_fail": true,
+    "site_wide_orders_without_rider_or_month_is_fail": true,
+    "no_rider_id_is_fail": true,
+    "other_rider_is_fail": true,
+    "rewrite_resigned_count_is_fail": true,
+    "merge_attention_1_is_fail": true,
+    "do_not_make_payout_block": true,
+    "do_not_relock_cycle13_advance_deeplink": true,
+    "do_not_relock_cycle14_abnormal_order": true,
+    "testid_block": "ops-resigned-order-deeplink",
+    "testid_row": "dashboard-resigned-row",
+    "testid_view_all": "dashboard-resigned-view-all",
+    "testid_landing": ["rider-profile-open", "order-rider-month-scope", "rider-row-active"],
+    "testid_view_all_scope": "rider-list-resigned-scope",
+    "row_id_attr": "data-rider-id",
+    "helper_row_landing": "isResignedRowLanding",
+    "helper_view_all": "isResignedViewAll",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}
