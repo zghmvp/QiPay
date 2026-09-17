@@ -11,7 +11,11 @@ import { trialPlanVersionApi } from '../../../api/plan';
 import MoneyText from '../../../components/MoneyText.vue';
 import RiderSelect from '../../../components/RiderSelect.vue';
 import SiteSelect from '../../../components/SiteSelect.vue';
-import { lastNaturalMonth } from '../helpers';
+import {
+  BINDING_FIXED_FULL_AMOUNT,
+  FULL_TRIAL_NOT_PAYROLL,
+  lastNaturalMonth,
+} from '../helpers';
 
 const emit = defineEmits<{
   success: [];
@@ -155,11 +159,30 @@ const periodColumns = [
       <a-alert
         type="info"
         show-icon
+        :data-testid="
+          trialMode === 'full_version'
+            ? 'ops-plan-activate-not-full-trial'
+            : 'trial-binding-mode-hint'
+        "
         :message="
           trialMode === 'binding_segments'
-            ? '按绑定分段试算：应发与同骑手同周期正式 calculate 同源（预支仍不扣）。使用骑手真实方案绑定切段，含已录入奖惩。换绑场景下「周期有效单量」与「方案期内单量」可不相等。本模式不写入启用门槛。'
-            : '整版试算：假定该版本在区间内全程生效，含已录入奖惩，不含预支抵扣。通过后可启用该版本。'
+            ? `按绑定分段试算：应发与同骑手同周期正式 calculate 同源（预支仍不扣）。这是启用应对拍的出账口径。${BINDING_FIXED_FULL_AMOUNT}`
+            : `整版试算：假定该版本在区间内全程生效，含已录入奖惩，不含预支抵扣。这是 what-if，${FULL_TRIAL_NOT_PAYROLL}，不能单独当启用出账承诺。`
         "
+      />
+      <a-alert
+        v-if="trialMode === 'full_version'"
+        type="warning"
+        show-icon
+        data-testid="trial-full-not-payroll"
+        :message="FULL_TRIAL_NOT_PAYROLL"
+      />
+      <a-alert
+        v-else
+        type="info"
+        show-icon
+        data-testid="trial-binding-fixed-full-amount"
+        :message="BINDING_FIXED_FULL_AMOUNT"
       />
       <a-radio-group
         v-model:value="trialMode"

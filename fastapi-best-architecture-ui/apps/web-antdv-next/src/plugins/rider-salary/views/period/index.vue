@@ -54,16 +54,37 @@ const onlyStale = ref(
   route.query.stale === '1' || route.query.stale === 'true',
 );
 
-const initialStatus =
-  typeof route.query.status === 'string' ? route.query.status : undefined;
+function queryStr(key: string) {
+  const raw = route.query[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === 'string' && v ? v : undefined;
+}
+
+function queryNum(key: string) {
+  const n = Number(queryStr(key));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+const initialStatus = queryStr('status');
+const initialSiteId = queryNum('site_id');
+const initialMonth = queryStr('month');
+const lockDue =
+  route.query.lock_due === '1' || route.query.lock_due === 'true';
 
 const formOptions: VbenFormProps = {
   collapsed: true,
-  schema: querySchema.map((item) =>
-    item.fieldName === 'status' && initialStatus
-      ? { ...item, defaultValue: initialStatus }
-      : item,
-  ),
+  schema: querySchema.map((item) => {
+    if (item.fieldName === 'status' && initialStatus && !lockDue) {
+      return { ...item, defaultValue: initialStatus };
+    }
+    if (item.fieldName === 'site_id' && initialSiteId) {
+      return { ...item, defaultValue: initialSiteId };
+    }
+    if (item.fieldName === 'month' && initialMonth) {
+      return { ...item, defaultValue: initialMonth };
+    }
+    return item;
+  }),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
 };
@@ -107,6 +128,19 @@ const missingPayrollHint = computed(() =>
     ? '薪资单不存在或未落库。请打开对应周期的算薪页查看失败清单。'
     : '',
 );
+const lockDueHint = computed(() =>
+  lockDue
+    ? '已按工作台锁账倒计时跳转：本站开放/补发中周期，含已过期未锁。不是只看无月份的开放第一页。'
+    : '',
+);
+const periodScopeHint = computed(() => {
+  if (lockDueHint.value) return '';
+  if (initialSiteId && initialMonth) {
+    return `已按工作台跳转筛选：站点 + ${initialMonth}`;
+  }
+  if (initialMonth) return `已按工作台跳转筛选：${initialMonth}`;
+  return '';
+});
 const lockFailText = ref('');
 
 function extractErrorMsg(error: unknown): string {
@@ -347,8 +381,12 @@ watch(
 );
 
 onMounted(() => {
-  if (initialStatus) {
-    void gridApi.formApi.setValues({ status: initialStatus });
+  const values: Record<string, unknown> = {};
+  if (initialStatus && !lockDue) values.status = initialStatus;
+  if (initialSiteId) values.site_id = initialSiteId;
+  if (initialMonth) values.month = initialMonth;
+  if (Object.keys(values).length) {
+    void gridApi.formApi.setValues(values);
   }
   void openPeriodByQueryId();
 });
@@ -371,6 +409,22 @@ onMounted(() => {
       show-icon
       type="warning"
       :message="missingPayrollHint"
+    />
+    <a-alert
+      v-if="lockDueHint"
+      class="mb-2"
+      data-testid="period-lock-due-scope"
+      show-icon
+      type="info"
+      :message="lockDueHint"
+    />
+    <a-alert
+      v-else-if="periodScopeHint"
+      class="mb-2"
+      data-testid="period-list-scope"
+      show-icon
+      type="info"
+      :message="periodScopeHint"
     />
     <a-alert
       v-if="lockFailText"

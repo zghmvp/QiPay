@@ -27,7 +27,7 @@ import {
 } from '../../api/advance';
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
-import { toDateString } from '../../utils/date';
+import { monthRange, toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import AdvanceDrawer from './components/AdvanceDrawer.vue';
 import { querySchema, useColumns } from './data';
@@ -58,6 +58,8 @@ const initialStatus =
 const initialSiteId = queryNum('site_id');
 const initialRiderId = queryNum('rider_id');
 const initialId = queryNum('id');
+const initialMonth = queryStr('month');
+const initialDateRange = initialMonth ? monthRange(initialMonth) : undefined;
 const tab = ref(
   initialId
     ? 'all'
@@ -83,6 +85,9 @@ const formOptions: VbenFormProps = {
     }
     if (item.fieldName === 'rider_id' && initialRiderId) {
       return { ...item, defaultValue: initialRiderId };
+    }
+    if (item.fieldName === 'date_range' && initialDateRange) {
+      return { ...item, defaultValue: initialDateRange };
     }
     return item;
   }),
@@ -133,6 +138,7 @@ onMounted(async () => {
   }
   if (initialSiteId) values.site_id = initialSiteId;
   if (initialRiderId) values.rider_id = initialRiderId;
+  if (initialDateRange) values.date_range = initialDateRange;
   if (Object.keys(values).length) {
     await gridApi.formApi.setValues(values);
   }
