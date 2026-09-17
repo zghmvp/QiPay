@@ -813,13 +813,16 @@ onMounted(() => {
             :message="
               calcInFlight
                 ? '计算中，刷新后展示本次成功。'
-                : '本次成功表只列本轮算出的人。下方③是周期内已有薪资（含刚算出的），不是本轮刚算全员。'
+                : '本次成功表为空：只列本轮算出的人。③ 是周期内已有薪资，不是本轮刚算全员。'
             "
           />
           <a-table
             size="small"
+            data-testid="period-calc-run-success-table"
             :pagination="false"
             :columns="runSuccessColumns"
+            :data-source="thisRunPayrolls"
+            :locale="{ emptyText: '本次无成功骑手' }"
             row-key="id"
           >
             <template #bodyCell="{ column, record }">
