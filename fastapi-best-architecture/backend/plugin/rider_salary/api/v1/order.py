@@ -38,10 +38,19 @@ async def get_orders_paginated(
     rider_id: Annotated[int | None, Query(description='骑手 ID')] = None,
     date_from: Annotated[date | None, Query(description='业务日期起')] = None,
     date_to: Annotated[date | None, Query(description='业务日期止')] = None,
+    month: Annotated[str | None, Query(description='月份 YYYY-MM，未传日期时作为本月窗')] = None,
     status: Annotated[str | None, Query(description='订单状态')] = None,
     order_no: Annotated[str | None, Query(description='订单号')] = None,
     import_batch_id: Annotated[int | None, Query(description='导入批次 ID')] = None,
     is_locked: Annotated[bool | None, Query(description='是否已锁账')] = None,
+    attention: Annotated[
+        bool | None,
+        Query(description='需关注：配送异常∪已退款∪已完成且时长>60分钟（与工作台同源）'),
+    ] = None,
+    missing_delivery: Annotated[
+        bool | None,
+        Query(description='已完成且送达时间为空'),
+    ] = None,
 ) -> ResponseSchemaModel[PageData[GetOrderDetail]]:
     page_data = await order_service.get_list(
         db=db,
@@ -50,10 +59,13 @@ async def get_orders_paginated(
         rider_id=rider_id,
         date_from=date_from,
         date_to=date_to,
+        month=month,
         status=status,
         order_no=order_no,
         import_batch_id=import_batch_id,
         is_locked=is_locked,
+        attention=attention,
+        missing_delivery=missing_delivery,
     )
     return response_base.success(data=page_data)
 

@@ -30,13 +30,8 @@ function hasId(value: unknown): value is { id: number } {
 }
 
 export async function getActivePlanVersionsApi() {
-  try {
-    return await requestClient.get<ActivePlanVersion[]>(
-      `${VERSION_BASE}/active`,
-    );
-  } catch {
-    return [] as ActivePlanVersion[];
-  }
+  // 后端空列表返回 []，不再 404；保留直连接口，错误由请求层统一处理
+  return requestClient.get<ActivePlanVersion[]>(`${VERSION_BASE}/active`);
 }
 
 export async function getPlanListApi(params: PlanQuery) {

@@ -5,7 +5,13 @@ from types import SimpleNamespace
 from backend.plugin.rider_salary.engine.compiler import compile_condition, compile_formula
 from backend.plugin.rider_salary.engine.segments import PlanItemView, Segment
 from backend.plugin.rider_salary.enums import CalcStage, DayStatus, OrderStatus, SubjectDirection
-from backend.plugin.rider_salary.service.calc_service import CalcInput, run_calc_pipeline
+from backend.plugin.rider_salary.schema.trial import TrialSummary
+from backend.plugin.rider_salary.service.calc_service import (
+    CalcInput,
+    plan_period_order_count_of,
+    run_calc_pipeline,
+)
+from backend.plugin.rider_salary.service.plan_service import build_trial_result
 from backend.utils.timezone import timezone
 
 TZ = timezone.tz_info
@@ -241,7 +247,6 @@ def test_cross_segment_month_example() -> None:
         employ_type='full_time',
         segments=[_segment_a(), _segment_b()],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=_adjustments(),
         advances=[
@@ -262,6 +267,10 @@ def test_cross_segment_month_example() -> None:
     result = run_calc_pipeline(data)
     assert result.order_count == 735
     assert result.valid_order_count == 700
+    assert result.plan_order_count == 700  # 两段合计（无方案日无单）
+    assert [row.plan_order_count for row in (result.segment_order_counts or [])] == [280, 420]
+    assert result.plan_period_order_count == 420
+    assert result.plan_period_order_count != result.valid_order_count
     assert result.per_order_total == D('1156.00')
     assert result.daily_total == D('0.00')
     assert result.period_total == D('3243.33')
@@ -283,6 +292,12 @@ def test_cross_segment_month_example() -> None:
     commission = next(row for row in result.details if row.name == '提成')
     assert commission.amount == D('2310.00')
     assert commission.calc_trace['变量']['方案期内单量'] == 420
+    trial = build_trial_result(result, 'c18-month')
+    assert trial.summary.period_valid_order_count == 700
+    assert trial.summary.plan_period_order_count == 420
+    assert trial.summary.period_valid_order_count != trial.summary.plan_period_order_count
+    assert TrialSummary.model_fields['period_valid_order_count'].description == '周期有效单量'
+    assert TrialSummary.model_fields['plan_period_order_count'].description == '方案期内单量'
     sep3 = next(row for row in result.dailies if row.biz_date == date(2026, 9, 3))
     assert sep3.day_status == DayStatus.no_orders.value
     assert data.advances[0].remaining_amount == D('0.00')
@@ -350,7 +365,6 @@ def test_night_surcharge_shanghai_2305_hits_1300_misses() -> None:
         employ_type='part_time',
         segments=[Segment(plan_version_id=1, start_date=day, end_date=day, items=items)],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[],
@@ -390,7 +404,6 @@ def test_trial_does_not_deduct_advance() -> None:
         employ_type='part_time',
         segments=[Segment(plan_version_id=1, start_date=day, end_date=day, items=[item])],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[
@@ -413,7 +426,11 @@ def test_trial_does_not_deduct_advance() -> None:
     assert data.advances[0].remaining_amount == D('100.00')
 
 
-def test_no_plan_day_warning() -> None:
+def test_no_plan_day_hard_fails() -> None:
+    import pytest
+
+    from backend.common.exception import errors
+
     item = _item(
         pk=1,
         subject_id=1,
@@ -440,7 +457,6 @@ def test_no_plan_day_warning() -> None:
         employ_type='part_time',
         segments=[Segment(plan_version_id=1, start_date=start, end_date=start, items=[item])],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[],
@@ -448,12 +464,49 @@ def test_no_plan_day_warning() -> None:
         site_order_dates={start, date(2026, 9, 2)},
         persist_advance=False,
     )
-    result = run_calc_pipeline(data)
-    assert any('2026-09-02 无生效方案' in msg and '2 单未计薪' in msg for msg in result.warnings)
-    day2 = next(row for row in result.dailies if row.biz_date == date(2026, 9, 2))
-    assert day2.day_status == DayStatus.no_plan.value
-    assert result.per_order_total == D('4.00')
-    assert result.valid_order_count == 3
+    with pytest.raises(errors.RequestError, match='无生效方案') as exc_info:
+        run_calc_pipeline(data)
+    assert '2026-09-02' in (exc_info.value.msg or '')
+    assert '2 单' in (exc_info.value.msg or '')
+
+
+def test_missing_deliver_time_hard_fails() -> None:
+    import pytest
+
+    from backend.common.exception import errors
+
+    item = _item(
+        pk=1,
+        subject_id=1,
+        name='基础单价',
+        stage=CalcStage.per_order.value,
+        sort_order=10,
+        condition={},
+        formula={'类型': '固定金额', '金额': 4},
+    )
+    day = date(2026, 9, 1)
+    order = _order(1, 'MISS-1', day)
+    order.deliver_time = None
+    data = CalcInput(
+        rider_id=1,
+        site_id=1,
+        period_start=day,
+        period_end=day,
+        hire_date=day,
+        leave_date=None,
+        employ_type='part_time',
+        segments=[Segment(plan_version_id=1, start_date=day, end_date=day, items=[item])],
+        orders=[order],
+        employ_history=[],
+        adjustments=[],
+        advances=[],
+        covered_dates={day},
+        site_order_dates={day},
+        persist_advance=False,
+    )
+    with pytest.raises(errors.RequestError, match='送达时间为空') as exc_info:
+        run_calc_pipeline(data)
+    assert 'MISS-1' in (exc_info.value.msg or '')
 
 
 def test_d2_parse_maps_to_calc_segments() -> None:
@@ -523,7 +576,6 @@ def test_guarantee_and_accrued() -> None:
         employ_type='full_time',
         segments=[Segment(plan_version_id=1, start_date=start, end_date=end, items=items)],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[],
@@ -536,6 +588,133 @@ def test_guarantee_and_accrued() -> None:
     guarantee = next(row for row in result.details if row.name == '保底补足')
     assert guarantee.amount == D('700.00')
     assert result.gross == D('3500.00')
+
+
+def _ladder_b_item(*, pk: int = 4) -> PlanItemView:
+    formula = {
+        '类型': '阶梯',
+        '字段': '方案期内单量',
+        '模式': '全量落档',
+        '计价': '按单价',
+        '档位': [
+            {'下限': 0, '上限': 300, '值': 5},
+            {'下限': 300, '上限': 600, '值': 5.5},
+            {'下限': 600, '上限': None, '值': 6},
+        ],
+    }
+    return _item(
+        pk=pk,
+        subject_id=94033,
+        name='提成',
+        stage=CalcStage.period.value,
+        sort_order=10,
+        condition={},
+        formula=formula,
+    )
+
+
+def test_trial_summary_named_counts_diverge_on_mid_month_rebind() -> None:
+    """C17 段内 20→100：周期有效单量与方案期内单量必须分叉，金额不改。"""
+    start = date(2026, 9, 1)
+    cut = date(2026, 9, 14)
+    rebind = date(2026, 9, 15)
+    segment_a = Segment(
+        plan_version_id=12,
+        start_date=start,
+        end_date=cut,
+        items=[
+            _item(
+                pk=1,
+                subject_id=94030,
+                name='基础单价',
+                stage=CalcStage.per_order.value,
+                sort_order=10,
+                condition={},
+                formula={'类型': '固定金额', '金额': 4},
+            )
+        ],
+    )
+    segment_b = Segment(plan_version_id=15, start_date=rebind, end_date=rebind, items=[_ladder_b_item()])
+    orders = [_order(i, f'A-{i}', start) for i in range(1, 41)]
+    orders.extend(_order(40 + i, f'B-{i}', rebind) for i in range(1, 21))
+    data = CalcInput(
+        rider_id=1,
+        site_id=1,
+        period_start=start,
+        period_end=rebind,
+        hire_date=start,
+        leave_date=None,
+        employ_type='full_time',
+        segments=[segment_a, segment_b],
+        orders=orders,
+        day_flags={},
+        employ_history=[],
+        adjustments=[],
+        advances=[],
+        covered_dates={start, cut, rebind},
+        site_order_dates={start, cut, rebind},
+        persist_advance=False,
+    )
+    result = run_calc_pipeline(data)
+    assert result.valid_order_count == 60
+    assert result.plan_period_order_count == 20
+    assert result.plan_period_order_count != result.valid_order_count
+    commission = next(row for row in result.details if row.name == '提成')
+    assert commission.amount == D('100.00')
+    trial = build_trial_result(result, 'c17-rebind')
+    assert trial.summary.period_valid_order_count == 60
+    assert trial.summary.plan_period_order_count == 20
+    assert trial.summary.order_count == 60
+
+
+def test_trial_summary_same_window_counts_equal_but_named() -> None:
+    """整月同窗：两计数相等，仍必须带中文字段名；420→2310 不改。"""
+    start = date(2026, 9, 15)
+    end = date(2026, 9, 30)
+    orders = [_order(i, f'W-{i}', start) for i in range(420)]
+    data = CalcInput(
+        rider_id=1,
+        site_id=1,
+        period_start=start,
+        period_end=end,
+        hire_date=start,
+        leave_date=None,
+        employ_type='full_time',
+        segments=[Segment(plan_version_id=15, start_date=start, end_date=end, items=[_ladder_b_item()])],
+        orders=orders,
+        day_flags={},
+        employ_history=[],
+        adjustments=[],
+        advances=[],
+        covered_dates={start},
+        site_order_dates={start},
+        persist_advance=False,
+    )
+    result = run_calc_pipeline(data)
+    assert result.valid_order_count == 420
+    assert result.plan_period_order_count == 420
+    commission = next(row for row in result.details if row.name == '提成')
+    assert commission.amount == D('2310.00')
+    trial = build_trial_result(result, 'c17-same-window')
+    assert trial.summary.period_valid_order_count == 420
+    assert trial.summary.plan_period_order_count == 420
+    dumped = trial.summary.model_dump()
+    assert 'period_valid_order_count' in dumped
+    assert 'plan_period_order_count' in dumped
+
+
+def test_plan_period_order_count_helper_uses_last_version_windows() -> None:
+    completed = [
+        SimpleNamespace(biz_date=date(2026, 9, 1)),
+        SimpleNamespace(biz_date=date(2026, 9, 15)),
+        SimpleNamespace(biz_date=date(2026, 9, 16)),
+    ]
+    segments = [
+        Segment(plan_version_id=12, start_date=date(2026, 9, 1), end_date=date(2026, 9, 14), items=[]),
+        Segment(plan_version_id=15, start_date=date(2026, 9, 15), end_date=date(2026, 9, 30), items=[]),
+    ]
+    assert plan_period_order_count_of(completed, segments) == 2
+    assert plan_period_order_count_of(completed, []) == 0
 
 
 def test_recalc_must_restore_advance_before_rededuct() -> None:

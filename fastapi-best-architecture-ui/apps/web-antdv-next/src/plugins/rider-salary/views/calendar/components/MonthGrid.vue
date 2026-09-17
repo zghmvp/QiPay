@@ -26,6 +26,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  bindPlan: [date: string];
   select: [date: string, inMonth: boolean];
 }>();
 
@@ -78,6 +79,7 @@ function inMonth(day: Dayjs) {
         :item="inMonth(day) ? dayMap.get(keyOf(day)) : undefined"
         :selected="selectedDate === keyOf(day)"
         :today="keyOf(day) === todayKey"
+        @bind-plan="emit('bindPlan', keyOf(day))"
         @click="emit('select', keyOf(day), inMonth(day))"
       />
     </div>

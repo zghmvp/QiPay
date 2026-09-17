@@ -7,7 +7,11 @@ import { onBeforeUnmount, ref, watch } from 'vue';
 import { message } from 'antdv-next';
 
 import { validateEngineApi } from '../../../api/engine';
-import { fromConditionJson, toConditionJson } from '../helpers';
+import {
+  fromConditionJson,
+  MANUAL_OK_AS_CONDITION_COPY,
+  toConditionJson,
+} from '../helpers';
 import ConditionGroupNode from './ConditionGroupNode.vue';
 
 const props = withDefaults(
@@ -101,6 +105,13 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex flex-col gap-2">
     <div class="text-sm font-medium">触发条件</div>
+    <a-alert
+      v-if="stage === 'period'"
+      type="info"
+      show-icon
+      data-testid="plan-manual-ok-as-condition"
+      :message="MANUAL_OK_AS_CONDITION_COPY"
+    />
     <ConditionGroupNode
       :disabled="disabled"
       :fields="fields"

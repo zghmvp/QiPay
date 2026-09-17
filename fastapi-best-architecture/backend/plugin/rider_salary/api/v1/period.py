@@ -11,6 +11,8 @@ from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.schema.period import (
+    CalcPrecheckResult,
+    CalcRiderPageResult,
     CalculatePeriodParam,
     CalculatePeriodResult,
     GeneratePeriodParam,
@@ -19,6 +21,7 @@ from backend.plugin.rider_salary.schema.period import (
     GetPeriodListItem,
     GetPeriodWithPayrolls,
     LockPeriodParam,
+    LockPreflightResult,
     MarkPaidPeriodParam,
     ReversePeriodParam,
     ReversePeriodResult,
@@ -45,6 +48,11 @@ async def get_periods_paginated(
     rider_id: Annotated[int | None, Query(description='骑手 ID，0 表示站点级')] = None,
     status: Annotated[str | None, Query(description='状态')] = None,
     month: Annotated[str | None, Query(description='年月 YYYY-MM')] = None,
+    stale: Annotated[bool | None, Query(description='仅需重算周期')] = None,
+    lock_due: Annotated[
+        bool | None,
+        Query(description='锁账倒计时：open|reopened 且 end_date≤今天+3（含已过期未锁）'),
+    ] = None,
 ) -> ResponseSchemaModel[PageData[GetPeriodListItem]]:
     data = await period_service.get_list(
         db=db,
@@ -53,6 +61,8 @@ async def get_periods_paginated(
         rider_id=rider_id,
         status=status,
         month=month,
+        stale=stale,
+        lock_due=lock_due,
     )
     return response_base.success(data=data)
 
@@ -111,13 +121,64 @@ async def export_period(
     db: CurrentSessionTransaction,
     request: Request,
     pk: Annotated[int, Path(description='周期 ID')],
+    exclude_attention: Annotated[
+        bool | None,
+        Query(description='排除需关注订单行（不改应发/实发），默认不排除'),
+    ] = None,
+    exclude_attention_adjustments: Annotated[
+        bool | None,
+        Query(description='奖惩同步去掉需关注同日同骑手，默认关闭；关闭时仍导出并标注'),
+    ] = None,
 ) -> StreamingResponse:
-    content, filename = await export_service.export_period(db=db, request=request, pk=pk)
-    return StreamingResponse(
-        iter([content]),
-        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={'Content-Disposition': content_disposition(filename)},
+    excluded = bool(exclude_attention)
+    drop_adj = bool(exclude_attention_adjustments)
+    exported = await export_service.export_period(
+        db=db,
+        request=request,
+        pk=pk,
+        exclude_attention=excluded,
+        exclude_attention_adjustments=drop_adj,
     )
+    headers = {'Content-Disposition': content_disposition(exported.filename)}
+    headers['X-QiPay-Attention-Count'] = str(exported.attention_count)
+    headers['X-QiPay-Attention-Excluded'] = '1' if exported.exclude_attention else '0'
+    headers['X-QiPay-Adjustment-Booked'] = str(exported.booked_adjustment_count)
+    headers['X-QiPay-Adjustment-Unbooked'] = str(exported.unbooked_adjustment_count)
+    headers['X-QiPay-Adjustment-Attention'] = str(exported.attention_adjustment_count)
+    headers['X-QiPay-Adjustment-Excluded'] = str(exported.excluded_adjustment_count)
+    return StreamingResponse(
+        iter([exported.content]),
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers=headers,
+    )
+
+
+@router.get(
+    '/{pk}/calc-riders',
+    summary='算薪骑手搜索分页',
+    description='未选=计算本周期全部骑手。可见列表不是全集时返回 truncated_hint，请搜索第 201+ 人。',
+    dependencies=[
+        DependsJwtAuth,
+        DependsRBAC,
+    ],
+)
+async def list_period_calc_riders(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+    keyword: Annotated[str | None, Query(description='工号或姓名')] = None,
+    page: Annotated[int, Query(ge=1, description='页码')] = 1,
+    size: Annotated[int, Query(gt=0, le=200, description='每页数量，最大 200')] = 200,
+) -> ResponseSchemaModel[CalcRiderPageResult]:
+    data = await period_service.list_calc_riders(
+        db=db,
+        request=request,
+        pk=pk,
+        keyword=keyword,
+        page=page,
+        size=size,
+    )
+    return response_base.success(data=data)
 
 
 @router.get(
@@ -134,6 +195,24 @@ async def get_period(
     pk: Annotated[int, Path(description='周期 ID')],
 ) -> ResponseSchemaModel[GetPeriodWithPayrolls]:
     data = await period_service.get(db=db, request=request, pk=pk)
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/{pk}/calc-precheck',
+    summary='算薪预检',
+    description='只读聚合硬风险与警告，不写薪资结果；不要求算薪权限',
+    dependencies=[
+        DependsJwtAuth,
+        DependsRBAC,
+    ],
+)
+async def calc_precheck_period(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+) -> ResponseSchemaModel[CalcPrecheckResult]:
+    data = await period_service.calc_precheck(db=db, request=request, pk=pk)
     return response_base.success(data=data)
 
 
@@ -159,6 +238,24 @@ async def calculate_period(
         obj=obj or CalculatePeriodParam(),
         background_tasks=background_tasks,
     )
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/{pk}/lock-preflight',
+    summary='锁账预检',
+    description='返回本锁将冻结的订单/奖惩/薪资单数、将锁骑手数，以及决策29跳过的骑手级覆盖人数',
+    dependencies=[
+        Depends(RequestPermission('rs:period:lock')),
+        DependsRBAC,
+    ],
+)
+async def lock_period_preflight(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+) -> ResponseSchemaModel[LockPreflightResult]:
+    data = await period_service.lock_preflight(db=db, request=request, pk=pk)
     return response_base.success(data=data)
 
 

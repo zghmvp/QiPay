@@ -54,15 +54,12 @@ export const FIELD_GROUPS = [
     ],
   },
   {
-    label: '日期与标记',
+    label: '日期',
     names: [
       '日期',
       '星期',
       '是否节假日',
       '是否周末',
-      '是否恶劣天气',
-      '是否高温',
-      '是否大促',
     ],
   },
   {
@@ -267,6 +264,31 @@ export function summarizeFormula(
   return String(json.表达式 || '表达式');
 }
 
+/** 方案项一句话说明：接口 summary / 备注优先，否则条件+公式摘要 */
+export function summarizeItem(item: {
+  condition_expr?: null | string;
+  condition_json?: null | Record<string, unknown>;
+  formula_expr?: null | string;
+  formula_json?: null | Record<string, unknown>;
+  remark?: null | string;
+  summary?: null | string;
+}): string {
+  const fromApi = item.summary?.trim();
+  if (fromApi) return fromApi;
+  const remark = item.remark?.trim();
+  if (remark) return remark;
+  const cond = summarizeCondition(item.condition_json, item.condition_expr);
+  const formula = summarizeFormula(item.formula_json, item.formula_expr);
+  const parts: string[] = [];
+  if (cond && cond !== '恒真（空条件）' && cond !== 'True') {
+    parts.push(`条件 ${cond}`);
+  }
+  if (formula && formula !== '—') {
+    parts.push(formula);
+  }
+  return parts.join('；') || '—';
+}
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return value.join('~');
@@ -278,15 +300,87 @@ export function canEditVersion(status?: string, isUsed?: boolean) {
   return status === 'draft' && !isUsed;
 }
 
+export const MANUAL_PERIOD_FIELDS = ['本期手工奖', '本期手工惩'] as const;
+
+export const MANUAL_NOT_DOUBLE_COPY =
+  '本期手工奖 / 本期手工惩可作条件；加进公式 = 双计。手工明细已入账，再加会双计。';
+
+export const MANUAL_OK_AS_CONDITION_COPY =
+  '本期手工奖 / 本期手工惩可作条件，不会双计。';
+
+export const MANUAL_ADDED_AS_FORMULA_COPY =
+  '加进公式会把已入账手工明细再计一次（双计）。请改到条件，或只在保底里相减。';
+
+export function isManualPeriodField(name?: null | string): boolean {
+  return name === '本期手工奖' || name === '本期手工惩';
+}
+
+export function formulaFieldLabel(name: string, unit?: null | string): string {
+  if (isManualPeriodField(name)) {
+    return `${name}（可作条件；加进公式=双计）`;
+  }
+  return unit ? `${name}（${unit}）` : name;
+}
+
+export function conditionFieldLabel(name: string, unit?: null | string): string {
+  if (isManualPeriodField(name)) {
+    return `${name}（可作条件）`;
+  }
+  return unit ? `${name}（${unit}）` : name;
+}
+
+/** 字段出现在求和 / 乘除 / 单独成项 = 加项；仅跟在减号后（保底门槛）不是加项 */
+export function manualFieldUsedAsAddend(expr: string): boolean {
+  const compact = expr.replace(/\s+/g, '');
+  for (const field of MANUAL_PERIOD_FIELDS) {
+    let from = 0;
+    while (from < compact.length) {
+      const idx = compact.indexOf(field, from);
+      if (idx < 0) break;
+      const before = idx > 0 ? compact[idx - 1] : undefined;
+      const minusBefore = before === '−' || before === '-';
+      if (!minusBefore) return true;
+      from = idx + field.length;
+    }
+  }
+  return false;
+}
+
+export function formulaAddsManualField(
+  formula: null | Record<string, unknown> | undefined,
+): boolean {
+  if (!formula) return false;
+  const kind = formulaKindOf(formula);
+  if (kind === '字段乘单价' || kind === '阶梯' || kind === '固定金额') {
+    return isManualPeriodField(String(formula.字段 ?? ''));
+  }
+  return manualFieldUsedAsAddend(String(formula.表达式 ?? ''));
+}
+
+export const FULL_TRIAL_NOT_PAYROLL = '整版试算通过 ≠ 按当前绑定出账';
+
+export const BINDING_FIXED_FULL_AMOUNT =
+  '周期「固定金额」项按绑定分段各计一次全额，不是整月分摊一次。两段固定 2000 → 底薪合计 4000。';
+
+export const PERIOD_FIXED_AMOUNT_HINT =
+  '非整周期绑定时，本段将按全额计一次，不是按方案生效天数分摊。';
+
+export const ACTIVATE_CONFIRM_CONTENT =
+  '确认启用该方案版本？整版试算通过 ≠ 按当前绑定出账。启用后正式 calculate 按真实绑定分段；周期固定金额每段各计一次全额。启用后内容不可再改。';
+
 export function trialLabel(options: {
+  bindingTrialPassed?: boolean | null;
   dirty?: boolean;
   itemsHash?: null | string;
   trialHash?: null | string;
   trialPassed?: boolean;
 }) {
   if (options.dirty) return { color: 'warning', text: '需重新试算' };
+  if (options.bindingTrialPassed) {
+    return { color: 'success', text: '按当前绑定已对拍' };
+  }
   if (options.trialPassed && options.trialHash && options.trialHash === options.itemsHash) {
-    return { color: 'success', text: '试算通过 ✓' };
+    return { color: 'warning', text: FULL_TRIAL_NOT_PAYROLL };
   }
   if (options.trialPassed && options.trialHash && options.trialHash !== options.itemsHash) {
     return { color: 'warning', text: '需重新试算' };
@@ -298,6 +392,7 @@ export function trialLabel(options: {
 }
 
 export function activateHint(options: {
+  bindingTrialPassed?: boolean | null;
   dirty?: boolean;
   itemsHash?: null | string;
   trialHash?: null | string;
@@ -306,7 +401,53 @@ export function activateHint(options: {
   if (options.dirty) return '请先保存方案项';
   if (!options.trialPassed) return '请先完成试算再启用';
   if (options.trialHash !== options.itemsHash) return '方案内容已变更，请重新试算';
+  if (options.bindingTrialPassed === false) {
+    return `${FULL_TRIAL_NOT_PAYROLL}，请先做按绑定分段试算`;
+  }
   return '';
+}
+
+/** 保底/补足类：引用「本期已计金额」或名称含保底，须排在周期阶段最后 */
+export function isGuaranteeLikeItem(item: {
+  formula_expr?: null | string;
+  formula_json?: null | Record<string, unknown>;
+  name?: string;
+  stage?: string;
+}): boolean {
+  if (item.stage && item.stage !== 'period') return false;
+  const name = item.name || '';
+  if (/保底|补足|补差/.test(name)) return true;
+  const expr =
+    item.formula_expr ||
+    (item.formula_json && typeof item.formula_json.表达式 === 'string'
+      ? String(item.formula_json.表达式)
+      : '') ||
+    JSON.stringify(item.formula_json || {});
+  return expr.includes('本期已计金额');
+}
+
+export function findMisplacedGuaranteeKeys(items: PlanItemDraft[]): string[] {
+  const period = items.filter((item) => item.stage === 'period' && item.enabled !== false);
+  if (period.length === 0) return [];
+  const misplaced: string[] = [];
+  period.forEach((item, index) => {
+    if (isGuaranteeLikeItem(item) && index !== period.length - 1) {
+      misplaced.push(item._key);
+    }
+  });
+  return misplaced;
+}
+
+/** 将保底类周期项沉到周期阶段末尾，保持其他阶段顺序 */
+export function sinkGuaranteeItems(items: PlanItemDraft[]): PlanItemDraft[] {
+  const period = items.filter((item) => item.stage === 'period');
+  const others = items.filter((item) => item.stage !== 'period');
+  const guarantees = period.filter((item) => isGuaranteeLikeItem(item));
+  const nonGuarantees = period.filter((item) => !isGuaranteeLikeItem(item));
+  const nextPeriod = [...nonGuarantees, ...guarantees];
+  return STAGE_ORDER.flatMap((stage) =>
+    stage === 'period' ? nextPeriod : others.filter((item) => item.stage === stage),
+  );
 }
 
 export function defaultOperatorForType(type?: string) {

@@ -12,13 +12,14 @@ values
 (91006, '方案编辑器', 'RiderSalaryPlanEditor', '/rider-salary/plan/editor/:versionId', 6, 'lucide:pencil-ruler', 1, '/plugins/rider-salary/views/plan/editor', null, 1, 0, 1, '', null, 91000, now(), null),
 (91007, '订单明细', 'RiderSalaryOrder', '/rider-salary/order', 7, 'lucide:clipboard-list', 1, '/plugins/rider-salary/views/order/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91008, '奖惩录入', 'RiderSalaryAdjustment', '/rider-salary/adjustment', 8, 'lucide:plus-minus', 1, '/plugins/rider-salary/views/adjustment/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91009, '日标记', 'RiderSalaryDayFlag', '/rider-salary/day-flag', 9, 'lucide:calendar-days', 1, '/plugins/rider-salary/views/day-flag/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91010, '结算周期', 'RiderSalaryPeriod', '/rider-salary/period', 10, 'lucide:calendar-range', 1, '/plugins/rider-salary/views/period/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91011, '薪资日历', 'RiderSalaryCalendar', '/rider-salary/calendar', 11, 'lucide:calendar', 1, '/plugins/rider-salary/views/calendar/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 12, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91013, '站点公告', 'RiderSalaryNotice', '/rider-salary/notice', 13, 'lucide:megaphone', 1, '/plugins/rider-salary/views/notice/index', null, 1, 1, 1, '', null, 91000, now(), null),
+(91016, '薪资结果', 'RiderSalaryPayroll', '/rider-salary/payroll', 11, 'lucide:wallet', 1, '/plugins/rider-salary/views/payroll/index', null, 1, 1, 1, '', null, 91000, now(), null),
+(91011, '薪资日历', 'RiderSalaryCalendar', '/rider-salary/calendar', 12, 'lucide:calendar', 1, '/plugins/rider-salary/views/calendar/index', null, 1, 1, 1, '', null, 91000, now(), null),
+(91012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 13, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 14, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 91000, now(), null);
+(91015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 91000, now(), null),
+(91017, '薪资明细', 'RiderSalaryPayrollDetail', '/rider-salary/payroll/:id', 16, 'lucide:file-text', 1, '/plugins/rider-salary/views/payroll/detail', null, 1, 0, 1, '', null, 91000, now(), null),
+(91018, '周期算薪', 'RiderSalaryPeriodCalculate', '/rider-salary/period/:id/calculate', 17, 'lucide:calculator', 1, '/plugins/rider-salary/views/period/calculate', null, 1, 0, 1, '', null, 91000, now(), null);
 
 insert into sys_menu (id, title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
 values
@@ -51,14 +52,13 @@ values
 (91127, '新增奖惩', 'RiderSalaryAdjustmentAdd', null, 0, null, 2, null, 'rs:adjustment:add', 1, 0, 1, '', null, 91008, now(), null),
 (91128, '修改奖惩', 'RiderSalaryAdjustmentEdit', null, 0, null, 2, null, 'rs:adjustment:edit', 1, 0, 1, '', null, 91008, now(), null),
 (91129, '删除奖惩', 'RiderSalaryAdjustmentDel', null, 0, null, 2, null, 'rs:adjustment:del', 1, 0, 1, '', null, 91008, now(), null),
-(91130, '编辑日标记', 'RiderSalaryDayFlagEdit', null, 0, null, 2, null, 'rs:dayflag:edit', 1, 0, 1, '', null, 91009, now(), null),
 (91131, '生成周期', 'RiderSalaryPeriodGenerate', null, 0, null, 2, null, 'rs:period:generate', 1, 0, 1, '', null, 91010, now(), null),
 (91132, '计算薪资', 'RiderSalaryPeriodCalculate', null, 0, null, 2, null, 'rs:period:calculate', 1, 0, 1, '', null, 91010, now(), null),
 (91133, '锁账', 'RiderSalaryPeriodLock', null, 0, null, 2, null, 'rs:period:lock', 1, 0, 1, '', null, 91010, now(), null),
 (91134, '标记发薪', 'RiderSalaryPeriodMarkPaid', null, 0, null, 2, null, 'rs:period:mark-paid', 1, 0, 1, '', null, 91010, now(), null),
 (91135, '反冲补发', 'RiderSalaryPeriodReverse', null, 0, null, 2, null, 'rs:period:reverse', 1, 0, 1, '', null, 91010, now(), null),
 (91136, '导出周期', 'RiderSalaryPeriodExport', null, 0, null, 2, null, 'rs:period:export', 1, 0, 1, '', null, 91010, now(), null),
-(91137, '查看薪资单', 'RiderSalaryPayrollView', null, 0, null, 2, null, 'rs:payroll:view', 1, 0, 1, '', null, 91010, now(), null),
+(91137, '查看薪资单', 'RiderSalaryPayrollView', null, 0, null, 2, null, 'rs:payroll:view', 1, 0, 1, '', null, 91016, now(), null),
 (91138, '查看日历', 'RiderSalaryCalendarView', null, 0, null, 2, null, 'rs:calendar:view', 1, 0, 1, '', null, 91011, now(), null),
 (91139, '查看工作台', 'RiderSalaryDashboardView', null, 0, null, 2, null, 'rs:dashboard:view', 1, 0, 1, '', null, 91001, now(), null),
 (91140, '通过预支', 'RiderSalaryAdvanceApprove', null, 0, null, 2, null, 'rs:advance:approve', 1, 0, 1, '', null, 91012, now(), null),
@@ -66,9 +66,6 @@ values
 (91142, '标记已发放', 'RiderSalaryAdvanceMarkPaid', null, 0, null, 2, null, 'rs:advance:mark-paid', 1, 0, 1, '', null, 91012, now(), null),
 (91143, '取消预支', 'RiderSalaryAdvanceCancel', null, 0, null, 2, null, 'rs:advance:cancel', 1, 0, 1, '', null, 91012, now(), null),
 (91144, '导出预支', 'RiderSalaryAdvanceExport', null, 0, null, 2, null, 'rs:advance:export', 1, 0, 1, '', null, 91012, now(), null),
-(91145, '新增公告', 'RiderSalaryNoticeAdd', null, 0, null, 2, null, 'rs:notice:add', 1, 0, 1, '', null, 91013, now(), null),
-(91146, '修改公告', 'RiderSalaryNoticeEdit', null, 0, null, 2, null, 'rs:notice:edit', 1, 0, 1, '', null, 91013, now(), null),
-(91147, '删除公告', 'RiderSalaryNoticeDel', null, 0, null, 2, null, 'rs:notice:del', 1, 0, 1, '', null, 91013, now(), null),
 (91148, '查看日志', 'RiderSalaryAuditView', null, 0, null, 2, null, 'rs:audit:view', 1, 0, 1, '', null, 91014, now(), null),
 (91149, '删除周期', 'RiderSalaryPeriodDelete', null, 0, null, 2, null, 'rs:period:delete', 1, 0, 1, '', null, 91010, now(), null);
 
@@ -90,11 +87,10 @@ values
 (93007, 92001, 91006),
 (93008, 92001, 91007),
 (93009, 92001, 91008),
-(93010, 92001, 91009),
 (93011, 92001, 91010),
+(93157, 92001, 91016),
 (93012, 92001, 91011),
 (93013, 92001, 91012),
-(93014, 92001, 91013),
 (93015, 92001, 91014),
 (93016, 92001, 91101),
 (93017, 92001, 91102),
@@ -124,7 +120,6 @@ values
 (93041, 92001, 91127),
 (93042, 92001, 91128),
 (93043, 92001, 91129),
-(93044, 92001, 91130),
 (93045, 92001, 91131),
 (93046, 92001, 91132),
 (93047, 92001, 91133),
@@ -139,9 +134,6 @@ values
 (93056, 92001, 91142),
 (93057, 92001, 91143),
 (93058, 92001, 91144),
-(93059, 92001, 91145),
-(93060, 92001, 91146),
-(93061, 92001, 91147),
 (93062, 92001, 91148),
 (93063, 92002, 91000),
 (93064, 92003, 91000),
@@ -157,16 +149,14 @@ values
 (93074, 92003, 91007),
 (93075, 92002, 91008),
 (93076, 92003, 91008),
-(93077, 92002, 91009),
-(93078, 92003, 91009),
 (93079, 92002, 91010),
 (93080, 92003, 91010),
+(93158, 92002, 91016),
+(93159, 92003, 91016),
 (93081, 92002, 91011),
 (93082, 92003, 91011),
 (93083, 92002, 91012),
 (93084, 92003, 91012),
-(93085, 92002, 91013),
-(93086, 92003, 91013),
 (93087, 92002, 91014),
 (93088, 92003, 91014),
 (93089, 92002, 91127),
@@ -191,14 +181,6 @@ values
 (93108, 92003, 91138),
 (93109, 92002, 91139),
 (93110, 92003, 91139),
-(93111, 92002, 91130),
-(93112, 92003, 91130),
-(93113, 92002, 91145),
-(93114, 92003, 91145),
-(93115, 92002, 91147),
-(93116, 92003, 91147),
-(93117, 92002, 91146),
-(93118, 92003, 91146),
 (93119, 92002, 91122),
 (93120, 92003, 91122),
 (93121, 92002, 91124),
@@ -236,7 +218,13 @@ values
 (93153, 92003, 91149),
 (93154, 92001, 91015),
 (93155, 92002, 91015),
-(93156, 92003, 91015);
+(93156, 92003, 91015),
+(93160, 92001, 91017),
+(93161, 92002, 91017),
+(93162, 92003, 91017),
+(93163, 92001, 91018),
+(93164, 92002, 91018),
+(93165, 92003, 91018);
 
 insert into rs_subject (id, code, name, direction, fee_mode, fixed_amount, include_in_gross, entry_granularity, scope_sites, scope_employ_types, is_builtin, status, sort_order, remark, created_time, updated_time)
 values
@@ -264,15 +252,21 @@ values
 (94022, 'BONUS_LARGE_ORDER', '大额订单奖', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 22, null, now(), null),
 (94023, 'BONUS_OVERWEIGHT', '超重补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 23, null, now(), null),
 (94024, 'BONUS_DISTANCE', '距离补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 24, null, now(), null),
-(94025, 'BONUS_HIGH_TEMP', '高温补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 25, null, now(), null),
+(94025, 'BONUS_HIGH_TEMP', '高温补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'disable', 25, '已下线：引擎无天气/大促字段，请改用节假日或周末条件', now(), null),
 (94026, 'BONUS_NIGHT', '夜间补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 26, null, now(), null),
-(94027, 'BONUS_BAD_WEATHER', '恶劣天气补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 27, null, now(), null),
+(94027, 'BONUS_BAD_WEATHER', '恶劣天气补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'disable', 27, '已下线：引擎无天气/大促字段，请改用节假日或周末条件', now(), null),
 (94028, 'BONUS_HOLIDAY', '节假日补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 28, null, now(), null),
-(94029, 'BONUS_PROMO', '大促临时加价', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 29, null, now(), null),
+(94029, 'BONUS_PROMO', '大促临时加价', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'disable', 29, '已下线：引擎无天气/大促字段，请改用节假日或周末条件', now(), null),
 (94030, 'BASE_UNIT_PRICE', '基础单价', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 30, null, now(), null),
 (94031, 'BASE_SALARY', '底薪', 'bonus', 'fixed', null, true, 'period', '[]', '[]', true, 'enable', 31, null, now(), null),
 (94032, 'GUARANTEE_TOPUP', '保底补足', 'bonus', 'formula', null, true, 'period', '[]', '[]', true, 'enable', 32, null, now(), null),
 (94033, 'COMMISSION', '提成', 'bonus', 'formula', null, true, 'period', '[]', '[]', true, 'enable', 33, null, now(), null);
+do $$
+begin
+  alter table rs_site add column monthly_advance_limit integer not null default 1;
+exception
+  when duplicate_column then null;
+end $$;
 select setval(pg_get_serial_sequence('sys_menu', 'id'), coalesce(max(id), 0) + 1, true) from sys_menu;
 select setval(pg_get_serial_sequence('sys_role', 'id'), coalesce(max(id), 0) + 1, true) from sys_role;
 select setval(pg_get_serial_sequence('sys_role_menu', 'id'), coalesce(max(id), 0) + 1, true) from sys_role_menu;

@@ -41,7 +41,10 @@ export const querySchema: VbenFormSchema[] = [
     component: 'Select',
     componentProps: {
       allowClear: true,
-      options: enumTagOptions(ORDER_STATUS_OPTIONS),
+      options: [
+        ...enumTagOptions(ORDER_STATUS_OPTIONS),
+        { label: '需关注（异常/退款/超时）', value: '__attention__' },
+      ],
     },
     fieldName: 'status',
     label: '状态',
@@ -71,6 +74,15 @@ export const querySchema: VbenFormSchema[] = [
     },
     fieldName: 'is_locked',
     label: '是否锁账',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: [{ label: '已完成且送达为空', value: true }],
+    },
+    fieldName: 'missing_delivery',
+    label: '缺送达',
   },
 ];
 

@@ -8,7 +8,7 @@ import type {
   VxeTableGridOptions,
 } from '#/adapter/vxe-table';
 
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { confirm, useVbenDrawer, VbenButton } from '@vben/common-ui';
@@ -27,7 +27,7 @@ import {
 } from '../../api/advance';
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
-import { toDateString } from '../../utils/date';
+import { monthRange, toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import AdvanceDrawer from './components/AdvanceDrawer.vue';
 import { querySchema, useColumns } from './data';
@@ -41,25 +41,56 @@ const { ReasonModal, prompt } = useReasonModal();
 
 const route = useRoute();
 const ADVANCE_TABS = new Set(['all', 'paid', 'pending', 'to_pay']);
+
+function queryStr(key: string) {
+  const raw = route.query[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === 'string' && v ? v : undefined;
+}
+
+function queryNum(key: string) {
+  const n = Number(queryStr(key));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 const initialStatus =
   typeof route.query.status === 'string' ? route.query.status : undefined;
+const initialSiteId = queryNum('site_id');
+const initialRiderId = queryNum('rider_id');
+const initialId = queryNum('id');
+// Cycle 13 Must 3：落地读 query.id，打开该条预支
+void route.query.id;
+const initialMonth = queryStr('month');
+const initialDateRange = initialMonth ? monthRange(initialMonth) : undefined;
 const tab = ref(
-  !initialStatus
-    ? 'pending'
-    : ADVANCE_TABS.has(initialStatus)
-      ? initialStatus
-      : 'all',
+  initialStatus && ADVANCE_TABS.has(initialStatus)
+    ? initialStatus
+    : initialId
+      ? 'all'
+      : 'pending',
 );
 
 const formOptions: VbenFormProps = {
   collapsed: true,
-  schema: querySchema.map((item) =>
-    item.fieldName === 'status' &&
-    initialStatus &&
-    !ADVANCE_TABS.has(initialStatus)
-      ? { ...item, defaultValue: initialStatus }
-      : item,
-  ),
+  schema: querySchema.map((item) => {
+    if (
+      item.fieldName === 'status' &&
+      initialStatus &&
+      !ADVANCE_TABS.has(initialStatus)
+    ) {
+      return { ...item, defaultValue: initialStatus };
+    }
+    if (item.fieldName === 'site_id' && initialSiteId) {
+      return { ...item, defaultValue: initialSiteId };
+    }
+    if (item.fieldName === 'rider_id' && initialRiderId) {
+      return { ...item, defaultValue: initialRiderId };
+    }
+    if (item.fieldName === 'date_range' && initialDateRange) {
+      return { ...item, defaultValue: initialDateRange };
+    }
+    return item;
+  }),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
 };
@@ -81,6 +112,7 @@ const gridOptions: VxeTableGridOptions<AdvanceResult> = {
         return await getAdvanceListApi({
           date_from: toDateString(date_range?.[0]),
           date_to: toDateString(date_range?.[1]),
+          id: initialId,
           page: page.currentPage,
           size: page.pageSize,
           ...rest,
@@ -99,9 +131,24 @@ const gridOptions: VxeTableGridOptions<AdvanceResult> = {
 
 const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 
-onMounted(() => {
+const [DetailDrawer, detailApi] = useVbenDrawer({
+  connectedComponent: AdvanceDrawer,
+});
+
+onMounted(async () => {
+  const values: Record<string, unknown> = {};
   if (initialStatus && !ADVANCE_TABS.has(initialStatus)) {
-    void gridApi.formApi.setValues({ status: initialStatus });
+    values.status = initialStatus;
+  }
+  if (initialSiteId) values.site_id = initialSiteId;
+  if (initialRiderId) values.rider_id = initialRiderId;
+  if (initialDateRange) values.date_range = initialDateRange;
+  if (Object.keys(values).length) {
+    await gridApi.formApi.setValues(values);
+  }
+  if (initialId) {
+    await nextTick();
+    detailApi.setData({ id: initialId }).open();
   }
 });
 
@@ -137,7 +184,7 @@ async function onActionClick({
 }: OnActionClickParams<AdvanceResult>) {
   try {
     if (code === 'detail') {
-      detailApi.setData({ id: row.id }).open();
+      detailApi.setData({ id: row.id, row }).open();
       return;
     }
     if (code === 'approve') {
@@ -184,9 +231,6 @@ async function onActionClick({
   }
 }
 
-const [DetailDrawer, detailApi] = useVbenDrawer({
-  connectedComponent: AdvanceDrawer,
-});
 </script>
 
 <template>

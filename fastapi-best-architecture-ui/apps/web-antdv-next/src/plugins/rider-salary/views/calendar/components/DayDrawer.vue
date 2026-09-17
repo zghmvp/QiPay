@@ -8,6 +8,7 @@ import type {
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useAccess } from '@vben/access';
 import { VbenButton } from '@vben/common-ui';
 
 import dayjs from 'dayjs';
@@ -24,12 +25,14 @@ import {
   SUBJECT_DIRECTION_OPTIONS,
 } from '../../../constants/enums';
 import { toDateTimeString } from '../../../utils/date';
+import { resolveRiderPeriodPayslip } from '../payslip';
 
 const props = defineProps<{
   date?: string;
   open: boolean;
   riderId?: number;
   riderName?: string;
+  siteId?: number;
 }>();
 
 const emit = defineEmits<{
@@ -40,8 +43,17 @@ const emit = defineEmits<{
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
 const router = useRouter();
+const { hasAccessByCodes } = useAccess();
 const loading = ref(false);
 const detail = ref<CalendarDayDetail>();
+const canGoCalculate = computed(() => {
+  const status = detail.value?.period?.status;
+  return (
+    Boolean(detail.value?.period?.id) &&
+    (status === 'open' || status === 'reopened') &&
+    hasAccessByCodes(['rs:period:calculate'])
+  );
+});
 
 const title = computed(() => {
   if (!props.date) return '日详情';
@@ -50,16 +62,7 @@ const title = computed(() => {
   return `${d.format('M月D日')} 星期${WEEKDAYS[d.day()]}${name}`;
 });
 
-const flagTags = computed(() => {
-  const flag = detail.value?.day_flag;
-  if (!flag) return [];
-  const tags: string[] = [];
-  if (flag.bad_weather) tags.push('恶劣天气');
-  if (flag.high_temp) tags.push('高温');
-  if (flag.promo) tags.push('大促');
-  if (flag.is_holiday) tags.push('节假日');
-  return tags;
-});
+const holidayTag = computed(() => (detail.value?.is_holiday ? '节假日' : ''));
 
 const orderColumns = [
   { dataIndex: 'order_no', key: 'order_no', title: '订单号', width: 140 },
@@ -135,16 +138,29 @@ function close() {
 
 function goAdjustment() {
   if (!props.riderId || !props.date) return;
+  const siteId = props.siteId;
   router.push({
     path: '/rider-salary/adjustment',
-    query: { date: props.date, rider_id: String(props.riderId) },
+    query: {
+      date_from: props.date,
+      date_to: props.date,
+      rider_id: String(props.riderId),
+      ...(siteId ? { site_id: String(siteId) } : {}),
+    },
   });
 }
 
-function goPeriod() {
+async function goPeriod() {
+  const id = detail.value?.period?.id;
+  if (!id || !props.riderId) return;
+  router.push(await resolveRiderPeriodPayslip(props.riderId, id));
+}
+
+function goCalculate() {
   const id = detail.value?.period?.id;
   if (!id) return;
-  router.push({ path: '/rider-salary/period', query: { id: String(id) } });
+  emit('update:open', false);
+  router.push({ path: `/rider-salary/period/${id}/calculate` });
 }
 
 function goPlan() {
@@ -214,14 +230,9 @@ function onKey(e: KeyboardEvent) {
           <a-descriptions-item label="日状态">
             <StatusTag :options="DAY_STATUS_OPTIONS" :value="detail.day_status" />
           </a-descriptions-item>
-          <a-descriptions-item label="日标记">
-            <a-space v-if="flagTags.length" :size="4" wrap>
-              <a-tag v-for="tag in flagTags" :key="tag">{{ tag }}</a-tag>
-            </a-space>
+          <a-descriptions-item label="节假日">
+            <a-tag v-if="holidayTag">{{ holidayTag }}</a-tag>
             <span v-else>—</span>
-            <div v-if="detail.day_flag?.remark" class="text-muted-foreground mt-1 text-xs">
-              {{ detail.day_flag.remark }}
-            </div>
           </a-descriptions-item>
         </a-descriptions>
 
@@ -229,10 +240,17 @@ function onKey(e: KeyboardEvent) {
           v-if="detail.day_status === 'no_plan'"
           show-icon
           type="warning"
-          message="当日无生效方案，订单未计薪。"
+          message="当日无生效方案。若有完成单，算薪将硬失败，请先绑定方案。"
         >
           <template #action>
-            <a-button size="small" type="link" @click="goBinding">去绑定方案</a-button>
+            <a-button
+              size="small"
+              type="link"
+              data-testid="drawer-bind-plan"
+              @click="goBinding"
+            >
+              去绑定方案
+            </a-button>
           </template>
         </a-alert>
         <a-alert
@@ -392,9 +410,27 @@ function onKey(e: KeyboardEvent) {
     </a-spin>
     <template #footer>
       <div class="flex justify-end gap-2">
-        <VbenButton variant="outline" @click="goAdjustment">录入奖惩</VbenButton>
-        <VbenButton :disabled="!detail?.period?.id" @click="goPeriod">
+        <VbenButton
+          variant="outline"
+          data-testid="calendar-go-adjustment"
+          @click="goAdjustment"
+        >
+          录入奖惩
+        </VbenButton>
+        <VbenButton
+          :disabled="!detail?.period?.id"
+          data-testid="calendar-view-period"
+          @click="goPeriod"
+        >
           查看周期
+        </VbenButton>
+        <VbenButton
+          v-if="canGoCalculate"
+          type="primary"
+          data-testid="calendar-go-calculate"
+          @click="goCalculate"
+        >
+          去算薪
         </VbenButton>
       </div>
     </template>

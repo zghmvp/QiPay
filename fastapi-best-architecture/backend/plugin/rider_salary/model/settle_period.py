@@ -44,3 +44,23 @@ class RiderSalarySettlePeriod(Base):
     reopened_by: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, comment='反冲人 ID')
     reopened_time: Mapped[datetime | None] = mapped_column(TimeZone, default=None, comment='反冲时间')
     remark: Mapped[str | None] = mapped_column(UniversalText, default=None, comment='备注')
+    last_calc_failures: Mapped[list | None] = mapped_column(
+        sa.JSON(),
+        default=None,
+        comment='最近一次算薪失败清单',
+    )
+    last_calc_status: Mapped[str | None] = mapped_column(
+        sa.String(20),
+        default=None,
+        comment='最近一次算薪态 queued/running/done/failed',
+    )
+    last_calc_status_message: Mapped[str | None] = mapped_column(
+        UniversalText,
+        default=None,
+        comment='最近一次算薪态说明',
+    )
+    last_calc_success_ids: Mapped[list | None] = mapped_column(
+        sa.JSON(),
+        default=None,
+        comment='最近一次算薪成功骑手 ID 列表',
+    )

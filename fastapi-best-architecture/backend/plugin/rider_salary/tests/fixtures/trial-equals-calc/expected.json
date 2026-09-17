@@ -1,0 +1,23 @@
+{
+  "feature": "trial-equals-calc",
+  "expected": {
+    "binding_aware_trial_gross_equals_calculate_gross": true,
+    "advance_deduction_trial_zero_ok": true,
+    "full_version_trial_not_out_of_book_promise": true,
+    "no_numbers_is_fail": true,
+    "skip_if_missing": false,
+    "list_calculate_opens_page": true,
+    "list_calculate_path": "/rider-salary/period/:id/calculate",
+    "modal_title": "计算周期薪资",
+    "modal_must_not_submit": true,
+    "toast_without_failed_is_fail": true,
+    "testid_trial_mode": "trial-mode",
+    "testid_matches_official": "trial-matches-official-calculate",
+    "binding_mode": "binding_segments",
+    "matches_official_calculate": true,
+    "list_calculate_must_not_open_submit_modal": true,
+    "activate_not_full_trial_testid": "plan-activate-not-full-trial",
+    "full_version_not_binding_promise_copy": "整版试算通过 ≠ 按当前绑定出账",
+    "testid_full_not_payroll": "trial-full-not-payroll"
+  }
+}

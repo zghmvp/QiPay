@@ -12,13 +12,14 @@ values
 (2060000000000091006, '方案编辑器', 'RiderSalaryPlanEditor', '/rider-salary/plan/editor/:versionId', 6, 'lucide:pencil-ruler', 1, '/plugins/rider-salary/views/plan/editor', null, 1, 0, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091007, '订单明细', 'RiderSalaryOrder', '/rider-salary/order', 7, 'lucide:clipboard-list', 1, '/plugins/rider-salary/views/order/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091008, '奖惩录入', 'RiderSalaryAdjustment', '/rider-salary/adjustment', 8, 'lucide:plus-minus', 1, '/plugins/rider-salary/views/adjustment/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
-(2060000000000091009, '日标记', 'RiderSalaryDayFlag', '/rider-salary/day-flag', 9, 'lucide:calendar-days', 1, '/plugins/rider-salary/views/day-flag/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091010, '结算周期', 'RiderSalaryPeriod', '/rider-salary/period', 10, 'lucide:calendar-range', 1, '/plugins/rider-salary/views/period/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
-(2060000000000091011, '薪资日历', 'RiderSalaryCalendar', '/rider-salary/calendar', 11, 'lucide:calendar', 1, '/plugins/rider-salary/views/calendar/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
-(2060000000000091012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 12, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
-(2060000000000091013, '站点公告', 'RiderSalaryNotice', '/rider-salary/notice', 13, 'lucide:megaphone', 1, '/plugins/rider-salary/views/notice/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091016, '薪资结果', 'RiderSalaryPayroll', '/rider-salary/payroll', 11, 'lucide:wallet', 1, '/plugins/rider-salary/views/payroll/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091011, '薪资日历', 'RiderSalaryCalendar', '/rider-salary/calendar', 12, 'lucide:calendar', 1, '/plugins/rider-salary/views/calendar/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 13, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 14, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
-(2060000000000091015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null);
+(2060000000000091015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091017, '薪资明细', 'RiderSalaryPayrollDetail', '/rider-salary/payroll/:id', 16, 'lucide:file-text', 1, '/plugins/rider-salary/views/payroll/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091018, '周期算薪', 'RiderSalaryPeriodCalculate', '/rider-salary/period/:id/calculate', 17, 'lucide:calculator', 1, '/plugins/rider-salary/views/period/calculate', null, 1, 0, 1, '', null, 2060000000000091000, now(), null);
 
 insert into sys_menu (id, title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
 values
@@ -51,14 +52,13 @@ values
 (2060000000000091127, '新增奖惩', 'RiderSalaryAdjustmentAdd', null, 0, null, 2, null, 'rs:adjustment:add', 1, 0, 1, '', null, 2060000000000091008, now(), null),
 (2060000000000091128, '修改奖惩', 'RiderSalaryAdjustmentEdit', null, 0, null, 2, null, 'rs:adjustment:edit', 1, 0, 1, '', null, 2060000000000091008, now(), null),
 (2060000000000091129, '删除奖惩', 'RiderSalaryAdjustmentDel', null, 0, null, 2, null, 'rs:adjustment:del', 1, 0, 1, '', null, 2060000000000091008, now(), null),
-(2060000000000091130, '编辑日标记', 'RiderSalaryDayFlagEdit', null, 0, null, 2, null, 'rs:dayflag:edit', 1, 0, 1, '', null, 2060000000000091009, now(), null),
 (2060000000000091131, '生成周期', 'RiderSalaryPeriodGenerate', null, 0, null, 2, null, 'rs:period:generate', 1, 0, 1, '', null, 2060000000000091010, now(), null),
 (2060000000000091132, '计算薪资', 'RiderSalaryPeriodCalculate', null, 0, null, 2, null, 'rs:period:calculate', 1, 0, 1, '', null, 2060000000000091010, now(), null),
 (2060000000000091133, '锁账', 'RiderSalaryPeriodLock', null, 0, null, 2, null, 'rs:period:lock', 1, 0, 1, '', null, 2060000000000091010, now(), null),
 (2060000000000091134, '标记发薪', 'RiderSalaryPeriodMarkPaid', null, 0, null, 2, null, 'rs:period:mark-paid', 1, 0, 1, '', null, 2060000000000091010, now(), null),
 (2060000000000091135, '反冲补发', 'RiderSalaryPeriodReverse', null, 0, null, 2, null, 'rs:period:reverse', 1, 0, 1, '', null, 2060000000000091010, now(), null),
 (2060000000000091136, '导出周期', 'RiderSalaryPeriodExport', null, 0, null, 2, null, 'rs:period:export', 1, 0, 1, '', null, 2060000000000091010, now(), null),
-(2060000000000091137, '查看薪资单', 'RiderSalaryPayrollView', null, 0, null, 2, null, 'rs:payroll:view', 1, 0, 1, '', null, 2060000000000091010, now(), null),
+(2060000000000091137, '查看薪资单', 'RiderSalaryPayrollView', null, 0, null, 2, null, 'rs:payroll:view', 1, 0, 1, '', null, 2060000000000091016, now(), null),
 (2060000000000091138, '查看日历', 'RiderSalaryCalendarView', null, 0, null, 2, null, 'rs:calendar:view', 1, 0, 1, '', null, 2060000000000091011, now(), null),
 (2060000000000091139, '查看工作台', 'RiderSalaryDashboardView', null, 0, null, 2, null, 'rs:dashboard:view', 1, 0, 1, '', null, 2060000000000091001, now(), null),
 (2060000000000091140, '通过预支', 'RiderSalaryAdvanceApprove', null, 0, null, 2, null, 'rs:advance:approve', 1, 0, 1, '', null, 2060000000000091012, now(), null),
@@ -66,9 +66,6 @@ values
 (2060000000000091142, '标记已发放', 'RiderSalaryAdvanceMarkPaid', null, 0, null, 2, null, 'rs:advance:mark-paid', 1, 0, 1, '', null, 2060000000000091012, now(), null),
 (2060000000000091143, '取消预支', 'RiderSalaryAdvanceCancel', null, 0, null, 2, null, 'rs:advance:cancel', 1, 0, 1, '', null, 2060000000000091012, now(), null),
 (2060000000000091144, '导出预支', 'RiderSalaryAdvanceExport', null, 0, null, 2, null, 'rs:advance:export', 1, 0, 1, '', null, 2060000000000091012, now(), null),
-(2060000000000091145, '新增公告', 'RiderSalaryNoticeAdd', null, 0, null, 2, null, 'rs:notice:add', 1, 0, 1, '', null, 2060000000000091013, now(), null),
-(2060000000000091146, '修改公告', 'RiderSalaryNoticeEdit', null, 0, null, 2, null, 'rs:notice:edit', 1, 0, 1, '', null, 2060000000000091013, now(), null),
-(2060000000000091147, '删除公告', 'RiderSalaryNoticeDel', null, 0, null, 2, null, 'rs:notice:del', 1, 0, 1, '', null, 2060000000000091013, now(), null),
 (2060000000000091148, '查看日志', 'RiderSalaryAuditView', null, 0, null, 2, null, 'rs:audit:view', 1, 0, 1, '', null, 2060000000000091014, now(), null),
 (2060000000000091149, '删除周期', 'RiderSalaryPeriodDelete', null, 0, null, 2, null, 'rs:period:delete', 1, 0, 1, '', null, 2060000000000091010, now(), null);
 
@@ -90,11 +87,10 @@ values
 (2060000000000093007, 2060000000000092001, 2060000000000091006),
 (2060000000000093008, 2060000000000092001, 2060000000000091007),
 (2060000000000093009, 2060000000000092001, 2060000000000091008),
-(2060000000000093010, 2060000000000092001, 2060000000000091009),
 (2060000000000093011, 2060000000000092001, 2060000000000091010),
+(2060000000000093157, 2060000000000092001, 2060000000000091016),
 (2060000000000093012, 2060000000000092001, 2060000000000091011),
 (2060000000000093013, 2060000000000092001, 2060000000000091012),
-(2060000000000093014, 2060000000000092001, 2060000000000091013),
 (2060000000000093015, 2060000000000092001, 2060000000000091014),
 (2060000000000093016, 2060000000000092001, 2060000000000091101),
 (2060000000000093017, 2060000000000092001, 2060000000000091102),
@@ -124,7 +120,6 @@ values
 (2060000000000093041, 2060000000000092001, 2060000000000091127),
 (2060000000000093042, 2060000000000092001, 2060000000000091128),
 (2060000000000093043, 2060000000000092001, 2060000000000091129),
-(2060000000000093044, 2060000000000092001, 2060000000000091130),
 (2060000000000093045, 2060000000000092001, 2060000000000091131),
 (2060000000000093046, 2060000000000092001, 2060000000000091132),
 (2060000000000093047, 2060000000000092001, 2060000000000091133),
@@ -139,9 +134,6 @@ values
 (2060000000000093056, 2060000000000092001, 2060000000000091142),
 (2060000000000093057, 2060000000000092001, 2060000000000091143),
 (2060000000000093058, 2060000000000092001, 2060000000000091144),
-(2060000000000093059, 2060000000000092001, 2060000000000091145),
-(2060000000000093060, 2060000000000092001, 2060000000000091146),
-(2060000000000093061, 2060000000000092001, 2060000000000091147),
 (2060000000000093062, 2060000000000092001, 2060000000000091148),
 (2060000000000093063, 2060000000000092002, 2060000000000091000),
 (2060000000000093064, 2060000000000092003, 2060000000000091000),
@@ -157,16 +149,14 @@ values
 (2060000000000093074, 2060000000000092003, 2060000000000091007),
 (2060000000000093075, 2060000000000092002, 2060000000000091008),
 (2060000000000093076, 2060000000000092003, 2060000000000091008),
-(2060000000000093077, 2060000000000092002, 2060000000000091009),
-(2060000000000093078, 2060000000000092003, 2060000000000091009),
 (2060000000000093079, 2060000000000092002, 2060000000000091010),
 (2060000000000093080, 2060000000000092003, 2060000000000091010),
+(2060000000000093158, 2060000000000092002, 2060000000000091016),
+(2060000000000093159, 2060000000000092003, 2060000000000091016),
 (2060000000000093081, 2060000000000092002, 2060000000000091011),
 (2060000000000093082, 2060000000000092003, 2060000000000091011),
 (2060000000000093083, 2060000000000092002, 2060000000000091012),
 (2060000000000093084, 2060000000000092003, 2060000000000091012),
-(2060000000000093085, 2060000000000092002, 2060000000000091013),
-(2060000000000093086, 2060000000000092003, 2060000000000091013),
 (2060000000000093087, 2060000000000092002, 2060000000000091014),
 (2060000000000093088, 2060000000000092003, 2060000000000091014),
 (2060000000000093089, 2060000000000092002, 2060000000000091127),
@@ -191,14 +181,6 @@ values
 (2060000000000093108, 2060000000000092003, 2060000000000091138),
 (2060000000000093109, 2060000000000092002, 2060000000000091139),
 (2060000000000093110, 2060000000000092003, 2060000000000091139),
-(2060000000000093111, 2060000000000092002, 2060000000000091130),
-(2060000000000093112, 2060000000000092003, 2060000000000091130),
-(2060000000000093113, 2060000000000092002, 2060000000000091145),
-(2060000000000093114, 2060000000000092003, 2060000000000091145),
-(2060000000000093115, 2060000000000092002, 2060000000000091147),
-(2060000000000093116, 2060000000000092003, 2060000000000091147),
-(2060000000000093117, 2060000000000092002, 2060000000000091146),
-(2060000000000093118, 2060000000000092003, 2060000000000091146),
 (2060000000000093119, 2060000000000092002, 2060000000000091122),
 (2060000000000093120, 2060000000000092003, 2060000000000091122),
 (2060000000000093121, 2060000000000092002, 2060000000000091124),
@@ -236,7 +218,13 @@ values
 (2060000000000093153, 2060000000000092003, 2060000000000091149),
 (2060000000000093154, 2060000000000092001, 2060000000000091015),
 (2060000000000093155, 2060000000000092002, 2060000000000091015),
-(2060000000000093156, 2060000000000092003, 2060000000000091015);
+(2060000000000093156, 2060000000000092003, 2060000000000091015),
+(2060000000000093160, 2060000000000092001, 2060000000000091017),
+(2060000000000093161, 2060000000000092002, 2060000000000091017),
+(2060000000000093162, 2060000000000092003, 2060000000000091017),
+(2060000000000093163, 2060000000000092001, 2060000000000091018),
+(2060000000000093164, 2060000000000092002, 2060000000000091018),
+(2060000000000093165, 2060000000000092003, 2060000000000091018);
 
 insert into rs_subject (id, code, name, direction, fee_mode, fixed_amount, include_in_gross, entry_granularity, scope_sites, scope_employ_types, is_builtin, status, sort_order, remark, created_time, updated_time)
 values
@@ -264,12 +252,18 @@ values
 (2060000000000094022, 'BONUS_LARGE_ORDER', '大额订单奖', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 22, null, now(), null),
 (2060000000000094023, 'BONUS_OVERWEIGHT', '超重补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 23, null, now(), null),
 (2060000000000094024, 'BONUS_DISTANCE', '距离补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 24, null, now(), null),
-(2060000000000094025, 'BONUS_HIGH_TEMP', '高温补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 25, null, now(), null),
+(2060000000000094025, 'BONUS_HIGH_TEMP', '高温补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'disable', 25, '已下线：引擎无天气/大促字段，请改用节假日或周末条件', now(), null),
 (2060000000000094026, 'BONUS_NIGHT', '夜间补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 26, null, now(), null),
-(2060000000000094027, 'BONUS_BAD_WEATHER', '恶劣天气补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 27, null, now(), null),
+(2060000000000094027, 'BONUS_BAD_WEATHER', '恶劣天气补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'disable', 27, '已下线：引擎无天气/大促字段，请改用节假日或周末条件', now(), null),
 (2060000000000094028, 'BONUS_HOLIDAY', '节假日补贴', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 28, null, now(), null),
-(2060000000000094029, 'BONUS_PROMO', '大促临时加价', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 29, null, now(), null),
+(2060000000000094029, 'BONUS_PROMO', '大促临时加价', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'disable', 29, '已下线：引擎无天气/大促字段，请改用节假日或周末条件', now(), null),
 (2060000000000094030, 'BASE_UNIT_PRICE', '基础单价', 'bonus', 'formula', null, true, 'daily', '[]', '[]', true, 'enable', 30, null, now(), null),
 (2060000000000094031, 'BASE_SALARY', '底薪', 'bonus', 'fixed', null, true, 'period', '[]', '[]', true, 'enable', 31, null, now(), null),
 (2060000000000094032, 'GUARANTEE_TOPUP', '保底补足', 'bonus', 'formula', null, true, 'period', '[]', '[]', true, 'enable', 32, null, now(), null),
 (2060000000000094033, 'COMMISSION', '提成', 'bonus', 'formula', null, true, 'period', '[]', '[]', true, 'enable', 33, null, now(), null);
+do $$
+begin
+  alter table rs_site add column monthly_advance_limit integer not null default 1;
+exception
+  when duplicate_column then null;
+end $$;

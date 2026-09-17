@@ -1,6 +1,7 @@
 import type {
   AdvanceActionParam,
   AdvanceQuery,
+  AdvanceQuota,
   AdvanceReasonParam,
   AdvanceResult,
 } from '../types/advance';
@@ -14,6 +15,14 @@ const BASE = '/api/v1/rider-salary/advances';
 
 export async function getAdvanceListApi(params: AdvanceQuery) {
   return requestClient.get<PageResult<AdvanceResult>>(BASE, { params });
+}
+
+/** 当前自然月次数：`limit / used / remaining`。后端未合入时不要在列表里轮询，以免 404 toast。 */
+export async function getAdvanceQuotaApi(params: {
+  rider_id: number;
+  site_id?: number;
+}) {
+  return requestClient.get<AdvanceQuota>(`${BASE}/quota`, { params });
 }
 
 export async function getAdvanceApi(pk: number) {

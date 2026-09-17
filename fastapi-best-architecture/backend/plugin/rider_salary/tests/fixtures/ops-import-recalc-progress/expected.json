@@ -1,0 +1,16 @@
+{
+  "feature": "ops-import-recalc-progress",
+  "min_rows": 500,
+  "duplicate_order_no": "DUP-RECALC-001",
+  "expected": {
+    "statuses": ["queued", "running", "done", "failed"],
+    "status_labels": ["排队中", "计算中", "完成", "失败"],
+    "import_result_has_recalc_job_id": true,
+    "failed_retryable": true,
+    "no_celery": true,
+    "forbid_green_complete_when_no_plan_rider": true,
+    "partial_fail_copy": "部分失败",
+    "failed_rider_count_copy": "失败 N 人",
+    "goto_calc_sees_job_no": "FIX_C17_R1"
+  }
+}

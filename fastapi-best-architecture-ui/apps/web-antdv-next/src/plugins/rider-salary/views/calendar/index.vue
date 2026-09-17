@@ -19,11 +19,13 @@ import SalaryCalendar from '../../components/SalaryCalendar.vue';
 import SiteSelect from '../../components/SiteSelect.vue';
 import { currentMonth } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
+import { useExportConfirm } from '../period/components/use-export-confirm';
 import DayDrawer from './components/DayDrawer.vue';
 import SummaryBar from './components/SummaryBar.vue';
 
 const route = useRoute();
 const router = useRouter();
+const { ExportConfirmModal, prompt: promptExport } = useExportConfirm();
 
 function queryNum(key: string) {
   const raw = route.query[key];
@@ -120,6 +122,17 @@ function onSelect(date: string, inMonth: boolean) {
   drawerOpen.value = true;
 }
 
+function goBindingFromCell(_date: string) {
+  if (!riderId.value) {
+    message.warning('请先选择骑手');
+    return;
+  }
+  void router.push({
+    path: `/rider-salary/rider/${riderId.value}`,
+    query: { tab: 'binding' },
+  });
+}
+
 function onShiftDate(date: string) {
   selectedDate.value = date;
   drawerOpen.value = true;
@@ -137,16 +150,46 @@ async function exportMonth() {
     message.warning('本月暂无结算周期，无法导出');
     return;
   }
-  exporting.value = true;
+  if (!siteId.value) {
+    message.warning('请先选择站点');
+    return;
+  }
+  const dateFrom = `${month.value}-01`;
+  const dateTo = dayjs(`${month.value}-01`).endOf('month').format('YYYY-MM-DD');
   try {
-    for (const period of periods) {
-      await exportPeriodApi(period.id);
+    const confirmed = await promptExport({
+      dateFrom,
+      dateTo,
+      periodId: periods.length === 1 ? periods[0]?.id : undefined,
+      periods: periods.map((period) => ({
+        id: period.id,
+        range: period.range,
+      })),
+      siteId: siteId.value,
+      source: 'calendar',
+      title: `导出 ${month.value} 明细`,
+    });
+    exporting.value = true;
+    try {
+      const ids = confirmed.periodIds.length
+        ? confirmed.periodIds
+        : periods.map((period) => period.id);
+      for (const id of ids) {
+        await exportPeriodApi(id, {
+          exclude_attention: confirmed.excludeAttention,
+          exclude_attention_adjustments: confirmed.excludeAttentionAdjustments,
+        });
+      }
+      message.success(
+        ids.length > 1 ? `已导出 ${ids.length} 个周期明细` : '已导出当月明细',
+      );
+    } finally {
+      exporting.value = false;
     }
-    message.success(
-      periods.length > 1 ? `已导出 ${periods.length} 个周期明细` : '已导出当月明细',
-    );
-  } finally {
-    exporting.value = false;
+  } catch (error: unknown) {
+    const msg = (error as Error)?.message;
+    if (msg === 'cancelled' || msg === 'dialog cancelled') return;
+    throw error;
   }
 }
 
@@ -219,6 +262,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           v-access:code="'rs:period:export'"
           :disabled="!riderId"
           :loading="exporting"
+          data-testid="calendar-export-month"
           variant="outline"
           @click="exportMonth"
         >
@@ -237,12 +281,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
     </a-empty>
     <a-spin v-else :spinning="loading">
       <div class="flex flex-col gap-4">
-        <SummaryBar :summary="data?.summary" />
+        <SummaryBar :rider-id="riderId" :summary="data?.summary" />
         <SalaryCalendar
           :days="data?.days ?? []"
           :month="month"
           :plan-bands="data?.plan_bands ?? []"
           :selected-date="selectedDate"
+          @bind-plan="goBindingFromCell"
           @select="onSelect"
         />
       </div>
@@ -254,7 +299,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
       :date="selectedDate"
       :rider-id="riderId"
       :rider-name="riderName"
+      :site-id="siteId"
       @shift-date="onShiftDate"
     />
+    <ExportConfirmModal />
   </PageContainer>
 </template>

@@ -5,11 +5,13 @@ import anyio
 from backend.utils.sql_parser import parse_sql_script
 
 SQL_ROOT = Path(__file__).resolve().parents[1] / 'sql'
-SQL_FILES = sorted(SQL_ROOT.glob('*/*.sql'))
+# init/destroy only；patch 由手工/运维执行，不走 FBA 插件 SQL 解析器
+SQL_FILES = sorted(p for p in SQL_ROOT.glob('*/*.sql') if p.parent.name != 'patch')
 
 
 def test_plugin_sql_files_exist() -> None:
     assert len(SQL_FILES) == 8
+    assert not any(p.parent.name == 'patch' for p in SQL_FILES)
 
 
 def test_plugin_sql_files_parseable() -> None:

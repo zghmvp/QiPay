@@ -75,7 +75,7 @@ def _user_attr(user: object, *names: str) -> str | None:
     return None
 
 
-def _operator_name(request: Request) -> str:
+def resolve_operator_name(request: Request) -> str:
     """优先 nickname，其次 username；FBA 占位昵称「用户数字」视为缺失。"""
     user = getattr(request, 'user', None)
     nickname = _user_attr(user, 'nickname', 'nick_name')
@@ -87,6 +87,10 @@ def _operator_name(request: Request) -> str:
     if nickname:
         return nickname
     return '未知'
+
+
+# 兼容旧调用名
+_operator_name = resolve_operator_name
 
 
 def _operator_id(request: Request) -> int:
@@ -164,7 +168,7 @@ class AuditService:
         """
         require_reason(action, reason)
         operate_time = timezone.now()
-        operator_name = _operator_name(request)
+        operator_name = resolve_operator_name(request)
         text = description or build_description(
             operator_name=operator_name,
             operate_time=operate_time,

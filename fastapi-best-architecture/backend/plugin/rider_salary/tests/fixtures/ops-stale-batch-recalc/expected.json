@@ -1,0 +1,15 @@
+{
+  "feature": "ops-stale-batch-recalc",
+  "month": "2026-09",
+  "min_stale_riders": 2,
+  "expected": {
+    "permission": "rs:period:calculate",
+    "confirm_contains": ["站点", "周期"],
+    "button_text": "本站本月批量重算",
+    "must_confirm_and_assert_partial_fail": true,
+    "forbid_green_complete_when_no_plan_rider": true,
+    "no_plan_job_no": "FIX_C17_R1",
+    "forbid_allow_empty_stale_pass": true,
+    "ui_failed_testid": "dashboard-batch-failed"
+  }
+}

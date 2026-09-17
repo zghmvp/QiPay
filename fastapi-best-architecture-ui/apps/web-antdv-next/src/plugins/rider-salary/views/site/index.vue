@@ -29,6 +29,7 @@ import PageContainer from '../_shared/PageContainer.vue';
 import ManagerCountCell from './components/ManagerCountCell.vue';
 import ManagerDrawer from './components/ManagerDrawer.vue';
 import { querySchema, siteFormSchema, useColumns } from './data';
+import { normalizeMonthlyAdvanceLimit } from './helpers';
 import { invalidateManagerCount } from './manager-count-cache';
 
 const formOptions: VbenFormProps = {
@@ -123,6 +124,9 @@ const [Drawer, drawerApi] = useVbenDrawer({
         values.settle_cycle === 'custom'
           ? { anchor_day: values.anchor_day }
           : null,
+      monthly_advance_limit: normalizeMonthlyAdvanceLimit(
+        values.monthly_advance_limit,
+      ),
       name: values.name,
       remark: values.remark,
       settle_cycle: values.settle_cycle,
@@ -151,9 +155,13 @@ const [Drawer, drawerApi] = useVbenDrawer({
       formApi.setValues({
         ...data,
         anchor_day: data.cycle_config?.anchor_day,
+        monthly_advance_limit: normalizeMonthlyAdvanceLimit(
+          data.monthly_advance_limit,
+        ),
       });
     } else {
       formData.value = undefined;
+      formApi.setValues({ monthly_advance_limit: 1 });
     }
   },
 });

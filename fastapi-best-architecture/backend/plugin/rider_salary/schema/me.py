@@ -6,7 +6,6 @@ from pydantic import Field
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.schema.advance import GetAdvanceDetail
 from backend.plugin.rider_salary.schema.calendar import GetCalendarDayDetail, GetCalendarMonth
-from backend.plugin.rider_salary.schema.notice import GetNoticeDetail
 
 
 class MeCurrentPlan(SchemaBase):
@@ -63,10 +62,11 @@ class GetMeAdjustmentItem(SchemaBase):
 
 
 class MePlanItem(SchemaBase):
-    """方案项（无公式）"""
+    """方案项（无公式 JSON，含一句话说明）"""
 
     name: str = Field(description='项名称')
     subject_name: str = Field(description='科目')
+    summary: str = Field('', description='一句话说明')
 
 
 class GetMePlanBinding(SchemaBase):
@@ -92,11 +92,15 @@ class GetMePlan(SchemaBase):
 
 
 class GetMeAdvanceLimit(SchemaBase):
-    """预支额度"""
+    """预支额度（金额上限 + 本月次数）"""
 
-    limit: Decimal = Field(description='上限')
-    used_pending_amount: Decimal = Field(description='在途占用')
-    available: Decimal = Field(description='可用额度')
+    limit: Decimal = Field(description='预支金额上限')
+    used_pending_amount: Decimal = Field(description='在途占用金额')
+    available: Decimal = Field(description='可用金额')
+    monthly_advance_limit: int = Field(description='每月可预支次数')
+    used: int = Field(description='本月已用次数')
+    remaining: int = Field(description='本月剩余次数')
+    month: str | None = Field(None, description='自然月 YYYY-MM')
 
 
 class GetMeCalendar(GetCalendarMonth):
@@ -105,10 +109,6 @@ class GetMeCalendar(GetCalendarMonth):
 
 class GetMeDayDetail(GetCalendarDayDetail):
     """骑手端日详情（不含表达式）"""
-
-
-class GetMeNotice(GetNoticeDetail):
-    """骑手端公告"""
 
 
 class GetMeAdvance(GetAdvanceDetail):

@@ -267,6 +267,11 @@ export function useColumns(
             text: '档案',
           },
           {
+            code: 'binding',
+            show: () => hasAccessByCodes(['rs:rider:binding']),
+            text: '方案绑定',
+          },
+          {
             code: 'edit',
             show: () => hasAccessByCodes(['rs:rider:edit']),
             text: '编辑',
@@ -274,11 +279,6 @@ export function useColumns(
           {
             code: 'more',
             items: [
-              {
-                code: 'binding',
-                show: () => hasAccessByCodes(['rs:rider:binding']),
-                text: '方案绑定',
-              },
               {
                 code: 'employ',
                 show: () => hasAccessByCodes(['rs:rider:employ']),
@@ -331,7 +331,7 @@ export function useColumns(
       field: 'operation',
       fixed: 'right',
       title: '操作',
-      width: 210,
+      width: 280,
     },
   ];
 }

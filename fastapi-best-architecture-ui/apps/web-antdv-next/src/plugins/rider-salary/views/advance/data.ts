@@ -14,6 +14,7 @@ import {
   DEDUCT_STATUS_OPTIONS,
   enumTagOptions,
 } from '../../constants/enums';
+import { formatAdvanceQuota, resolveAdvanceQuota } from './helpers';
 
 export const querySchema: VbenFormSchema[] = [
   {
@@ -62,6 +63,13 @@ export function useColumns(
       title: '骑手',
     },
     { field: 'site_name', minWidth: 120, title: '站点' },
+    {
+      field: 'monthly_quota',
+      formatter: ({ row }: { row: AdvanceResult }) =>
+        formatAdvanceQuota(resolveAdvanceQuota(row)),
+      minWidth: 170,
+      title: '本月预支次数',
+    },
     {
       field: 'amount',
       slots: { default: 'amount' },

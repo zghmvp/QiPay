@@ -1,0 +1,14 @@
+{
+  "feature": "ops-rider-profile-to-payroll",
+  "expected": {
+    "cta": "本骑手薪资结果",
+    "testid": "rider-goto-payroll",
+    "path": "/payroll",
+    "query": ["rider_id"],
+    "binding_copy_forbids_trial_as_payroll": true,
+    "binding_cta": "去周期算薪页",
+    "binding_testid": "rider-binding-goto-calculate",
+    "no_new_menu": true,
+    "no_new_perm": true
+  }
+}

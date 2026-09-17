@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { VbenFormProps } from '@vben/common-ui';
 
-import type { PeriodResult } from '../../types/period';
+import type { CalcPrecheckResult, PeriodResult, PeriodWithPayrolls } from '../../types/period';
 
 import type {
   OnActionClickParams,
@@ -9,7 +9,7 @@ import type {
 } from '#/adapter/vxe-table';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import {
   confirm,
@@ -24,21 +24,29 @@ import { message } from 'antdv-next';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 
 import {
+  calcPrecheckApi,
   deletePeriodApi,
   exportPeriodApi,
   getPeriodApi,
   getPeriodListApi,
   lockPeriodApi,
+  lockPreflightPeriodApi,
   markPaidPeriodApi,
   reversePeriodApi,
 } from '../../api/period';
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
 import PageContainer from '../_shared/PageContainer.vue';
-import CalculateModal from './components/CalculateModal.vue';
+import { periodStaleListParams } from '../dashboard/scope-links';
 import GenerateModal from './components/GenerateModal.vue';
 import PeriodDetail from './components/PeriodDetail.vue';
+import { useExportConfirm } from './components/use-export-confirm';
 import { querySchema, useColumns } from './data';
+import {
+  SITE_LEVEL_LOCK_PREFLIGHT_FALLBACK,
+  buildLockConfirmHint,
+  isSiteLevelPeriod,
+} from './lock-confirm';
 
 function isUserCancelled(error: unknown) {
   const msg = (error as Error)?.message;
@@ -46,21 +54,44 @@ function isUserCancelled(error: unknown) {
 }
 
 const route = useRoute();
+const router = useRouter();
 const { ReasonModal, prompt } = useReasonModal();
+const { ExportConfirmModal, prompt: promptExport } = useExportConfirm();
 const onlyStale = ref(
   route.query.stale === '1' || route.query.stale === 'true',
 );
 
-const initialStatus =
-  typeof route.query.status === 'string' ? route.query.status : undefined;
+function queryStr(key: string) {
+  const raw = route.query[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === 'string' && v ? v : undefined;
+}
+
+function queryNum(key: string) {
+  const n = Number(queryStr(key));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+const initialStatus = queryStr('status');
+const initialSiteId = queryNum('site_id');
+const initialMonth = queryStr('month');
+const lockDue =
+  route.query.lock_due === '1' || route.query.lock_due === 'true';
 
 const formOptions: VbenFormProps = {
   collapsed: true,
-  schema: querySchema.map((item) =>
-    item.fieldName === 'status' && initialStatus
-      ? { ...item, defaultValue: initialStatus }
-      : item,
-  ),
+  schema: querySchema.map((item) => {
+    if (item.fieldName === 'status' && initialStatus && !lockDue) {
+      return { ...item, defaultValue: initialStatus };
+    }
+    if (item.fieldName === 'site_id' && initialSiteId) {
+      return { ...item, defaultValue: initialSiteId };
+    }
+    if (item.fieldName === 'month' && initialMonth) {
+      return { ...item, defaultValue: initialMonth };
+    }
+    return item;
+  }),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
 };
@@ -72,21 +103,27 @@ const gridOptions: VxeTableGridOptions<PeriodResult> = {
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
-        const res = await getPeriodListApi({
+        const values = formValues as {
+          month?: string;
+          rider_id?: number;
+          site_id?: number;
+          status?: string;
+        };
+        const siteId = Number(values.site_id) || initialSiteId;
+        const month = values.month || initialMonth;
+        return await getPeriodListApi({
           page: page.currentPage,
           size: page.pageSize,
-          ...(formValues as {
-            month?: string;
-            rider_id?: number;
-            site_id?: number;
-            status?: string;
-          }),
+          ...values,
+          ...(onlyStale.value
+            ? periodStaleListParams(siteId, month)
+            : {
+                ...(Number.isFinite(siteId) && siteId > 0
+                  ? { site_id: siteId }
+                  : {}),
+                ...(month ? { month } : {}),
+              }),
         });
-        if (!onlyStale.value) return res;
-        const items = (res?.items ?? []).filter(
-          (item) => (item.stale_count ?? 0) > 0,
-        );
-        return { ...res, items, total: items.length };
       },
     },
   },
@@ -103,6 +140,69 @@ const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 const staleHint = computed(() =>
   onlyStale.value ? '已按工作台跳转筛选：需重算周期' : '',
 );
+const missingPayrollHint = computed(() =>
+  route.query.from === 'payroll-missing'
+    ? '薪资单不存在或未落库。请打开对应周期的算薪页查看失败清单。'
+    : '',
+);
+const lockDueHint = computed(() =>
+  lockDue
+    ? '已按工作台锁账倒计时跳转：本站开放/补发中周期，含已过期未锁。不是只看无月份的开放第一页。'
+    : '',
+);
+const periodScopeHint = computed(() => {
+  if (lockDueHint.value) return '';
+  if (initialSiteId && initialMonth) {
+    return `已按工作台跳转筛选：站点 + ${initialMonth}`;
+  }
+  if (initialMonth) return `已按工作台跳转筛选：${initialMonth}`;
+  return '';
+});
+const lockFailText = ref('');
+
+function extractErrorMsg(error: unknown): string {
+  const err = error as {
+    message?: string;
+    msg?: string;
+    response?: { data?: { data?: { errors?: string[] }; msg?: string } };
+  };
+  const dataErrors = err.response?.data?.data?.errors;
+  if (Array.isArray(dataErrors) && dataErrors.length) {
+    return dataErrors.join('；');
+  }
+  return (
+    err.response?.data?.msg ||
+    err.msg ||
+    err.message ||
+    ''
+  );
+}
+
+function isHardFailCopy(text: string) {
+  return /无生效方案|已完成但送达时间为空|从未成功落库|锁账中止|未算出的有单骑手|缺送达/.test(
+    text,
+  );
+}
+
+function collectHardFailLines(
+  pre?: CalcPrecheckResult,
+  detail?: null | PeriodWithPayrolls,
+): string[] {
+  const lines: string[] = [];
+  for (const blocker of pre?.blockers ?? []) {
+    for (const msg of blocker.messages ?? []) {
+      if (isHardFailCopy(msg) || ['missing_delivery', 'no_plan_with_orders', 'never_calculated'].includes(blocker.code)) {
+        lines.push(msg);
+      }
+    }
+  }
+  for (const fail of detail?.last_calc_failures ?? []) {
+    for (const msg of fail.errors ?? []) {
+      if (isHardFailCopy(msg)) lines.push(msg);
+    }
+  }
+  return [...new Set(lines.filter(Boolean))];
+}
 
 function onRefresh() {
   gridApi.query();
@@ -113,19 +213,60 @@ function openDetail(row: PeriodResult) {
 }
 
 async function onLock(row: PeriodResult) {
-  if (!(row.payroll_count ?? 0)) {
-    await confirm({
-      content: '当前周期没有薪资结果，仍要锁账吗？',
-      icon: 'warning',
-    });
+  lockFailText.value = '';
+  const [pre, detail] = await Promise.all([
+    calcPrecheckApi(row.id),
+    getPeriodApi(row.id).catch(() => null),
+  ]);
+  const hardLines = collectHardFailLines(pre, detail);
+  const staleCount = pre.stale_count ?? detail?.stale_count ?? row.stale_count ?? 0;
+  if (hardLines.length) {
+    const staleTail = staleCount > 0 ? '。另有需重算草稿，请先重算。' : '';
+    lockFailText.value = `不能锁账：${hardLines.join('；')}${staleTail}`;
+    message.error(lockFailText.value);
+    return;
+  }
+  let extraHint = `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。有完成单却未算出的骑手会被拒绝。`;
+  let extraHintTestId: string | undefined;
+  let extraSkipHint: string | undefined;
+  if (isSiteLevelPeriod(row)) {
+    // Cycle 13 Must 5 hooks: ops-lock-confirm-skip-rider-level /
+    // period-lock-confirm-hint / period-lock-skip-count（ReasonModal 渲染）
+    extraHintTestId = 'ops-lock-confirm-skip-rider-level';
+    try {
+      const preflight = await lockPreflightPeriodApi(row.id);
+      extraHint = buildLockConfirmHint(preflight);
+      extraSkipHint =
+        preflight.skip_hint?.trim() ||
+        `跳过骑手级覆盖 ${preflight.skip_rider_count} 人`;
+    } catch {
+      extraHint = SITE_LEVEL_LOCK_PREFLIGHT_FALLBACK;
+      extraSkipHint = '跳过骑手级覆盖 0 人';
+    }
   }
   const { reason } = await prompt({
-    extraHint: `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。若存在需重算结果，后端会拒绝并列出工号。`,
+    extraHint,
+    extraHintTestId,
+    extraSkipHint,
     title: '锁账原因',
   });
-  await lockPeriodApi(row.id, reason);
-  message.success('已锁账');
-  onRefresh();
+  try {
+    await lockPeriodApi(row.id, reason);
+    message.success('已锁账');
+    onRefresh();
+  } catch (error: unknown) {
+    if (isUserCancelled(error)) return;
+    const msg = extractErrorMsg(error);
+    const extraHard = collectHardFailLines(pre, detail);
+    if (extraHard.length && /请先重算/.test(msg) && !isHardFailCopy(msg)) {
+      lockFailText.value = `不能锁账：${extraHard.join('；')}`;
+    } else if (isHardFailCopy(msg)) {
+      lockFailText.value = msg;
+    } else {
+      lockFailText.value = msg || '锁账失败';
+    }
+    throw error;
+  }
 }
 
 async function onMarkPaid(row: PeriodResult) {
@@ -163,7 +304,9 @@ async function onActionClick({
       return;
     }
     if (code === 'calculate') {
-      calcApi.setData({ ...row, onSuccess: onRefresh }).open();
+      router.push({
+        path: `/rider-salary/period/${row.id}/calculate`,
+      });
       return;
     }
     if (code === 'lock') {
@@ -179,7 +322,20 @@ async function onActionClick({
       return;
     }
     if (code === 'export') {
-      await exportPeriodApi(row.id);
+      const { excludeAttention, excludeAttentionAdjustments } = await promptExport({
+        dateFrom: row.start_date,
+        dateTo: row.end_date,
+        periodId: row.id,
+        siteId: row.site_id,
+        title: `导出 ${row.start_date} ~ ${row.end_date}`,
+      });
+      await exportPeriodApi(row.id, {
+        exclude_attention: excludeAttention,
+        exclude_attention_adjustments: excludeAttentionAdjustments,
+      });
+      message.success(
+        excludeAttention ? '已导出（已排除需关注订单）' : '已导出周期薪资',
+      );
       return;
     }
     if (code === 'remove') {
@@ -202,9 +358,6 @@ const [DetailDrawer, detailApi] = useVbenDrawer({
 });
 const [GenModal, genApi] = useVbenModal({
   connectedComponent: GenerateModal,
-});
-const [CalcModal, calcApi] = useVbenModal({
-  connectedComponent: CalculateModal,
 });
 
 function queryId(): number | undefined {
@@ -253,6 +406,10 @@ async function openPeriodByQueryId() {
   detailApi.setData({ id }).open();
 }
 
+watch(onlyStale, () => {
+  void gridApi.query();
+});
+
 watch(
   () => route.query.id,
   () => {
@@ -261,8 +418,12 @@ watch(
 );
 
 onMounted(() => {
-  if (initialStatus) {
-    void gridApi.formApi.setValues({ status: initialStatus });
+  const values: Record<string, unknown> = {};
+  if (initialStatus && !lockDue) values.status = initialStatus;
+  if (initialSiteId) values.site_id = initialSiteId;
+  if (initialMonth) values.month = initialMonth;
+  if (Object.keys(values).length) {
+    void gridApi.formApi.setValues(values);
   }
   void openPeriodByQueryId();
 });
@@ -276,8 +437,42 @@ onMounted(() => {
       closable
       show-icon
       type="warning"
+      data-testid="period-stale-scope"
+      :data-month="initialMonth || undefined"
+      :data-site-id="initialSiteId ? String(initialSiteId) : undefined"
       :message="staleHint"
       @close="onlyStale = false"
+    />
+    <a-alert
+      v-if="missingPayrollHint"
+      class="mb-2"
+      show-icon
+      type="warning"
+      :message="missingPayrollHint"
+    />
+    <a-alert
+      v-if="lockDueHint"
+      class="mb-2"
+      data-testid="period-lock-due-scope"
+      show-icon
+      type="info"
+      :message="lockDueHint"
+    />
+    <a-alert
+      v-else-if="periodScopeHint"
+      class="mb-2"
+      data-testid="period-list-scope"
+      show-icon
+      type="info"
+      :message="periodScopeHint"
+    />
+    <a-alert
+      v-if="lockFailText"
+      class="mb-2"
+      show-icon
+      type="error"
+      data-testid="period-lock-error"
+      :message="lockFailText"
     />
     <Grid>
       <template #toolbar-actions>
@@ -303,7 +498,7 @@ onMounted(() => {
     </Grid>
     <DetailDrawer />
     <GenModal />
-    <CalcModal />
     <ReasonModal />
+    <ExportConfirmModal />
   </PageContainer>
 </template>

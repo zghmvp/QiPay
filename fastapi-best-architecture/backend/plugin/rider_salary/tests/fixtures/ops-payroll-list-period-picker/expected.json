@@ -1,0 +1,10 @@
+{
+  "feature": "ops-payroll-list-period-picker",
+  "expected": {
+    "control": "site_period_select",
+    "value_is_period_id": true,
+    "not_primary_key_input": true,
+    "deeplink_period_id_preselect": true,
+    "foreign_site_periods_absent": true
+  }
+}

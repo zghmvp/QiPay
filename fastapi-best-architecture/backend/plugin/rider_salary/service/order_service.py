@@ -105,6 +105,24 @@ def order_snapshot(order: RiderSalaryOrder) -> dict[str, Any]:
     }
 
 
+def resolve_order_date_window(
+    *,
+    month: str | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> tuple[date | None, date | None]:
+    """列表消费 month：未传 date_from/date_to 时展开为该月闭区间。显式日期优先。"""
+    if date_from is not None or date_to is not None:
+        return date_from, date_to
+    if not month:
+        return None, None
+    from backend.plugin.rider_salary.crud.settle_period import month_bounds
+    from backend.plugin.rider_salary.service.period_service import parse_year_month
+
+    year, mon = parse_year_month(month)
+    return month_bounds(year, mon)
+
+
 class OrderService:
     """订单明细服务"""
 
@@ -135,10 +153,13 @@ class OrderService:
         rider_id: int | None,
         date_from: date | None,
         date_to: date | None,
+        month: str | None = None,
         status: str | None,
         order_no: str | None,
         import_batch_id: int | None,
         is_locked: bool | None,
+        attention: bool | None = None,
+        missing_delivery: bool | None = None,
     ) -> dict[str, Any]:
         """
         分页获取订单
@@ -149,17 +170,21 @@ class OrderService:
         :param rider_id: 骑手 ID
         :param date_from: 业务日期起
         :param date_to: 业务日期止
+        :param month: 月份 YYYY-MM，未传日期时展开为本月窗
         :param status: 订单状态
         :param order_no: 订单号
         :param import_batch_id: 导入批次
         :param is_locked: 是否锁账
+        :param attention: 需关注（异常∪退款∪超时，与工作台同源）
+        :param missing_delivery: 已完成且送达时间为空
         :return:
         """
         visible = await get_visible_site_ids(request, db)
         if site_id is not None:
             assert_site_visible(visible, site_id)
+        date_from, date_to = resolve_order_date_window(month=month, date_from=date_from, date_to=date_to)
         mapped_status = None
-        if status:
+        if status and not attention and not missing_delivery:
             mapped_status = map_order_status(status) or status
         stmt = await order_dao.get_select(
             site_ids=visible,
@@ -171,6 +196,8 @@ class OrderService:
             order_no=order_no,
             import_batch_id=import_batch_id,
             is_locked=is_locked,
+            attention=attention,
+            missing_delivery=missing_delivery,
         )
         page_data = await paging_data(db, stmt)
         page_data['items'] = await _to_details(db, list(page_data['items']))
@@ -275,6 +302,8 @@ class OrderService:
             raise errors.RequestError(msg='订单金额不能为负数')
         if obj.deliver_time is not None and obj.deliver_time < obj.order_time:
             raise errors.RequestError(msg='送达时间不能早于下单时间')
+        if mapped == OrderStatus.completed.value and obj.deliver_time is None:
+            raise errors.RequestError(msg='已完成订单的送达时间不能为空')
         biz_date = compute_biz_date(obj.order_time, obj.deliver_time)
         emp_error = rider_employment_error(rider, biz_date)
         if emp_error:
@@ -374,6 +403,8 @@ class OrderService:
             order.remark = payload['remark']
         if order.deliver_time is not None and order.deliver_time < order.order_time:
             raise errors.RequestError(msg='送达时间不能早于下单时间')
+        if order.status == OrderStatus.completed.value and order.deliver_time is None:
+            raise errors.RequestError(msg='已完成订单的送达时间不能为空')
         site = await _get_site(db, order.site_id)
         rider = await _get_rider(db, order.rider_id)
         if rider.site_id != site.id:

@@ -17,6 +17,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  bindPlan: [date: string];
   select: [date: string, inMonth: boolean];
 }>();
 </script>
@@ -27,6 +28,7 @@ const emit = defineEmits<{
     :month="props.month"
     :plan-bands="props.planBands"
     :selected-date="props.selectedDate"
+    @bind-plan="(date) => emit('bindPlan', date)"
     @select="(date, inMonth) => emit('select', date, inMonth)"
   />
 </template>

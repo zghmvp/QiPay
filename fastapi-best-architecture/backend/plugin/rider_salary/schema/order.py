@@ -97,6 +97,7 @@ class ImportResult(SchemaBase):
     failed_rows: int = Field(description='失败行数')
     status: str = Field(description='批次状态')
     errors: list[ImportErrorItem] = Field(default_factory=list, description='错误列表（最多 100 条）')
+    recalc_job_id: int | None = Field(None, description='导入后重算任务 ID（勾选自动重算时返回）')
 
 
 def order_status_label(status: str) -> str:

@@ -1,0 +1,19 @@
+{
+  "feature": "ops-calc-rider-picker-not-truncated",
+  "expected": {
+    "unselected_means_all_copy": "未选 = 计算本周期全部骑手",
+    "unselected_posts_null": true,
+    "truncated_copy": "仅列出前 N 人，其余请搜索",
+    "search_finds_rider_201": true,
+    "subset_posts_ids_not_null": true,
+    "select_current_page_not_all": true,
+    "queued_over_200_unchanged": true,
+    "skip_if_missing": false,
+    "testid_riders": "period-calc-riders",
+    "testid_unselected_all": "period-calc-riders-unselected-all",
+    "testid_truncated": "period-calc-riders-truncated",
+    "fixture_job_no": "FIX_C3_R201",
+    "calc_riders_path": "/api/v1/rider-salary/periods/{id}/calc-riders",
+    "search_keyword_example": "D0201"
+  }
+}

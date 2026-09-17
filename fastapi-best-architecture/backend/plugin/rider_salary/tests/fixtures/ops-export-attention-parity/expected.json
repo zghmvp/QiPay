@@ -1,0 +1,26 @@
+{
+  "feature": "ops-export-attention-parity",
+  "attention_union": ["abnormal", "refunded", "duration_gt_60_completed"],
+  "fixture_order_nos": [
+    "FIX_C2_ATT_OVERTIME",
+    "FIX_C2_ATT_REFUND",
+    "FIX_C2_ATT_ABNORMAL"
+  ],
+  "expected": {
+    "same_predicate_as_dashboard": true,
+    "default_exclude": false,
+    "confirm_shows_count": true,
+    "unexcluded_copy": "本文件含需关注",
+    "exclude_drops_file_rows_only": true,
+    "exclude_must_strip_detail_rows": true,
+    "skip_if_missing": false,
+    "does_not_change_gross_net": true,
+    "not_lock_condition": true,
+    "not_payout_file": true,
+    "missing_delivery_not_in_switch": true,
+    "testid_confirm": "period-export-confirm",
+    "testid_count": "period-export-attention-count",
+    "testid_toggle": "period-export-exclude-toggle",
+    "testid_admit": "period-export-admit-attention"
+  }
+}

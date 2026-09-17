@@ -60,39 +60,35 @@ def _minutes_of(value: datetime | None) -> float | None:
     return float(value.hour * 60 + value.minute)
 
 
-def _duration_minutes(order_time: datetime | None, deliver_time: datetime | None) -> tuple[float, bool]:
+def _duration_minutes(order_time: datetime | None, deliver_time: datetime | None) -> float | None:
+    """有下单与送达时返回分钟数；任一缺失返回 None（由调用方硬失败）。"""
     if order_time is None or deliver_time is None:
-        return 0.0, True
+        return None
     seconds = (deliver_time - order_time).total_seconds()
-    return max(seconds / 60.0, 0.0), False
+    return max(seconds / 60.0, 0.0)
 
 
 def build_day_context(
     site_id: int,
     biz_date: date,
-    day_flag: Any | None,
     employ_type: str,
 ) -> dict[str, Any]:
     """
-    日上下文：日期、星期、节假日、周末、日标记、用工类型
+    日上下文：日期、星期、节假日、周末、用工类型
     """
     del site_id
-    flag = day_flag
     return {
         '日期': biz_date.isoformat(),
         '星期': weekday_monday_one(biz_date),
         '是否节假日': bool(is_holiday(biz_date)),
         '是否周末': is_weekend(biz_date),
-        '是否恶劣天气': bool(getattr(flag, 'bad_weather', False)) if flag is not None else False,
-        '是否高温': bool(getattr(flag, 'high_temp', False)) if flag is not None else False,
-        '是否大促': bool(getattr(flag, 'promo', False)) if flag is not None else False,
         '用工类型': employ_type or EmployType.part_time.value,
     }
 
 
 def build_order_context(order: Any, day_ctx: dict[str, Any], rider_ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     """订单字段 ∪ 日上下文 ∪ 骑手字段"""
-    duration, missing_deliver = _duration_minutes(
+    duration = _duration_minutes(
         getattr(order, 'order_time', None),
         getattr(order, 'deliver_time', None),
     )
@@ -107,7 +103,7 @@ def build_order_context(order: Any, day_ctx: dict[str, Any], rider_ctx: dict[str
         '送达时刻': _minutes_of(getattr(order, 'deliver_time', None)),
         '配送时长': duration,
         '订单状态': getattr(order, 'status', None) or OrderStatus.completed.value,
-        '_missing_deliver': missing_deliver,
+        '_missing_duration': duration is None,
         '_order_no': getattr(order, 'order_no', None),
         '_order_id': getattr(order, 'id', None),
         '_biz_date': getattr(order, 'biz_date', None),

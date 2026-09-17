@@ -39,10 +39,12 @@ export interface OrderForm {
 }
 
 export interface OrderQuery extends PageParams {
+  attention?: boolean;
   date_from?: string;
   date_to?: string;
   import_batch_id?: number;
   is_locked?: boolean;
+  missing_delivery?: boolean;
   order_no?: string;
   rider_id?: number;
   site_id?: number;
@@ -59,6 +61,7 @@ export interface ImportResult {
   batch_id?: null | number;
   errors: ImportErrorItem[];
   failed_rows: number;
+  recalc_job_id?: null | number;
   status: string;
   success_rows: number;
   total_rows: number;

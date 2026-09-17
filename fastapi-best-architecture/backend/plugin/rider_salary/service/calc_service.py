@@ -31,10 +31,10 @@ from backend.plugin.rider_salary.enums import (
     PayrollKind,
     PayrollStatus,
     PeriodStatus,
+    RecalcJobStatus,
     SubjectDirection,
 )
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
-from backend.plugin.rider_salary.model.day_flag import RiderSalaryDayFlag
 from backend.plugin.rider_salary.model.import_batch import RiderSalaryImportBatch
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
@@ -51,6 +51,7 @@ from backend.plugin.rider_salary.service.payroll_service import (
     payroll_service,
 )
 from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.calc_riders import normalize_calc_rider_ids
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
 
@@ -97,6 +98,16 @@ class CalcDaily:
 
 
 @dataclass
+class SegmentOrderCount:
+    """方案段内有效单量（对照「周期有效单量」）"""
+
+    plan_version_id: int
+    start_date: date
+    end_date: date
+    plan_order_count: int
+
+
+@dataclass
 class CalcResult:
     """算薪结果"""
 
@@ -105,6 +116,7 @@ class CalcResult:
     payroll_id: int | None
     order_count: int
     valid_order_count: int
+    plan_period_order_count: int
     per_order_total: Decimal
     daily_total: Decimal
     period_total: Decimal
@@ -121,6 +133,8 @@ class CalcResult:
     dailies: list[CalcDaily]
     calc_version: int = 0
     stale: bool = False
+    plan_order_count: int = 0
+    segment_order_counts: list[SegmentOrderCount] | None = None
 
 
 @dataclass
@@ -136,7 +150,6 @@ class CalcInput:
     employ_type: str
     segments: list[Segment]
     orders: list[Any]
-    day_flags: dict[date, Any]
     employ_history: list[Any]
     adjustments: list[Any]
     advances: list[Any]
@@ -198,10 +211,225 @@ def _after_leave(leave_date: date | None, day: date) -> bool:
     return leave_date is not None and day > leave_date
 
 
+def missing_delivery_message(order_no: Any, day: date) -> str:
+    """与 run_calc_pipeline 硬失败文案同口径。"""
+    return f'订单 {order_no}（{day.isoformat()}）已完成但送达时间为空，无法计算配送时长'
+
+
+def missing_delivery_order_query(
+    *,
+    rider_id: int,
+    site_id: int,
+    date_from: date,
+    date_to: date,
+) -> dict[str, str]:
+    """订单列表「已完成且送达为空」筛，供预检/失败「看订单」深链。"""
+    return {
+        'rider_id': str(rider_id),
+        'site_id': str(site_id),
+        'date_from': date_from.isoformat(),
+        'date_to': date_to.isoformat(),
+        'status': OrderStatus.completed.value,
+        'missing_delivery': '1',
+    }
+
+
+def classify_calc_failure_code(msg: str) -> str | None:
+    """从算薪/锁账中文错误归类失败码。"""
+    if '送达时间为空' in msg:
+        return 'missing_delivery'
+    if '无生效方案' in msg:
+        return 'no_plan_with_orders'
+    if '从未成功落库' in msg:
+        return 'never_calculated'
+    return None
+
+
+def calc_failure_deeplink(
+    *,
+    code: str | None,
+    rider_id: int,
+    site_id: int,
+    date_from: date,
+    date_to: date,
+) -> dict[str, Any] | None:
+    """失败行深链；缺送达带上 completed + missing_delivery=1。"""
+    if code == 'missing_delivery':
+        return {
+            'path': '/rider-salary/order',
+            'query': missing_delivery_order_query(
+                rider_id=rider_id,
+                site_id=site_id,
+                date_from=date_from,
+                date_to=date_to,
+            ),
+        }
+    if code == 'no_plan_with_orders':
+        return {'path': f'/rider-salary/rider/{rider_id}', 'query': {'tab': 'binding'}}
+    return None
+
+
+def no_plan_with_orders_message(parts: list[str]) -> str:
+    """与 run_calc_pipeline 硬失败文案同口径。"""
+    return f'算薪中止：以下日期有订单但无生效方案：{"、".join(parts)}'
+
+
+def collect_hard_fail_findings(data: CalcInput) -> list[tuple[str, list[str]]]:
+    """
+    扫描严格算薪硬失败（缺送达 / 有完成单无方案），不跑公式。
+
+    返回 [(code, messages), ...]；messages 与 RequestError.msg 同口径。
+    """
+    findings: list[tuple[str, list[str]]] = []
+    delivery_msgs: list[str] = []
+    covered: set[date] = set()
+    for segment in data.segments:
+        for day in iter_dates(segment.start_date, segment.end_date):
+            covered.add(day)
+            employ = _employ_on(data.employ_history, data.employ_type, day)
+            day_ctx = build_day_context(data.site_id, day, employ)
+            day_orders = [row for row in data.orders if row.biz_date == day]
+            completed = [row for row in day_orders if _is_completed(row) and not _after_leave(data.leave_date, day)]
+            for order in completed:
+                ctx = build_order_context(order, day_ctx)
+                if ctx.get('_missing_duration'):
+                    order_no = getattr(order, 'order_no', None) or getattr(order, 'id', None) or '未知'
+                    delivery_msgs.append(missing_delivery_message(order_no, day))
+    if delivery_msgs:
+        findings.append(('missing_delivery', delivery_msgs))
+
+    no_plan_parts: list[str] = []
+    for day in iter_dates(data.period_start, data.period_end):
+        if day in covered:
+            continue
+        day_completed = [
+            row
+            for row in data.orders
+            if row.biz_date == day and _is_completed(row) and not _after_leave(data.leave_date, day)
+        ]
+        if day_completed:
+            no_plan_parts.append(f'{day.isoformat()}（{len(day_completed)} 单）')
+    if no_plan_parts:
+        findings.append(('no_plan_with_orders', [no_plan_with_orders_message(no_plan_parts)]))
+    return findings
+
+
+def serialize_calc_failures(failed_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """将 calculate_period 失败行写成可落库 JSON。"""
+    dumped: list[dict[str, Any]] = []
+    for row in failed_rows:
+        item: dict[str, Any] = {
+            'rider_id': int(row['rider_id']),
+            'job_no': row.get('job_no'),
+            'errors': list(row.get('errors') or []),
+        }
+        if row.get('code'):
+            item['code'] = row['code']
+        if row.get('deeplink'):
+            item['deeplink'] = row['deeplink']
+        dumped.append(item)
+    return dumped
+
+
+def persist_last_calc_failures(period: RiderSalarySettlePeriod, failed_rows: list[dict[str, Any]]) -> None:
+    """把最近一次算薪 failed[] 写到周期，供 F5 / 回跳读取。"""
+    period.last_calc_failures = serialize_calc_failures(failed_rows)
+
+
+def persist_last_calc_success_ids(period: RiderSalarySettlePeriod, rider_ids: list[int]) -> None:
+    """把最近一次算薪成功骑手 ID 写到周期，禁止只靠 toast 完成面。"""
+    period.last_calc_success_ids = [int(rider_id) for rider_id in rider_ids]
+
+
+def persist_last_calc_status(period: RiderSalarySettlePeriod, *, status: str, message: str) -> None:
+    """排队中 / 计算中 / 完成 / 失败。failed>0 不得写成完成。"""
+    period.last_calc_status = status
+    period.last_calc_status_message = message
+
+
+def finish_period_calc_status(*, calculated: int, failed_count: int) -> tuple[str, str]:
+    """同步/后台收场：有失败则 failed + 部分失败，禁止纯绿完成。"""
+    if failed_count > 0:
+        return (
+            RecalcJobStatus.failed.value,
+            f'部分失败：成功 {calculated} 人，失败 {failed_count} 人',
+        )
+    return RecalcJobStatus.done.value, f'已计算 {calculated} 人'
+
+
+def never_calculated_message(job_no: str, parts: list[str]) -> str:
+    """锁账：有完成单但从未成功落库。"""
+    return f'工号 {job_no} 有完成单但本周期从未成功落库：{"、".join(parts)}'
+
+
+def lock_hard_fail_message(errors: list[str]) -> str:
+    """锁账硬拦总文案"""
+    head = '锁账中止：存在未算出的有单骑手，请先到算薪页处理'
+    if not errors:
+        return head
+    return f'{head}。{"；".join(errors)}'
+
+
+def collect_never_calculated_finding(
+    *,
+    job_no: str,
+    completed_orders: list[Any],
+    has_success_payroll: bool,
+    already_hard_failed: bool,
+) -> tuple[str, list[str]] | None:
+    """
+    有完成单且本周期无成功 payroll、又未被硬失败扫描覆盖时，单独列出。
+
+    无完成单不返回（与 strict 一致，不单独挡锁）。
+    """
+    if already_hard_failed or has_success_payroll or not completed_orders:
+        return None
+    parts: list[str] = []
+    for order in completed_orders[:8]:
+        order_no = getattr(order, 'order_no', None) or getattr(order, 'id', None) or '未知'
+        day = getattr(order, 'biz_date', None)
+        day_s = day.isoformat() if day is not None else '未知日期'
+        parts.append(f'{day_s}（{order_no}）')
+    return ('never_calculated', [never_calculated_message(job_no, parts)])
+
+
+async def load_calc_input_for_precheck(
+    db: AsyncSession,
+    *,
+    rider: RiderSalaryRider,
+    period: RiderSalarySettlePeriod,
+) -> CalcInput:
+    """预检只读加载算薪输入（不抵扣预支）。"""
+    return await _load_calc_input(
+        db,
+        rider=rider,
+        period=period,
+        forced_plan_version=None,
+        persist_advance=False,
+    )
+
+
 def _enabled_items(segment: Segment, stage: str) -> list[PlanItemView]:
     items = [item for item in segment.items if item.enabled and item.stage == stage]
     items.sort(key=lambda item: (item.sort_order, item.id or 0))
     return items
+
+
+def plan_period_order_count_of(completed: list[Any], segments: list[Segment]) -> int:
+    """
+    方案期内单量：最后一段所属方案版本的全部生效窗内已完成单数。
+
+    月中换绑时与周期有效单量分叉；单版本整窗则与周期有效单量相同。
+
+    :param completed: 周期内已完成订单
+    :param segments: 方案生效段
+    :return: 方案期内单量
+    """
+    if not segments:
+        return 0
+    version_id = segments[-1].plan_version_id
+    windows = [(row.start_date, row.end_date) for row in segments if row.plan_version_id == version_id]
+    return sum(1 for row in completed if any(start <= row.biz_date <= end for start, end in windows))
 
 
 def _eval_item(
@@ -209,16 +437,19 @@ def _eval_item(
     names: dict[str, Any],
     warnings: list[str],
 ) -> tuple[bool, Decimal, dict[str, Any]]:
+    del warnings  # 非阻断 tip 已废止；硬失败走 RequestError
     condition_expr = item.condition_expr or 'True'
     formula_expr = item.formula_expr or '0'
-    hit = evaluate_condition(condition_expr, names)
+    try:
+        hit = evaluate_condition(condition_expr, names)
+    except EvalError as exc:
+        raise errors.RequestError(msg=f'方案项「{item.name}」条件求值失败：{exc}') from exc
     if not hit:
         return False, ZERO, _trace(condition_expr, formula_expr, names, ZERO, hit=False)
     try:
         unsigned = evaluate_amount(formula_expr, names)
-    except EvalError:
-        warnings.append(f'方案项「{item.name}」公式求值失败，已按 0 计算')
-        unsigned = ZERO
+    except EvalError as exc:
+        raise errors.RequestError(msg=f'方案项「{item.name}」公式求值失败：{exc}') from exc
     signed = q2(unsigned * _sign(item.direction))
     return True, signed, _trace(condition_expr, formula_expr, names, unsigned, hit=True)
 
@@ -274,11 +505,12 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
     daily_total = ZERO
     period_total = ZERO
     covered: dict[date, int] = {}
+    segment_order_counts: list[SegmentOrderCount] = []
     for segment in data.segments:
         for day in iter_dates(segment.start_date, segment.end_date):
             covered[day] = segment.plan_version_id
             employ = _employ_on(data.employ_history, data.employ_type, day)
-            day_ctx = build_day_context(data.site_id, day, data.day_flags.get(day), employ)
+            day_ctx = build_day_context(data.site_id, day, employ)
             day_orders = [row for row in orders if row.biz_date == day]
             completed = [row for row in day_orders if _is_completed(row) and not _after_leave(data.leave_date, day)]
             if _after_leave(data.leave_date, day) and any(_is_completed(row) for row in day_orders):
@@ -286,10 +518,9 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             day_per_order = ZERO
             for order in completed:
                 ctx = build_order_context(order, day_ctx)
-                if ctx.pop('_missing_deliver', False):
-                    msg = '字段「配送时长」为空，已按 0 计算'
-                    if msg not in warnings:
-                        warnings.append(msg)
+                if ctx.pop('_missing_duration', False):
+                    order_no = getattr(order, 'order_no', None) or getattr(order, 'id', None) or '未知'
+                    raise errors.RequestError(msg=missing_delivery_message(order_no, day))
                 for item in _enabled_items(segment, CalcStage.per_order.value):
                     hit, amount, trace = _eval_item(item, ctx, warnings)
                     if not hit:
@@ -348,6 +579,14 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                     accrued += amount
                     daily_total += amount
         plan_orders = [row for row in completed_all if segment.start_date <= row.biz_date <= segment.end_date]
+        segment_order_counts.append(
+            SegmentOrderCount(
+                plan_version_id=segment.plan_version_id,
+                start_date=segment.start_date,
+                end_date=segment.end_date,
+                plan_order_count=len(plan_orders),
+            )
+        )
         segment_days = (segment.end_date - segment.start_date).days + 1
         seg_ctx = build_segment_context(
             period_ctx,
@@ -382,6 +621,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                 period_total += amount
 
     no_plan_days: set[date] = set()
+    no_plan_parts: list[str] = []
     for day in iter_dates(data.period_start, data.period_end):
         if day in covered:
             continue
@@ -392,7 +632,9 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         ]
         if day_completed:
             no_plan_days.add(day)
-            warnings.append(f'{day.isoformat()} 无生效方案，{len(day_completed)} 单未计薪')
+            no_plan_parts.append(f'{day.isoformat()}（{len(day_completed)} 单）')
+    if no_plan_parts:
+        raise errors.RequestError(msg=no_plan_with_orders_message(no_plan_parts))
 
     for adj in data.adjustments:
         signed = q2(getattr(adj, 'signed_amount', ZERO) or ZERO)
@@ -545,12 +787,19 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             )
         )
 
+    # 单段（含试算强制全程生效）取该段；多段取各段之和（无方案日不计）
+    plan_order_total = (
+        segment_order_counts[0].plan_order_count
+        if len(segment_order_counts) == 1
+        else sum(item.plan_order_count for item in segment_order_counts)
+    )
     return CalcResult(
         rider_id=rider_id,
         period_id=data.period_id,
         payroll_id=None,
         order_count=len(orders),
         valid_order_count=len(completed_all),
+        plan_period_order_count=plan_period_order_count_of(completed_all, data.segments),
         per_order_total=q2(per_order_total),
         daily_total=q2(daily_total),
         period_total=q2(period_total),
@@ -565,6 +814,8 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         warnings=warnings,
         details=details,
         dailies=dailies,
+        plan_order_count=plan_order_total,
+        segment_order_counts=segment_order_counts,
     )
 
 
@@ -636,18 +887,6 @@ async def _load_calc_input(
                     RiderSalaryOrder.biz_date >= start,
                     RiderSalaryOrder.biz_date <= end,
                     RiderSalaryOrder.deleted == 0,
-                )
-            )
-        ).all()
-    )
-    flags = list(
-        (
-            await db.scalars(
-                select(RiderSalaryDayFlag).where(
-                    RiderSalaryDayFlag.site_id == site_id,
-                    RiderSalaryDayFlag.biz_date >= start,
-                    RiderSalaryDayFlag.biz_date <= end,
-                    RiderSalaryDayFlag.deleted == 0,
                 )
             )
         ).all()
@@ -730,7 +969,6 @@ async def _load_calc_input(
         employ_type=rider.employ_type,
         segments=segments,
         orders=orders,
-        day_flags={row.biz_date: row for row in flags},
         employ_history=history,
         adjustments=adjustments,
         advances=advances,
@@ -895,15 +1133,47 @@ async def _calculate_rider_period_inner(
     return result
 
 
+async def _covering_period_for_trial(
+    db: AsyncSession,
+    *,
+    rider: RiderSalaryRider,
+    start: date,
+    end: date,
+) -> RiderSalarySettlePeriod | None:
+    """同骑手同起止的周期（骑手级优先），供绑定感知试算与正式 calculate 对拍。"""
+    rows = list(
+        (
+            await db.scalars(
+                select(RiderSalarySettlePeriod).where(
+                    RiderSalarySettlePeriod.site_id == rider.site_id,
+                    RiderSalarySettlePeriod.start_date == start,
+                    RiderSalarySettlePeriod.end_date == end,
+                    RiderSalarySettlePeriod.deleted == 0,
+                    RiderSalarySettlePeriod.rider_id.in_([SITE_LEVEL_RIDER_ID, rider.id]),
+                )
+            )
+        ).all()
+    )
+    for row in rows:
+        if row.rider_id == rider.id:
+            return row
+    return rows[0] if rows else None
+
+
 async def trial_rider_range(
     db: AsyncSession,
     *,
     rider_id: int,
     start: date,
     end: date,
-    forced_plan_version: RiderSalaryPlanVersion,
+    forced_plan_version: RiderSalaryPlanVersion | None = None,
 ) -> CalcResult:
-    """试算：假定该版本在区间内全程生效，不落库、不抵扣预支"""
+    """
+    试算，不落库、不抵扣预支。绑定感知（forced=None）走与正式 calculate 同一流水线。
+
+    - forced_plan_version 有值：整版试算，假定该版本在区间内全程生效
+    - forced_plan_version 为 None：按骑手真实绑定分段试算，应发等于同骑手同周期 persist=False 的 calculate
+    """
     from types import SimpleNamespace
 
     rider = await db.scalar(
@@ -928,22 +1198,24 @@ async def trial_rider_range(
     )
     if order_count > trial_max_orders():
         raise errors.RequestError(msg=f'试算订单数超过上限 {trial_max_orders()}')
-    period_like = SimpleNamespace(
-        id=None,
-        site_id=rider.site_id,
-        start_date=start,
-        end_date=end,
-        status=PeriodStatus.open.value,
-        rider_id=SITE_LEVEL_RIDER_ID,
-    )
-    data = await _load_calc_input(
+    period = await _covering_period_for_trial(db, rider=rider, start=start, end=end)
+    if period is None:
+        period = SimpleNamespace(  # type: ignore[assignment]
+            id=None,
+            site_id=rider.site_id,
+            start_date=start,
+            end_date=end,
+            status=PeriodStatus.open.value,
+            rider_id=SITE_LEVEL_RIDER_ID,
+        )
+    return await _calculate_rider_period_inner(
         db,
         rider=rider,
-        period=period_like,  # type: ignore[arg-type]
+        period=period,  # type: ignore[arg-type]
+        persist=False,
         forced_plan_version=forced_plan_version,
-        persist_advance=False,
+        operator=None,
     )
-    return run_calc_pipeline(data)
 
 
 async def calculate_period(
@@ -952,8 +1224,8 @@ async def calculate_period(
     period_id: int,
     rider_ids: list[int] | None = None,
     operator: Request | None = None,
-) -> list[CalcResult]:
-    """计算周期内骑手薪资（站点级跳过有骑手级周期覆盖的人）"""
+) -> tuple[list[CalcResult], list[dict[str, Any]]]:
+    """计算周期内骑手薪资；部分骑手失败时其余仍可成功落库。"""
     period = await db.scalar(
         select(RiderSalarySettlePeriod).where(
             RiderSalarySettlePeriod.id == period_id,
@@ -963,11 +1235,40 @@ async def calculate_period(
     if period is None:
         raise errors.NotFoundError(msg='结算周期不存在')
     targets = await _riders_for_period(db, period, rider_ids)
-    results: list[CalcResult] = [
-        await calculate_rider_period(db, rider_id=rider_id, period=period, persist=True, operator=operator)
-        for rider_id in targets
-    ]
-    return results
+    results: list[CalcResult] = []
+    failed: list[dict[str, Any]] = []
+    for rider_id in targets:
+        rider = await db.scalar(
+            select(RiderSalaryRider).where(RiderSalaryRider.id == rider_id, RiderSalaryRider.deleted == 0)
+        )
+        job_no = getattr(rider, 'job_no', None) if rider is not None else None
+        try:
+            async with db.begin_nested():
+                results.append(
+                    await calculate_rider_period(db, rider_id=rider_id, period=period, persist=True, operator=operator)
+                )
+        except errors.RequestError as exc:
+            msg = exc.msg or str(exc)
+            code = classify_calc_failure_code(msg)
+            failed.append({
+                'rider_id': rider_id,
+                'job_no': job_no,
+                'errors': [msg],
+                'code': code,
+                'deeplink': calc_failure_deeplink(
+                    code=code,
+                    rider_id=rider_id,
+                    site_id=period.site_id,
+                    date_from=period.start_date,
+                    date_to=period.end_date,
+                ),
+            })
+    persist_last_calc_failures(period, failed)
+    persist_last_calc_success_ids(period, [row.rider_id for row in results])
+    status, message = finish_period_calc_status(calculated=len(results), failed_count=len(failed))
+    persist_last_calc_status(period, status=status, message=message)
+    await db.flush()
+    return results, failed
 
 
 async def _riders_for_period(
@@ -975,6 +1276,7 @@ async def _riders_for_period(
     period: RiderSalarySettlePeriod,
     rider_ids: list[int] | None,
 ) -> list[int]:
+    rider_ids = normalize_calc_rider_ids(rider_ids)
     if period.rider_id and period.rider_id != SITE_LEVEL_RIDER_ID:
         if rider_ids is not None and period.rider_id not in rider_ids:
             return []

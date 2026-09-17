@@ -64,15 +64,12 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec('订单金额', TYPE_NUMBER, (STAGE_PER_ORDER,), '元', '订单金额，供大额订单奖等条件使用'),
     FieldSpec('下单时刻', TYPE_TIME, (STAGE_PER_ORDER,), None, '下单时间的时分，求值时用自 0 点起分钟数'),
     FieldSpec('送达时刻', TYPE_TIME, (STAGE_PER_ORDER,), None, '送达时间的时分；无送达则条件视为假'),
-    FieldSpec('配送时长', TYPE_NUMBER, (STAGE_PER_ORDER,), '分钟', '送达时间减下单时间；缺送达按 0 并记 warning'),
+    FieldSpec('配送时长', TYPE_NUMBER, (STAGE_PER_ORDER,), '分钟', '送达时间减下单时间；缺送达则算薪/导入硬失败'),
     FieldSpec('订单状态', TYPE_ENUM, (STAGE_PER_ORDER,), None, '订单状态', _ORDER_STATUS_OPTIONS),
     FieldSpec('日期', TYPE_DATE, _ALL_STAGES, None, '业务日期'),
     FieldSpec('星期', TYPE_ENUM, _ORDER_DAY, None, '周一=1 … 周日=7', _WEEKDAY_OPTIONS),
     FieldSpec('是否节假日', TYPE_BOOL, _ORDER_DAY, None, '中国法定节假日（chinese-calendar，含调休判定）'),
     FieldSpec('是否周末', TYPE_BOOL, _ORDER_DAY, None, '星期六或星期日'),
-    FieldSpec('是否恶劣天气', TYPE_BOOL, _ORDER_DAY, None, '来自站点日标记，无记录为否'),
-    FieldSpec('是否高温', TYPE_BOOL, _ORDER_DAY, None, '来自站点日标记，无记录为否'),
-    FieldSpec('是否大促', TYPE_BOOL, _ORDER_DAY, None, '来自站点日标记，无记录为否'),
     FieldSpec('用工类型', TYPE_ENUM, _ALL_STAGES, None, '按日取自用工类型历史', _EMPLOY_OPTIONS),
     FieldSpec('日单量', TYPE_NUMBER, _DAY_PERIOD, '单', '当日已完成订单数（决策补遗#10）'),
     FieldSpec('日总单量', TYPE_NUMBER, _DAY_PERIOD, '单', '当日全部状态订单数'),
@@ -87,8 +84,20 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec('出勤天数', TYPE_NUMBER, (STAGE_PERIOD,), '天', '周期内有有效单的天数'),
     FieldSpec('本期已计金额', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本薪资单中排序在前且进应发的明细之和'),
     FieldSpec('本期逐单金额', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本薪资单已产生的逐单项进应发合计'),
-    FieldSpec('本期手工奖', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本周期手工奖进应发合计'),
-    FieldSpec('本期手工惩', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本周期手工惩进应发合计（带符号）'),
+    FieldSpec(
+        '本期手工奖',
+        TYPE_NUMBER,
+        (STAGE_PERIOD,),
+        '元',
+        '本周期手工奖合计；可作条件。手工明细已入账，再加会双计',
+    ),
+    FieldSpec(
+        '本期手工惩',
+        TYPE_NUMBER,
+        (STAGE_PERIOD,),
+        '元',
+        '本周期手工惩合计（带符号）；可作条件。手工明细已入账，再加会双计',
+    ),
     FieldSpec('工龄月数', TYPE_NUMBER, (STAGE_PERIOD,), '月', '入职日到周期末的整月数'),
     FieldSpec('入职天数', TYPE_NUMBER, (STAGE_PERIOD,), '天', '入职日到周期末的日历天数（含入职当日）'),
 )
@@ -102,6 +111,13 @@ BOOL_FIELDS: frozenset[str] = frozenset(item.name for item in FIELDS if item.typ
 DATE_FIELDS: frozenset[str] = frozenset(item.name for item in FIELDS if item.type == TYPE_DATE)
 
 ALL_FIELD_NAMES: frozenset[str] = frozenset(FIELD_MAP)
+
+RETIRED_FIELDS: frozenset[str] = frozenset({'是否恶劣天气', '是否高温', '是否大促'})
+
+
+def retired_field_message(name: str) -> str:
+    """已下线字段的可见硬失败文案"""
+    return f'字段「{name}」已下线，不可用于方案项'
 
 
 def get_field(name: str) -> FieldSpec | None:

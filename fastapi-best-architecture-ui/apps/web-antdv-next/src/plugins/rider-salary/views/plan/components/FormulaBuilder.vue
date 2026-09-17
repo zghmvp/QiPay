@@ -11,7 +11,15 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { confirm } from '@vben/common-ui';
 
 import { validateEngineApi } from '../../../api/engine';
-import { defaultFormula, formulaKindOf } from '../helpers';
+import {
+  defaultFormula,
+  formulaAddsManualField,
+  formulaFieldLabel,
+  formulaKindOf,
+  MANUAL_ADDED_AS_FORMULA_COPY,
+  MANUAL_NOT_DOUBLE_COPY,
+  PERIOD_FIXED_AMOUNT_HINT,
+} from '../helpers';
 import ExpressionBuilder from './ExpressionBuilder.vue';
 import LadderEditor from './LadderEditor.vue';
 
@@ -46,6 +54,15 @@ const numberFields = computed(() =>
     (item) => item.type === 'number' && item.stages.includes(props.stage),
   ),
 );
+
+const numberFieldOptions = computed(() =>
+  numberFields.value.map((item) => ({
+    label: formulaFieldLabel(item.name),
+    value: item.name,
+  })),
+);
+
+const addsManualField = computed(() => formulaAddsManualField(props.value));
 
 function formula(): Record<string, unknown> {
   return props.value ?? defaultFormula('固定金额');
@@ -118,6 +135,20 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex flex-col gap-3">
     <div class="text-sm font-medium">计算公式</div>
+    <a-alert
+      v-if="stage === 'period'"
+      type="warning"
+      show-icon
+      data-testid="ops-plan-manual-not-double"
+      :message="MANUAL_NOT_DOUBLE_COPY"
+    />
+    <a-alert
+      v-if="addsManualField"
+      type="error"
+      show-icon
+      data-testid="plan-manual-added-as-formula"
+      :message="MANUAL_ADDED_AS_FORMULA_COPY"
+    />
     <a-radio-group
       :disabled="disabled"
       :value="kind"
@@ -134,6 +165,13 @@ onBeforeUnmount(() => {
       <div class="text-muted-foreground text-xs">
         每命中一次加该金额，符号由科目方向决定
       </div>
+      <a-alert
+        v-if="stage === 'period'"
+        type="warning"
+        show-icon
+        data-testid="period-fixed-amount-full-once"
+        :message="PERIOD_FIXED_AMOUNT_HINT"
+      />
       <a-input-number
         :disabled="disabled"
         :precision="2"
@@ -149,7 +187,7 @@ onBeforeUnmount(() => {
         <div class="mb-1 text-xs">字段</div>
         <a-select
           :disabled="disabled"
-          :options="numberFields.map((item) => ({ label: item.name, value: item.name }))"
+          :options="numberFieldOptions"
           :value="formula().字段"
           class="min-w-[160px]"
           @update:value="(v) => patch({ ...formula(), 字段: String(v ?? '') })"

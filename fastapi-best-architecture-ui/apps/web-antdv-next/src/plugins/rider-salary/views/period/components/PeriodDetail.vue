@@ -2,9 +2,11 @@
 import type { PayrollSummary } from '../../../types/payroll';
 import type { PeriodWithPayrolls } from '../../../types/period';
 
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
-import { useVbenDrawer } from '@vben/common-ui';
+import { useAccess } from '@vben/access';
+import { useVbenDrawer, VbenButton } from '@vben/common-ui';
 
 import { getPeriodApi } from '../../../api/period';
 import MoneyText from '../../../components/MoneyText.vue';
@@ -16,10 +18,25 @@ import {
   PERIOD_STATUS_OPTIONS,
 } from '../../../constants/enums';
 import { toDateTimeString } from '../../../utils/date';
-import PayrollDrawer from './PayrollDrawer.vue';
 
+const router = useRouter();
+const { hasAccessByCodes } = useAccess();
 const loading = ref(false);
 const detail = ref<PeriodWithPayrolls>();
+const canGoCalculate = computed(() => {
+  const status = detail.value?.status;
+  return (
+    (status === 'open' || status === 'reopened') &&
+    hasAccessByCodes(['rs:period:calculate'])
+  );
+});
+
+function goCalculate() {
+  const id = detail.value?.id;
+  if (!id) return;
+  drawerApi.close();
+  void router.push({ path: `/rider-salary/period/${id}/calculate` });
+}
 
 const columns = [
   { dataIndex: 'job_no', title: '工号', width: 100 },
@@ -35,13 +52,8 @@ const columns = [
   { dataIndex: 'calc_time', key: 'calc_time', title: '计算时间', width: 170 },
 ];
 
-const [PayrollPanel, payrollApi] = useVbenDrawer({
-  connectedComponent: PayrollDrawer,
-});
-
 function openPayroll(row: PayrollSummary) {
-  const name = [row.job_no, row.rider_name].filter(Boolean).join(' ');
-  payrollApi.setData({ id: row.id, rider_name: name }).open();
+  router.push({ path: `/rider-salary/payroll/${row.id}` });
 }
 
 const [Drawer, drawerApi] = useVbenDrawer({
@@ -103,6 +115,7 @@ const [Drawer, drawerApi] = useVbenDrawer({
         </a-descriptions>
         <a-table
           size="small"
+          data-testid="period-payroll-table"
           :columns="columns"
           :data-source="detail.payrolls"
           :pagination="false"
@@ -141,9 +154,17 @@ const [Drawer, drawerApi] = useVbenDrawer({
             </template>
           </template>
         </a-table>
+        <div v-if="canGoCalculate" class="mt-4 text-right">
+          <VbenButton
+            type="primary"
+            data-testid="period-detail-go-calculate"
+            @click="goCalculate"
+          >
+            去算薪
+          </VbenButton>
+        </div>
       </template>
       <a-empty v-else-if="!loading" description="未找到周期" />
     </a-spin>
-    <PayrollPanel />
   </Drawer>
 </template>

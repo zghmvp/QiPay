@@ -1,0 +1,913 @@
+<script lang="ts" setup>
+import type {
+  CalcPrecheckBlocker,
+  CalcPrecheckResult,
+  CalcPrecheckWarning,
+  CalculatePeriodResult,
+  CalculateRiderFailure,
+  PeriodWithPayrolls,
+} from '../../types/period';
+import type { PayrollSummary } from '../../types/payroll';
+import type { RiderResult } from '../../types/rider';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+
+import { useAccess } from '@vben/access';
+import { VbenButton } from '@vben/common-ui';
+
+import { message } from 'antdv-next';
+
+import {
+  calcPrecheckApi,
+  calculatePeriodApi,
+  getPeriodApi,
+} from '../../api/period';
+import { getRiderListApi } from '../../api/rider';
+import MoneyText from '../../components/MoneyText.vue';
+import StatusTag from '../../components/StatusTag.vue';
+import { CALC_STATUS_OPTIONS, PERIOD_STATUS_OPTIONS, enumLabel } from '../../constants/enums';
+import PageContainer from '../_shared/PageContainer.vue';
+import {
+  deriveSuccessRiderIds,
+  persistCalcRun,
+  pickThisRunPayrolls,
+  resolveThisRunRiderIds,
+} from './calc-run';
+import CalcRiderPicker from './components/CalcRiderPicker.vue';
+
+const route = useRoute();
+const router = useRouter();
+const { hasAccessByCodes } = useAccess();
+
+const canCalculate = computed(() =>
+  hasAccessByCodes(['rs:period:calculate']),
+);
+
+const loading = ref(false);
+const running = ref(false);
+const period = ref<PeriodWithPayrolls>();
+const precheck = ref<CalcPrecheckResult>();
+const loadError = ref('');
+
+const riderIds = ref<number[]>([]);
+const riderOptions = ref<{ label: string; value: number }[]>([]);
+const personal = ref(false);
+const ridersLoading = ref(false);
+
+const lastResult = ref<CalculatePeriodResult | null>(null);
+const sessionFailed = ref<CalculateRiderFailure[]>([]);
+const thisRunRiderIds = ref<number[]>([]);
+const thisRunTargetRiderIds = ref<null | number[]>(null);
+
+const periodId = computed(() => Number(route.params.id));
+
+const thisRunPayrolls = computed(() =>
+  pickThisRunPayrolls(period.value?.payrolls, thisRunRiderIds.value),
+);
+
+const thisRunRiderIdSet = computed(() => new Set(thisRunRiderIds.value));
+
+const periodLocked = computed(() => {
+  const status = period.value?.status;
+  return status === 'locked' || status === 'paid';
+});
+
+const startDisabled = computed(() => {
+  if (!canCalculate.value) return true;
+  if (!precheck.value?.can_run) return true;
+  if (periodLocked.value) return true;
+  if (running.value) return true;
+  return false;
+});
+
+const calcStatus = computed(
+  () =>
+    precheck.value?.calc_status ||
+    period.value?.last_calc_status ||
+    lastResult.value?.calc_status ||
+    null,
+);
+
+const calcStatusLabel = computed(() => {
+  const label =
+    precheck.value?.calc_status_label ||
+    period.value?.last_calc_status_label ||
+    lastResult.value?.calc_status_label;
+  if (label) return label;
+  const fromEnum = enumLabel(CALC_STATUS_OPTIONS, calcStatus.value);
+  return fromEnum === '—' ? '' : fromEnum;
+});
+
+const calcStatusMessage = computed(
+  () =>
+    precheck.value?.calc_status_message ||
+    period.value?.last_calc_status_message ||
+    '',
+);
+
+const calcInFlight = computed(() => {
+  if (running.value) return true;
+  return calcStatus.value === 'queued' || calcStatus.value === 'running';
+});
+
+const calcFailed = computed(() => {
+  if ((sessionFailed.value?.length ?? 0) > 0) return true;
+  return calcStatus.value === 'failed';
+});
+
+function q(extra: Record<string, string | number | undefined>) {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(extra)) {
+    if (v === undefined || v === null || v === '') continue;
+    out[k] = String(v);
+  }
+  return out;
+}
+
+function parseRiderIdsQuery(): number[] {
+  const raw = route.query.rider_ids;
+  const text = Array.isArray(raw) ? raw[0] : raw;
+  if (!text || typeof text !== 'string') return [];
+  return text
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+function pushDeeplink(
+  path: string,
+  query?: null | Record<string, string>,
+) {
+  router.push({ path, query: query ?? undefined });
+}
+
+function goBack() {
+  router.push({
+    path: '/rider-salary/period',
+    query: q({ id: period.value?.id }),
+  });
+}
+
+function goPeriodDetail() {
+  router.push({
+    path: '/rider-salary/period',
+    query: q({ id: periodId.value }),
+  });
+}
+
+function goPayrollList() {
+  router.push({
+    path: '/rider-salary/payroll',
+    query: q({ period_id: periodId.value }),
+  });
+}
+
+function goCalendar() {
+  const p = period.value;
+  if (!p) return;
+  router.push({
+    path: '/rider-salary/calendar',
+    query: q({
+      site_id: p.site_id,
+      month: p.start_date?.slice(0, 7),
+    }),
+  });
+}
+
+function openPayroll(row: PayrollSummary) {
+  router.push({ path: `/rider-salary/payroll/${row.id}` });
+}
+
+function blockerAction(row: CalcPrecheckBlocker) {
+  if (row.deeplink?.path) {
+    const query = { ...(row.deeplink.query ?? {}) };
+    if (row.code === 'missing_delivery') {
+      query.missing_delivery = '1';
+    }
+    pushDeeplink(row.deeplink.path, query);
+    return;
+  }
+  if (row.code === 'no_plan_with_orders') {
+    router.push({
+      path: `/rider-salary/rider/${row.rider_id}`,
+      query: { tab: 'binding' },
+    });
+    return;
+  }
+  const p = period.value;
+  router.push({
+    path: '/rider-salary/order',
+    query: q({
+      rider_id: row.rider_id,
+      site_id: p?.site_id,
+      date_from: p?.start_date,
+      date_to: p?.end_date,
+      ...(row.code === 'missing_delivery' ? { missing_delivery: '1' } : {}),
+    }),
+  });
+}
+
+function failureLooksLikeMissingDelivery(row: CalculateRiderFailure) {
+  return (row.errors ?? []).some(
+    (e) => e.includes('送达时间为空') || e.includes('缺送达'),
+  );
+}
+
+function failureAction(row: CalculateRiderFailure, kind: 'binding' | 'order') {
+  if (kind === 'binding') {
+    router.push({
+      path: `/rider-salary/rider/${row.rider_id}`,
+      query: { tab: 'binding' },
+    });
+    return;
+  }
+  const p = period.value;
+  router.push({
+    path: '/rider-salary/order',
+    query: q({
+      rider_id: row.rider_id,
+      site_id: p?.site_id,
+      date_from: p?.start_date,
+      date_to: p?.end_date,
+      ...(failureLooksLikeMissingDelivery(row) ? { missing_delivery: '1' } : {}),
+    }),
+  });
+}
+
+function failureLooksLikeNoPlan(row: CalculateRiderFailure) {
+  return (row.errors ?? []).some((e) => e.includes('无生效方案'));
+}
+
+function riderNameOf(row: CalculateRiderFailure) {
+  if (row.rider_name?.trim()) return row.rider_name.trim();
+  const opt = riderOptions.value.find((item) => item.value === row.rider_id);
+  if (!opt?.label) return '';
+  const job = row.job_no || '';
+  if (job && opt.label.startsWith(job)) {
+    return opt.label.slice(job.length).trim();
+  }
+  return opt.label;
+}
+
+async function refreshPrecheckAndResult(options?: { silent?: boolean }) {
+  if (!Number.isFinite(periodId.value) || periodId.value <= 0) return;
+  if (!options?.silent) loading.value = true;
+  try {
+    const [periodRes, precheckRes] = await Promise.all([
+      getPeriodApi(periodId.value),
+      calcPrecheckApi(periodId.value),
+    ]);
+    applyCalcSnapshot(periodRes, precheckRes);
+  } finally {
+    if (!options?.silent) loading.value = false;
+  }
+}
+
+function applyCalcSnapshot(
+  periodRes: PeriodWithPayrolls,
+  precheckRes: CalcPrecheckResult,
+) {
+  period.value = periodRes;
+  precheck.value = precheckRes;
+  const persisted = periodRes.last_calc_failures ?? [];
+  // 刷新以周期/预检 last_calc_status* 为准，不把 POST calculate 的瞬时 queued 当成终态
+  const persistedStatus =
+    precheckRes.calc_status || periodRes.last_calc_status || null;
+  const status =
+    persistedStatus ||
+    lastResult.value?.calc_status ||
+    (lastResult.value?.queued ? 'queued' : null);
+  const inFlight = status === 'queued' || status === 'running';
+  let failed = persisted;
+  if (
+    !persisted.length &&
+    inFlight &&
+    (lastResult.value?.failed?.length ?? 0) > 0
+  ) {
+    failed = lastResult.value?.failed ?? [];
+  }
+  sessionFailed.value = failed;
+  const successIds = resolveThisRunRiderIds({
+    failedRiderIds: failed.map((row) => row.rider_id),
+    lastResult: lastResult.value,
+    period: periodRes,
+    periodId: periodRes.id,
+  });
+  thisRunRiderIds.value = successIds;
+  const label =
+    precheckRes.calc_status_label ||
+    periodRes.last_calc_status_label ||
+    lastResult.value?.calc_status_label ||
+    enumLabel(CALC_STATUS_OPTIONS, status);
+  if (status || failed.length || lastResult.value) {
+    lastResult.value = {
+      calc_status: status,
+      calc_status_label: label === '—' ? null : label,
+      calculated: lastResult.value?.calculated ?? 0,
+      failed,
+      queued: inFlight,
+      calculated_rider_ids:
+        lastResult.value?.calculated_rider_ids ?? successIds,
+      warnings: lastResult.value?.warnings ?? [],
+    };
+  }
+  persistCalcRun({
+    periodId: periodRes.id,
+    successRiderIds: successIds,
+    targetRiderIds: thisRunTargetRiderIds.value,
+  });
+}
+
+function warningAction(row: CalcPrecheckWarning) {
+  if (row.deeplink?.path) {
+    pushDeeplink(row.deeplink.path, row.deeplink.query);
+  }
+}
+
+async function loadRiders(siteId: number, lockRiderId?: number) {
+  ridersLoading.value = true;
+  try {
+    const res = await getRiderListApi({
+      page: 1,
+      site_id: siteId,
+      size: 200,
+    });
+    riderOptions.value = (res?.items ?? []).map((item: RiderResult) => ({
+      label: `${item.job_no} ${item.name}`,
+      value: item.id,
+    }));
+    if (lockRiderId) {
+      personal.value = true;
+      riderIds.value = [lockRiderId];
+    } else {
+      personal.value = false;
+      const preset = parseRiderIdsQuery();
+      riderIds.value = preset.length ? preset : [];
+    }
+  } finally {
+    ridersLoading.value = false;
+  }
+}
+
+async function loadPage() {
+  if (!Number.isFinite(periodId.value) || periodId.value <= 0) {
+    loadError.value = '无效的周期 ID';
+    return;
+  }
+  loading.value = true;
+  loadError.value = '';
+  try {
+    const [periodRes, precheckRes] = await Promise.all([
+      getPeriodApi(periodId.value),
+      calcPrecheckApi(periodId.value),
+    ]);
+    applyCalcSnapshot(periodRes, precheckRes);
+    await loadRiders(
+      periodRes.site_id,
+      periodRes.rider_id ? periodRes.rider_id : undefined,
+    );
+  } catch (error: unknown) {
+    loadError.value =
+      (error as { message?: string })?.message || '加载周期算薪页失败';
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function onStartCalculate() {
+  if (startDisabled.value || !period.value) return;
+  running.value = true;
+  lastResult.value = null;
+  sessionFailed.value = [];
+  thisRunRiderIds.value = [];
+  const target = riderIds.value.length ? [...riderIds.value] : null;
+  thisRunTargetRiderIds.value = target;
+  persistCalcRun({
+    periodId: period.value.id,
+    successRiderIds: [],
+    targetRiderIds: target,
+  });
+  try {
+    const res = await calculatePeriodApi(period.value.id, {
+      rider_ids: target,
+    });
+    const failed = res.failed ?? [];
+    sessionFailed.value = failed;
+    const failedIds = failed.map((row) => row.rider_id);
+    let successIds = res.calculated_rider_ids ?? [];
+    if (!res.queued) {
+      successIds = deriveSuccessRiderIds({
+        failedRiderIds: failedIds,
+        payrolls: period.value.payrolls,
+        result: res,
+        targetRiderIds: target,
+      });
+      thisRunRiderIds.value = successIds;
+    }
+    lastResult.value = {
+      ...res,
+      calc_status: res.calc_status || (res.queued ? 'queued' : null),
+      calc_status_label:
+        res.calc_status_label || (res.queued ? '排队中' : res.calc_status_label),
+      calculated_rider_ids: successIds,
+    };
+    persistCalcRun({
+      periodId: period.value.id,
+      successRiderIds: successIds,
+      targetRiderIds: target,
+    });
+    const failedCount = failed.length;
+
+    if (res.queued) {
+      message.info('算薪已转入后台：排队中/计算中，请刷新预检与结果');
+    } else if (failedCount > 0 && res.calculated > 0) {
+      message.info(`成功 ${res.calculated} 人，失败 ${failedCount} 人`);
+    } else if (failedCount > 0) {
+      message.error(`算薪失败 ${failedCount} 人，请查看失败清单`);
+    } else {
+      message.success(`已计算 ${res.calculated} 名骑手`);
+    }
+
+    await refreshPrecheckAndResult({ silent: true });
+  } finally {
+    running.value = false;
+  }
+}
+
+const runSuccessColumns = [
+  { dataIndex: 'job_no', title: '工号', width: 100 },
+  { dataIndex: 'rider_name', title: '姓名', width: 100 },
+  { dataIndex: 'order_count', title: '单量', width: 70 },
+  { dataIndex: 'gross', key: 'gross', title: '应发', width: 110 },
+  { dataIndex: 'deduction_total', key: 'deduction', title: '代扣', width: 110 },
+  {
+    dataIndex: 'advance_deduction',
+    key: 'advance',
+    title: '预支抵扣',
+    width: 110,
+  },
+  { dataIndex: 'net', key: 'net', title: '实发', width: 110 },
+  { dataIndex: 'stale', key: 'stale', title: '需重算', width: 80 },
+  { dataIndex: 'action', key: 'action', title: '明细', width: 90 },
+];
+
+const payrollColumns = [
+  { dataIndex: 'job_no', title: '工号', width: 100 },
+  { dataIndex: 'rider_name', title: '姓名', width: 100 },
+  { dataIndex: 'this_run', key: 'this_run', title: '本轮', width: 90 },
+  { dataIndex: 'order_count', title: '单量', width: 70 },
+  { dataIndex: 'gross', key: 'gross', title: '应发', width: 110 },
+  { dataIndex: 'deduction_total', key: 'deduction', title: '代扣', width: 110 },
+  {
+    dataIndex: 'advance_deduction',
+    key: 'advance',
+    title: '预支抵扣',
+    width: 110,
+  },
+  { dataIndex: 'net', key: 'net', title: '实发', width: 110 },
+  { dataIndex: 'stale', key: 'stale', title: '需重算', width: 80 },
+  { dataIndex: 'action', key: 'action', title: '明细', width: 90 },
+];
+
+const blockerColumns = [
+  { dataIndex: 'job_no', title: '工号', width: 100 },
+  { dataIndex: 'rider_name', title: '姓名', width: 100 },
+  { dataIndex: 'messages', key: 'messages', title: '问题' },
+  { dataIndex: 'action', key: 'action', title: '操作', width: 140 },
+];
+
+const failedColumns = [
+  { dataIndex: 'job_no', title: '工号', width: 100 },
+  { dataIndex: 'rider_name', key: 'name', title: '姓名', width: 120 },
+  { dataIndex: 'errors', key: 'errors', title: '错误' },
+  { dataIndex: 'action', key: 'action', title: '操作', width: 180 },
+];
+
+watch(
+  () => route.params.id,
+  () => {
+    lastResult.value = null;
+    sessionFailed.value = [];
+    thisRunRiderIds.value = [];
+    thisRunTargetRiderIds.value = null;
+    void loadPage();
+  },
+);
+
+onMounted(() => {
+  void loadPage();
+});
+</script>
+
+<template>
+  <PageContainer>
+    <a-spin :spinning="loading">
+      <div class="mb-4 flex flex-wrap items-center gap-2">
+        <VbenButton data-testid="period-calc-back" @click="goBack">
+          ← 返回周期列表
+        </VbenButton>
+        <h2 class="m-0 text-lg font-medium" data-testid="period-calc-title">
+          周期算薪
+        </h2>
+        <template v-if="period">
+          <span class="text-muted-foreground">
+            {{ period.site_name || period.site_code || '—' }} ·
+            {{ period.start_date }} ~ {{ period.end_date }}
+          </span>
+          <StatusTag
+            :options="PERIOD_STATUS_OPTIONS"
+            :value="period.status"
+          />
+        </template>
+      </div>
+
+      <div v-if="period" class="mb-4 flex flex-wrap gap-2">
+        <VbenButton size="small" @click="goPeriodDetail">打开周期详情</VbenButton>
+        <VbenButton size="small" @click="goPayrollList">
+          薪资结果(本周期)
+        </VbenButton>
+        <VbenButton size="small" @click="goCalendar">薪资日历</VbenButton>
+      </div>
+
+      <a-alert
+        v-if="loadError"
+        class="mb-4"
+        type="error"
+        show-icon
+        :message="loadError"
+      />
+
+      <a-card
+        v-if="period"
+        class="mb-4"
+        size="small"
+        data-testid="period-calc-summary"
+      >
+        <a-descriptions :column="4" size="small">
+          <a-descriptions-item label="骑手数">
+            {{ period.rider_count ?? precheck?.eligible_rider_count ?? '—' }}
+          </a-descriptions-item>
+          <a-descriptions-item label="已有薪资单">
+            {{ period.payroll_count ?? period.payrolls?.length ?? 0 }}
+          </a-descriptions-item>
+          <a-descriptions-item label="需重算">
+            <span
+              :class="
+                (period.stale_count ?? 0) > 0 ? 'font-medium text-red-500' : ''
+              "
+            >
+              {{ period.stale_count ?? precheck?.stale_count ?? 0 }}
+            </span>
+          </a-descriptions-item>
+          <a-descriptions-item label="应发合计">
+            <MoneyText :value="period.gross_total" />
+          </a-descriptions-item>
+          <a-descriptions-item label="最近算薪">
+            <span data-testid="period-calc-status-label">
+              {{ calcStatusLabel || '—' }}
+            </span>
+          </a-descriptions-item>
+        </a-descriptions>
+      </a-card>
+
+      <!-- ① 算前预检 -->
+      <a-card
+        class="mb-4"
+        size="small"
+        title="① 算前预检"
+        data-testid="period-calc-precheck"
+      >
+        <a-alert
+          v-if="!precheck?.can_run"
+          class="mb-3"
+          type="error"
+          show-icon
+          message="当前周期不可算薪（已锁账或已发薪）"
+          data-testid="period-calc-blocker-period"
+        />
+
+        <a-alert
+          v-for="(w, idx) in precheck?.warnings ?? []"
+          :key="`w-${w.code}-${idx}`"
+          class="mb-2"
+          show-icon
+          :type="w.code === 'period_not_open' ? 'error' : 'warning'"
+          :message="w.messages.join('；')"
+        >
+          <template v-if="w.deeplink" #action>
+            <VbenButton size="small" @click="warningAction(w)">去查看</VbenButton>
+          </template>
+        </a-alert>
+
+        <div
+          v-if="precheck?.blockers?.length"
+          class="mb-3"
+          data-testid="period-calc-blockers"
+        >
+          <div class="mb-2 font-medium text-red-600">
+            骑手硬风险（{{ precheck.blockers.length }}）— 不阻止整页开算，失败将进入结果区
+          </div>
+          <a-table
+            size="small"
+            :pagination="false"
+            :columns="blockerColumns"
+            :data-source="precheck.blockers"
+            row-key="rider_id"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'messages'">
+                <div
+                  v-for="(m, i) in (record as CalcPrecheckBlocker).messages"
+                  :key="i"
+                >
+                  {{ m }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <VbenButton
+                  size="small"
+                  type="link"
+                  data-testid="period-calc-blocker-fix"
+                  @click="blockerAction(record as CalcPrecheckBlocker)"
+                >
+                  {{
+                    (record as CalcPrecheckBlocker).code === 'no_plan_with_orders'
+                      ? '去绑定'
+                      : '看订单'
+                  }}
+                </VbenButton>
+              </template>
+            </template>
+          </a-table>
+        </div>
+
+        <a-alert
+          v-else-if="precheck?.can_run"
+          class="mb-3"
+          type="success"
+          show-icon
+          message="未发现骑手级硬风险（仍以正式算薪结果为准）"
+        />
+
+        <div class="mb-2 text-sm text-muted-foreground">
+          个性化周期骑手不会写入站点级结果。
+        </div>
+        <div class="flex flex-wrap items-start gap-3">
+          <CalcRiderPicker
+            v-model:value="riderIds"
+            :disabled="personal"
+            :period-id="period?.id"
+          />
+          <VbenButton
+            v-if="canCalculate"
+            type="primary"
+            :disabled="startDisabled"
+            :loading="running"
+            data-testid="period-calc-start"
+            @click="onStartCalculate"
+          >
+            开始算薪
+          </VbenButton>
+          <a-tooltip v-else title="无算薪权限，可只读查看预检与已有结果">
+            <VbenButton disabled data-testid="period-calc-start-disabled">
+              开始算薪
+            </VbenButton>
+          </a-tooltip>
+          <VbenButton
+            data-testid="period-calc-refresh"
+            :disabled="running"
+            @click="() => refreshPrecheckAndResult()"
+          >
+            刷新预检/结果
+          </VbenButton>
+        </div>
+      </a-card>
+
+      <!-- ② 本次结果 -->
+      <a-card
+        class="mb-4"
+        size="small"
+        title="② 本次结果"
+        data-testid="period-calc-result"
+      >
+        <a-alert
+          v-if="calcInFlight"
+          class="mb-3"
+          show-icon
+          type="info"
+          data-testid="period-calc-queued"
+          :message="calcStatusLabel || '排队中/计算中'"
+          :description="
+            calcStatusMessage ||
+            '请点「刷新预检/结果」查看是否算完，不要把转入后台当成已出账。'
+          "
+        />
+        <a-alert
+          v-else-if="calcFailed"
+          class="mb-3"
+          show-icon
+          type="warning"
+          data-testid="period-calc-status"
+          :message="calcStatusLabel || '失败'"
+          :description="
+            calcStatusMessage ||
+            `成功 ${lastResult?.calculated ?? 0} · 失败 ${sessionFailed.length}`
+          "
+        />
+        <a-alert
+          v-else-if="calcStatus === 'done'"
+          class="mb-3"
+          show-icon
+          type="success"
+          data-testid="period-calc-status"
+          :message="calcStatusLabel || '完成'"
+          :description="
+            calcStatusMessage ||
+            `成功 ${lastResult?.calculated ?? 0} · 失败 0`
+          "
+        />
+        <a-alert
+          v-else-if="lastResult"
+          class="mb-3"
+          show-icon
+          :type="(lastResult.failed?.length ?? 0) > 0 ? 'warning' : 'success'"
+          :message="`成功 ${lastResult.calculated} · 失败 ${lastResult.failed?.length ?? 0}`"
+        />
+
+        <div
+          v-if="sessionFailed.length"
+          class="mb-4"
+          data-testid="period-calc-failed"
+        >
+            <div class="mb-2 font-medium text-red-600">失败清单（主）</div>
+            <a-table
+              size="small"
+              :pagination="false"
+              :columns="failedColumns"
+              :data-source="sessionFailed"
+              :row-key="(r: CalculateRiderFailure) => r.rider_id"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'name'">
+                  {{
+                    riderNameOf(record as CalculateRiderFailure) || '—'
+                  }}
+                </template>
+                <template v-else-if="column.key === 'errors'">
+                  <div
+                    v-for="(e, i) in (record as CalculateRiderFailure).errors"
+                    :key="i"
+                  >
+                    {{ e }}
+                  </div>
+                </template>
+                <template v-else-if="column.key === 'action'">
+                  <VbenButton
+                    v-if="failureLooksLikeNoPlan(record as CalculateRiderFailure)"
+                    size="small"
+                    type="link"
+                    data-testid="period-calc-fail-binding"
+                    @click="
+                      failureAction(record as CalculateRiderFailure, 'binding')
+                    "
+                  >
+                    去绑定
+                  </VbenButton>
+                  <VbenButton
+                    size="small"
+                    type="link"
+                    data-testid="period-calc-fail-order"
+                    @click="
+                      failureAction(record as CalculateRiderFailure, 'order')
+                    "
+                  >
+                    看订单
+                  </VbenButton>
+                </template>
+              </template>
+            </a-table>
+          </div>
+        <a-empty
+          v-else-if="(lastResult || calcStatus) && !calcInFlight"
+          description="无失败骑手"
+          class="mb-2"
+        />
+        <a-empty
+          v-else-if="!calcInFlight && !lastResult && !calcStatus"
+          description="尚未开算；点「开始算薪」后在此展示本次结果。上次失败会在刷新后保留。"
+        />
+
+        <div
+          class="mt-4"
+          data-testid="period-calc-run-success"
+        >
+          <div class="mb-2 font-medium">
+            本次成功（{{ thisRunPayrolls.length }}）
+          </div>
+          <a-alert
+            v-if="!thisRunPayrolls.length"
+            class="mb-2"
+            show-icon
+            type="info"
+            data-testid="period-calc-run-success-empty"
+            :message="
+              calcInFlight
+                ? '计算中，刷新后展示本次成功。'
+                : '本次成功表为空：只列本轮算出的人。③ 是周期内已有薪资，不是本轮刚算全员。'
+            "
+          />
+          <a-table
+            size="small"
+            data-testid="period-calc-run-success-table"
+            :pagination="false"
+            :columns="runSuccessColumns"
+            :data-source="thisRunPayrolls"
+            :locale="{ emptyText: '本次无成功骑手' }"
+            row-key="id"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'gross'">
+                <MoneyText :value="(record as PayrollSummary).gross" />
+              </template>
+              <template v-else-if="column.key === 'deduction'">
+                <MoneyText :value="(record as PayrollSummary).deduction_total" />
+              </template>
+              <template v-else-if="column.key === 'advance'">
+                <MoneyText :value="(record as PayrollSummary).advance_deduction" />
+              </template>
+              <template v-else-if="column.key === 'net'">
+                <MoneyText :value="(record as PayrollSummary).net" />
+              </template>
+              <template v-else-if="column.key === 'stale'">
+                {{ (record as PayrollSummary).stale ? '是' : '否' }}
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <VbenButton
+                  size="small"
+                  type="link"
+                  data-testid="period-calc-run-success-detail"
+                  @click="openPayroll(record as PayrollSummary)"
+                >
+                  明细
+                </VbenButton>
+              </template>
+            </template>
+          </a-table>
+        </div>
+      </a-card>
+
+      <!-- ③ 已有薪资 -->
+      <a-card
+        size="small"
+        title="③ 周期内已有薪资（含刚算出的，不是本轮唯一清单）"
+        data-testid="period-calc-payrolls"
+      >
+        <a-table
+          size="small"
+          :pagination="false"
+          :columns="payrollColumns"
+          :data-source="period?.payrolls ?? []"
+          row-key="id"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'this_run'">
+              <a-tag
+                v-if="thisRunRiderIdSet.has((record as PayrollSummary).rider_id)"
+                color="blue"
+                data-testid="period-calc-payroll-this-run-tag"
+              >
+                本轮新出
+              </a-tag>
+              <span v-else>—</span>
+            </template>
+            <template v-else-if="column.key === 'gross'">
+              <MoneyText :value="(record as PayrollSummary).gross" />
+            </template>
+            <template v-else-if="column.key === 'deduction'">
+              <MoneyText :value="(record as PayrollSummary).deduction_total" />
+            </template>
+            <template v-else-if="column.key === 'advance'">
+              <MoneyText :value="(record as PayrollSummary).advance_deduction" />
+            </template>
+            <template v-else-if="column.key === 'net'">
+              <MoneyText :value="(record as PayrollSummary).net" />
+            </template>
+            <template v-else-if="column.key === 'stale'">
+              {{ (record as PayrollSummary).stale ? '是' : '否' }}
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <VbenButton
+                size="small"
+                type="link"
+                data-testid="period-calc-payroll-detail"
+                @click="openPayroll(record as PayrollSummary)"
+              >
+                明细
+              </VbenButton>
+            </template>
+          </template>
+        </a-table>
+      </a-card>
+    </a-spin>
+  </PageContainer>
+</template>
