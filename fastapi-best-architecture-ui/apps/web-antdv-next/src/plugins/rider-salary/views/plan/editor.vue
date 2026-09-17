@@ -37,6 +37,7 @@ import PlanPresetPicker from './components/PlanPresetPicker.vue';
 import TrialPanel from './components/TrialPanel.vue';
 import VersionStatusTag from './components/VersionStatusTag.vue';
 import {
+  ACTIVATE_CONFIRM_CONTENT,
   activateHint,
   canEditVersion,
   findMisplacedGuaranteeKeys,
@@ -70,6 +71,7 @@ const selected = computed(
 const dirty = computed(() => JSON.stringify(toSaveItems(items.value)) !== snapshot.value);
 const trial = computed(() =>
   trialLabel({
+    bindingTrialPassed: version.value?.binding_trial_passed,
     dirty: dirty.value,
     itemsHash: version.value?.items_hash,
     trialHash: version.value?.trial_hash,
@@ -78,6 +80,7 @@ const trial = computed(() =>
 );
 const enableHint = computed(() =>
   activateHint({
+    bindingTrialPassed: version.value?.binding_trial_passed,
     dirty: dirty.value,
     itemsHash: version.value?.items_hash,
     trialHash: version.value?.trial_hash,
@@ -180,7 +183,7 @@ async function activate() {
     return;
   }
   try {
-    await confirm({ content: '确认启用该方案版本？启用后内容不可再改。', icon: 'warning' });
+    await confirm({ content: ACTIVATE_CONFIRM_CONTENT, icon: 'warning' });
   } catch {
     return;
   }
@@ -252,7 +255,10 @@ watch(versionId, () => {
           <a-tag :color="version?.is_used ? 'orange' : 'default'">
             {{ version?.is_used ? '已被使用' : '未使用' }}
           </a-tag>
-          <a-tag :color="trial.color">{{ trial.text }}</a-tag>
+          <a-tag
+            :color="trial.color"
+            data-testid="plan-trial-label"
+          >{{ trial.text }}</a-tag>
           <span v-if="readonly" class="text-muted-foreground text-sm">
             已使用或非草稿版本只读，请停用后复制为新版本再改
           </span>
@@ -352,6 +358,7 @@ watch(versionId, () => {
               <VbenButton
                 v-access:code="'rs:plan:activate'"
                 :disabled="readonly || Boolean(enableHint)"
+                data-testid="plan-activate-not-full-trial"
                 @click="activate"
               >
                 启用

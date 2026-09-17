@@ -11,7 +11,11 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { confirm } from '@vben/common-ui';
 
 import { validateEngineApi } from '../../../api/engine';
-import { defaultFormula, formulaKindOf } from '../helpers';
+import {
+  defaultFormula,
+  formulaKindOf,
+  PERIOD_FIXED_AMOUNT_HINT,
+} from '../helpers';
 import ExpressionBuilder from './ExpressionBuilder.vue';
 import LadderEditor from './LadderEditor.vue';
 
@@ -134,6 +138,13 @@ onBeforeUnmount(() => {
       <div class="text-muted-foreground text-xs">
         每命中一次加该金额，符号由科目方向决定
       </div>
+      <a-alert
+        v-if="stage === 'period'"
+        type="warning"
+        show-icon
+        data-testid="period-fixed-amount-full-once"
+        :message="PERIOD_FIXED_AMOUNT_HINT"
+      />
       <a-input-number
         :disabled="disabled"
         :precision="2"
