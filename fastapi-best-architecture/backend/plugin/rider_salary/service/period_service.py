@@ -589,6 +589,7 @@ class PeriodService:
         status: str | None,
         month: str | None,
         stale: bool | None = None,
+        lock_due: bool | None = None,
     ) -> dict[str, Any]:
         """
         分页周期列表
@@ -600,6 +601,7 @@ class PeriodService:
         :param status: 状态
         :param month: 年月 YYYY-MM
         :param stale: 仅需重算周期
+        :param lock_due: 锁账倒计时（含已过期未锁）
         :return:
         """
         visible = await get_visible_site_ids(request, db)
@@ -618,6 +620,7 @@ class PeriodService:
             month_end=month_end,
             site_ids=visible,
             stale=stale,
+            lock_due=lock_due,
         )
         page = await paging_data(db, stmt)
         items = page.get('items') or []

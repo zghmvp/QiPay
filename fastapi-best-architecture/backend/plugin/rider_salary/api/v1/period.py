@@ -48,6 +48,10 @@ async def get_periods_paginated(
     status: Annotated[str | None, Query(description='状态')] = None,
     month: Annotated[str | None, Query(description='年月 YYYY-MM')] = None,
     stale: Annotated[bool | None, Query(description='仅需重算周期')] = None,
+    lock_due: Annotated[
+        bool | None,
+        Query(description='锁账倒计时：open|reopened 且 end_date≤今天+3（含已过期未锁）'),
+    ] = None,
 ) -> ResponseSchemaModel[PageData[GetPeriodListItem]]:
     data = await period_service.get_list(
         db=db,
@@ -57,6 +61,7 @@ async def get_periods_paginated(
         status=status,
         month=month,
         stale=stale,
+        lock_due=lock_due,
     )
     return response_base.success(data=data)
 

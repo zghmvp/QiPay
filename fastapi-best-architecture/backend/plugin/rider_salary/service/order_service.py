@@ -105,6 +105,24 @@ def order_snapshot(order: RiderSalaryOrder) -> dict[str, Any]:
     }
 
 
+def resolve_order_date_window(
+    *,
+    month: str | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> tuple[date | None, date | None]:
+    """列表消费 month：未传 date_from/date_to 时展开为该月闭区间。显式日期优先。"""
+    if date_from is not None or date_to is not None:
+        return date_from, date_to
+    if not month:
+        return None, None
+    from backend.plugin.rider_salary.crud.settle_period import month_bounds
+    from backend.plugin.rider_salary.service.period_service import parse_year_month
+
+    year, mon = parse_year_month(month)
+    return month_bounds(year, mon)
+
+
 class OrderService:
     """订单明细服务"""
 
@@ -135,6 +153,7 @@ class OrderService:
         rider_id: int | None,
         date_from: date | None,
         date_to: date | None,
+        month: str | None = None,
         status: str | None,
         order_no: str | None,
         import_batch_id: int | None,
@@ -151,6 +170,7 @@ class OrderService:
         :param rider_id: 骑手 ID
         :param date_from: 业务日期起
         :param date_to: 业务日期止
+        :param month: 月份 YYYY-MM，未传日期时展开为本月窗
         :param status: 订单状态
         :param order_no: 订单号
         :param import_batch_id: 导入批次
@@ -162,6 +182,7 @@ class OrderService:
         visible = await get_visible_site_ids(request, db)
         if site_id is not None:
             assert_site_visible(visible, site_id)
+        date_from, date_to = resolve_order_date_window(month=month, date_from=date_from, date_to=date_to)
         mapped_status = None
         if status and not attention and not missing_delivery:
             mapped_status = map_order_status(status) or status

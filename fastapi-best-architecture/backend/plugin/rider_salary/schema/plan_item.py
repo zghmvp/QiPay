@@ -72,6 +72,14 @@ class GetPlanVersionDetail(SchemaBase):
     trial_hash: str | None = Field(None, description='试算内容哈希')
     trial_passed: bool = Field(description='试算通过')
     trial_snapshot: dict[str, Any] | None = Field(None, description='最近试算摘要')
+    trial_mode: str | None = Field(
+        None,
+        description='最近试算模式：full_version 整版 / binding_segments 绑定感知',
+    )
+    binding_trial_passed: bool = Field(
+        False,
+        description='绑定感知试算已通过；启用吃这个，整版通过不等于按当前绑定出账',
+    )
     copied_from_id: int | None = Field(None, description='复制来源版本 ID')
     activated_time: datetime | None = Field(None, description='启用时间')
     disabled_time: datetime | None = Field(None, description='停用时间')
@@ -81,6 +89,24 @@ class GetPlanVersionDetail(SchemaBase):
     updated_time: datetime | None = Field(None, description='更新时间')
     items: list[GetPlanItemDetail] = Field(default_factory=list, description='方案项')
     plan: GetPlanBrief | None = Field(None, description='所属方案')
+
+    @model_validator(mode='after')
+    def _fill_binding_trial_flags(self) -> Self:
+        from backend.plugin.rider_salary.utils.plan_activate import ACTIVATION_TRIAL_MODE_KEY
+
+        mode = None
+        snap = self.trial_snapshot
+        if isinstance(snap, dict):
+            raw = snap.get(ACTIVATION_TRIAL_MODE_KEY)
+            if raw:
+                mode = str(raw)
+        object.__setattr__(self, 'trial_mode', mode)
+        object.__setattr__(
+            self,
+            'binding_trial_passed',
+            bool(self.trial_passed) and mode == TrialMode.binding_segments.value,
+        )
+        return self
 
 
 class TrialPlanVersionParam(SchemaBase):

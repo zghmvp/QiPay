@@ -1,7 +1,8 @@
 """异常订单（需关注）过滤条件：与工作台 attention 同源。"""
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from backend.plugin.rider_salary.enums import OrderStatus, PeriodStatus
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
+from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod
 
 # 配送时长超过 60 分钟视为超时（有送达时间才计入）
 ATTENTION_DURATION_SECONDS = 3600
@@ -98,9 +100,81 @@ def missing_delivery_condition() -> ColumnElement[bool]:
     )
 
 
+LOCK_COUNTDOWN_HORIZON_DAYS = 3
+DUE_PERIODS_TITLE = '锁账倒计时'
+
+
 def lock_countdown_statuses() -> list[str]:
     """锁账倒计时：未锁的开放/补发中周期。"""
     return [PeriodStatus.open.value, PeriodStatus.reopened.value]
+
+
+def lock_due_cutoff(today: date) -> date:
+    """含当天与未来 HORIZON 天；已过期（end_date < today）也 ≤ cutoff。"""
+    return today + timedelta(days=LOCK_COUNTDOWN_HORIZON_DAYS)
+
+
+def is_lock_due_period(*, status: str | None, end_date: date | None, today: date) -> bool:
+    """open|reopened 且 end_date ≤ today+3（含已过期未锁）；+10 天远周期不占待办。"""
+    if end_date is None or status not in lock_countdown_statuses():
+        return False
+    return end_date <= lock_due_cutoff(today)
+
+
+def lock_due_countdown(*, end_date: date, today: date) -> dict[str, Any]:
+    """未到期「剩余 N 天」；已过期「已过期未锁 N 天」。"""
+    days_left = (end_date - today).days
+    if days_left < 0:
+        overdue_days = -days_left
+        return {
+            'overdue': True,
+            'days_left': days_left,
+            'overdue_days': overdue_days,
+            'countdown_text': f'已过期未锁 {overdue_days} 天',
+        }
+    return {
+        'overdue': False,
+        'days_left': days_left,
+        'overdue_days': 0,
+        'countdown_text': f'剩余 {days_left} 天',
+    }
+
+
+def due_periods_view_all_link(site_id: int | None) -> str:
+    """查看全部：锁账倒计时筛，禁止只切无月份的 status=open。"""
+    if site_id is not None:
+        return f'/rider-salary/period?lock_due=1&site_id={int(site_id)}'
+    return '/rider-salary/period?lock_due=1'
+
+
+def due_period_sql_filters(today: date) -> list[ColumnElement[bool]]:
+    """周期列表 lock_due=1 与工作台倒计时同一套谓词。"""
+    return [
+        RiderSalarySettlePeriod.status.in_(lock_countdown_statuses()),
+        RiderSalarySettlePeriod.end_date <= lock_due_cutoff(today),
+    ]
+
+
+def abnormal_orders_landing_url(
+    *,
+    site_id: int | None,
+    start: date,
+    end: date,
+    order_no: str | None = None,
+) -> str:
+    """工作台异常「查看全部」：attention 同源 + 本站本月窗。禁止只带 status=abnormal。"""
+    month_key = f'{start:%Y-%m}'
+    parts = [
+        'attention=1',
+        f'month={month_key}',
+        f'date_from={start.isoformat()}',
+        f'date_to={end.isoformat()}',
+    ]
+    if site_id is not None:
+        parts.insert(1, f'site_id={int(site_id)}')
+    if order_no:
+        parts.append(f'order_no={quote(order_no, safe="")}')
+    return '/rider-salary/order?' + '&'.join(parts)
 
 
 def _period_order_filters(period: Any) -> list[ColumnElement[bool]]:
