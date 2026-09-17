@@ -33,6 +33,7 @@ from backend.plugin.rider_salary.schema.period import (
     GetPeriodListItem,
     GetPeriodPayrollItem,
     GetPeriodWithPayrolls,
+    LockPreflightResult,
     ReversePeriodResult,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
@@ -165,6 +166,99 @@ def site_level_lock_excluded_rider_ids(overlapping_periods: list[Any]) -> set[in
         if rider_id and rider_id != SITE_LEVEL_RIDER_ID:
             excluded.add(rider_id)
     return excluded
+
+
+def is_site_level_period(period: Any) -> bool:
+    """是否站点级周期（rider_id=0）"""
+    rider_id = int(getattr(period, 'rider_id', 0) or 0)
+    return rider_id == SITE_LEVEL_RIDER_ID
+
+
+def rider_in_lock_freeze_scope(
+    rider_id: int,
+    *,
+    is_site_level: bool,
+    period_rider_id: int,
+    excluded_rider_ids: set[int],
+) -> bool:
+    """
+    订单/奖惩是否落在本锁将改写 is_locked 的范围内（决策 29）
+
+    :param rider_id: 行所属骑手
+    :param is_site_level: 是否站点级锁
+    :param period_rider_id: 周期 rider_id
+    :param excluded_rider_ids: 站点级锁将跳过的骑手级覆盖
+    :return: 是否改写
+    """
+    if is_site_level:
+        return rider_id not in excluded_rider_ids
+    return rider_id == period_rider_id
+
+
+def count_lock_freeze_targets(
+    *,
+    is_site_level: bool,
+    period_rider_id: int,
+    excluded_rider_ids: set[int],
+    order_rider_ids: list[int],
+    adjustment_rider_ids: list[int],
+    payroll_rider_ids: list[int],
+) -> tuple[int, int, int, int]:
+    """
+    按即将执行的锁账范围统计冻结数（纯函数，与 _set_locked_flags 同口径）
+
+    :return: 订单数, 奖惩数, 薪资单数, 将锁骑手数
+    """
+    freeze_orders = [
+        rid
+        for rid in order_rider_ids
+        if rider_in_lock_freeze_scope(
+            rid,
+            is_site_level=is_site_level,
+            period_rider_id=period_rider_id,
+            excluded_rider_ids=excluded_rider_ids,
+        )
+    ]
+    freeze_adjustments = [
+        rid
+        for rid in adjustment_rider_ids
+        if rider_in_lock_freeze_scope(
+            rid,
+            is_site_level=is_site_level,
+            period_rider_id=period_rider_id,
+            excluded_rider_ids=excluded_rider_ids,
+        )
+    ]
+    lock_riders = set(freeze_orders) | set(freeze_adjustments) | set(payroll_rider_ids)
+    return len(freeze_orders), len(freeze_adjustments), len(payroll_rider_ids), len(lock_riders)
+
+
+def build_lock_preflight_result(
+    *,
+    is_site_level: bool,
+    excluded_rider_ids: set[int],
+    freeze_order_count: int,
+    freeze_adjustment_count: int,
+    freeze_payroll_count: int,
+    lock_rider_count: int,
+) -> LockPreflightResult:
+    """组装锁账预检（M 可为 0，仍写出跳过人数）"""
+    skip = len(excluded_rider_ids) if is_site_level else 0
+    skip_hint = f'跳过骑手级覆盖 {skip} 人'
+    confirm_hint = (
+        f'将冻结订单 {freeze_order_count} 笔、奖惩 {freeze_adjustment_count} 笔、'
+        f'薪资单 {freeze_payroll_count} 张；将锁骑手 {lock_rider_count} 人；{skip_hint}'
+    )
+    return LockPreflightResult(
+        freeze_order_count=freeze_order_count,
+        freeze_adjustment_count=freeze_adjustment_count,
+        freeze_payroll_count=freeze_payroll_count,
+        lock_rider_count=lock_rider_count,
+        skip_rider_count=skip,
+        skip_hint=skip_hint,
+        confirm_hint=confirm_hint,
+        is_site_level=is_site_level,
+    )
 
 
 def reversible_payrolls(payrolls: list[Any]) -> list[Any]:
@@ -674,6 +768,75 @@ class PeriodService:
         )
         return CalculatePeriodResult(calculated=len(results), warnings=warnings, queued=False)
 
+    async def lock_preflight(
+        self,
+        *,
+        db: AsyncSession,
+        request: Request,
+        pk: int,
+    ) -> LockPreflightResult:
+        """
+        锁账预检：将冻结订单/奖惩/薪资单数、将锁骑手数、决策 29 跳过人数
+
+        :param db: 数据库会话
+        :param request: 请求对象
+        :param pk: 周期 ID
+        :return: 预检结果
+        """
+        period, _site, _rider = await self._load_visible(db, request, pk)
+        excluded = await self._lock_scope_excluded_rider_ids(db, period)
+        site_level = is_site_level_period(period)
+        order_rider_ids = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryOrder.rider_id).where(
+                        RiderSalaryOrder.site_id == period.site_id,
+                        RiderSalaryOrder.biz_date >= period.start_date,
+                        RiderSalaryOrder.biz_date <= period.end_date,
+                        RiderSalaryOrder.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        adjustment_rider_ids = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryAdjustment.rider_id).where(
+                        RiderSalaryAdjustment.site_id == period.site_id,
+                        RiderSalaryAdjustment.biz_date >= period.start_date,
+                        RiderSalaryAdjustment.biz_date <= period.end_date,
+                        RiderSalaryAdjustment.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        payroll_rider_ids = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryPayroll.rider_id).where(
+                        RiderSalaryPayroll.period_id == period.id,
+                        RiderSalaryPayroll.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        freeze_order, freeze_adj, freeze_payroll, lock_riders = count_lock_freeze_targets(
+            is_site_level=site_level,
+            period_rider_id=int(period.rider_id or 0),
+            excluded_rider_ids=excluded,
+            order_rider_ids=[int(rid or 0) for rid in order_rider_ids],
+            adjustment_rider_ids=[int(rid or 0) for rid in adjustment_rider_ids],
+            payroll_rider_ids=[int(rid or 0) for rid in payroll_rider_ids],
+        )
+        return build_lock_preflight_result(
+            is_site_level=site_level,
+            excluded_rider_ids=excluded,
+            freeze_order_count=freeze_order,
+            freeze_adjustment_count=freeze_adj,
+            freeze_payroll_count=freeze_payroll,
+            lock_rider_count=lock_riders,
+        )
+
     async def lock(
         self,
         *,
@@ -886,6 +1049,29 @@ class PeriodService:
                 job_nos.append(job_no)
         raise errors.RequestError(msg=stale_lock_message(job_nos))
 
+    async def _lock_scope_excluded_rider_ids(
+        self,
+        db: AsyncSession,
+        period: RiderSalarySettlePeriod,
+    ) -> set[int]:
+        """站点级锁的决策 29 跳过集合；骑手级为空"""
+        if not is_site_level_period(period):
+            return set()
+        overlapping = list(
+            (
+                await db.scalars(
+                    select(RiderSalarySettlePeriod).where(
+                        RiderSalarySettlePeriod.site_id == period.site_id,
+                        RiderSalarySettlePeriod.rider_id != SITE_LEVEL_RIDER_ID,
+                        RiderSalarySettlePeriod.start_date <= period.end_date,
+                        RiderSalarySettlePeriod.end_date >= period.start_date,
+                        RiderSalarySettlePeriod.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        return site_level_lock_excluded_rider_ids(overlapping)
+
     async def _set_locked_flags(self, db: AsyncSession, period: RiderSalarySettlePeriod, *, locked: bool) -> None:
         order_stmt = (
             update(RiderSalaryOrder)
@@ -907,24 +1093,11 @@ class PeriodService:
             )
             .values(is_locked=locked)
         )
-        if period.rider_id and period.rider_id != SITE_LEVEL_RIDER_ID:
+        if not is_site_level_period(period):
             order_stmt = order_stmt.where(RiderSalaryOrder.rider_id == period.rider_id)
             adj_stmt = adj_stmt.where(RiderSalaryAdjustment.rider_id == period.rider_id)
         else:
-            overlapping = list(
-                (
-                    await db.scalars(
-                        select(RiderSalarySettlePeriod).where(
-                            RiderSalarySettlePeriod.site_id == period.site_id,
-                            RiderSalarySettlePeriod.rider_id != SITE_LEVEL_RIDER_ID,
-                            RiderSalarySettlePeriod.start_date <= period.end_date,
-                            RiderSalarySettlePeriod.end_date >= period.start_date,
-                            RiderSalarySettlePeriod.deleted == 0,
-                        )
-                    )
-                ).all()
-            )
-            excluded = site_level_lock_excluded_rider_ids(overlapping)
+            excluded = await self._lock_scope_excluded_rider_ids(db, period)
             if excluded:
                 order_stmt = order_stmt.where(RiderSalaryOrder.rider_id.notin_(list(excluded)))
                 adj_stmt = adj_stmt.where(RiderSalaryAdjustment.rider_id.notin_(list(excluded)))

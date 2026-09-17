@@ -22,8 +22,12 @@ from backend.plugin.rider_salary.service.export_service import (
 )
 from backend.plugin.rider_salary.service.period_service import (
     assert_can_transition,
+    build_lock_preflight_result,
+    count_lock_freeze_targets,
     covering_period_ranges,
+    is_site_level_period,
     reversible_payrolls,
+    site_level_lock_excluded_rider_ids,
     stale_lock_message,
 )
 from backend.plugin.rider_salary.utils.excel import write_workbook
@@ -135,8 +139,6 @@ def test_summarize_trace_one_line_chinese() -> None:
 
 
 def test_site_level_lock_skips_rider_level_periods() -> None:
-    from backend.plugin.rider_salary.service.period_service import site_level_lock_excluded_rider_ids
-
     overlapping = [
         SimpleNamespace(rider_id=18),
         SimpleNamespace(rider_id=0),
@@ -144,3 +146,89 @@ def test_site_level_lock_skips_rider_level_periods() -> None:
         SimpleNamespace(rider_id=22),
     ]
     assert site_level_lock_excluded_rider_ids(overlapping) == {18, 22}
+
+
+def test_lock_preflight_site_level_reports_freeze_and_decision29_skip() -> None:
+    excluded = site_level_lock_excluded_rider_ids([
+        SimpleNamespace(rider_id=18),
+        SimpleNamespace(rider_id=0),
+        SimpleNamespace(rider_id=22),
+    ])
+    window_order_riders = [1, 1, 18, 22, 30]
+    freeze_order, freeze_adj, freeze_payroll, lock_riders = count_lock_freeze_targets(
+        is_site_level=True,
+        period_rider_id=0,
+        excluded_rider_ids=excluded,
+        order_rider_ids=window_order_riders,
+        adjustment_rider_ids=[18, 30],
+        payroll_rider_ids=[1, 30],
+    )
+    assert freeze_order == 3
+    assert freeze_adj == 1
+    assert freeze_payroll == 2
+    assert lock_riders == 2
+    result = build_lock_preflight_result(
+        is_site_level=True,
+        excluded_rider_ids=excluded,
+        freeze_order_count=freeze_order,
+        freeze_adjustment_count=freeze_adj,
+        freeze_payroll_count=freeze_payroll,
+        lock_rider_count=lock_riders,
+    )
+    assert result.lock_rider_count == 2
+    assert result.lock_rider_count != len(set(window_order_riders))
+    assert result.skip_rider_count == 2
+    assert result.skip_hint == '跳过骑手级覆盖 2 人'
+    assert '跳过骑手级覆盖 2 人' in result.confirm_hint
+    assert '将冻结订单 3 笔' in result.confirm_hint
+    assert result.is_site_level is True
+
+
+def test_lock_preflight_skip_zero_still_named() -> None:
+    freeze_order, freeze_adj, freeze_payroll, lock_riders = count_lock_freeze_targets(
+        is_site_level=True,
+        period_rider_id=0,
+        excluded_rider_ids=set(),
+        order_rider_ids=[7, 8],
+        adjustment_rider_ids=[7],
+        payroll_rider_ids=[7, 8],
+    )
+    result = build_lock_preflight_result(
+        is_site_level=True,
+        excluded_rider_ids=set(),
+        freeze_order_count=freeze_order,
+        freeze_adjustment_count=freeze_adj,
+        freeze_payroll_count=freeze_payroll,
+        lock_rider_count=lock_riders,
+    )
+    assert result.skip_rider_count == 0
+    assert result.lock_rider_count == 2
+    assert result.skip_hint == '跳过骑手级覆盖 0 人'
+    assert '跳过骑手级覆盖 0 人' in result.confirm_hint
+
+
+def test_lock_preflight_rider_level_skip_is_zero() -> None:
+    freeze_order, freeze_adj, freeze_payroll, lock_riders = count_lock_freeze_targets(
+        is_site_level=False,
+        period_rider_id=18,
+        excluded_rider_ids={18, 22},
+        order_rider_ids=[18, 18, 22],
+        adjustment_rider_ids=[18],
+        payroll_rider_ids=[18],
+    )
+    assert freeze_order == 2
+    assert freeze_adj == 1
+    assert freeze_payroll == 1
+    assert lock_riders == 1
+    result = build_lock_preflight_result(
+        is_site_level=False,
+        excluded_rider_ids={18, 22},
+        freeze_order_count=freeze_order,
+        freeze_adjustment_count=freeze_adj,
+        freeze_payroll_count=freeze_payroll,
+        lock_rider_count=lock_riders,
+    )
+    assert result.skip_rider_count == 0
+    assert result.skip_hint == '跳过骑手级覆盖 0 人'
+    assert is_site_level_period(SimpleNamespace(rider_id=0)) is True
+    assert is_site_level_period(SimpleNamespace(rider_id=18)) is False

@@ -53,6 +53,19 @@ class LockPeriodParam(SchemaBase):
     reason: str = Field(description='锁账原因')
 
 
+class LockPreflightResult(SchemaBase):
+    """锁账预检（站点级含决策 29 跳过人数）"""
+
+    freeze_order_count: int = Field(description='本锁将改写 is_locked 的订单数')
+    freeze_adjustment_count: int = Field(description='本锁将改写 is_locked 的奖惩数')
+    freeze_payroll_count: int = Field(description='本锁将冻结的薪资单数')
+    lock_rider_count: int = Field(description='将被本锁改写的骑手数（已扣除决策29骑手级覆盖）')
+    skip_rider_count: int = Field(description='决策29跳过的骑手级覆盖人数')
+    skip_hint: str = Field(description='跳过说明，如「跳过骑手级覆盖 0 人」')
+    confirm_hint: str = Field(description='锁确认中文摘要')
+    is_site_level: bool = Field(description='是否站点级周期（rider_id=0）')
+
+
 class MarkPaidPeriodParam(SchemaBase):
     """标记发薪参数"""
 

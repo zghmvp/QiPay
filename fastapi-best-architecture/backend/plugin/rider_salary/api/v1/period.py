@@ -19,6 +19,7 @@ from backend.plugin.rider_salary.schema.period import (
     GetPeriodListItem,
     GetPeriodWithPayrolls,
     LockPeriodParam,
+    LockPreflightResult,
     MarkPaidPeriodParam,
     ReversePeriodParam,
     ReversePeriodResult,
@@ -159,6 +160,24 @@ async def calculate_period(
         obj=obj or CalculatePeriodParam(),
         background_tasks=background_tasks,
     )
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/{pk}/lock-preflight',
+    summary='锁账预检',
+    description='返回本锁将冻结的订单/奖惩/薪资单数、将锁骑手数，以及决策29跳过的骑手级覆盖人数',
+    dependencies=[
+        Depends(RequestPermission('rs:period:lock')),
+        DependsRBAC,
+    ],
+)
+async def lock_period_preflight(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+) -> ResponseSchemaModel[LockPreflightResult]:
+    data = await period_service.lock_preflight(db=db, request=request, pk=pk)
     return response_base.success(data=data)
 
 
