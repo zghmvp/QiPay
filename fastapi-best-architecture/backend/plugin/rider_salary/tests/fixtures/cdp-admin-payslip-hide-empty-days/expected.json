@@ -1,0 +1,40 @@
+{
+  "feature": "cdp-admin-payslip-hide-empty-days",
+  "expected": {
+    "skip_if_missing": false,
+    "default_hide_not_imported": true,
+    "default_hide_zero_order_no_amount": true,
+    "default_hide_requires_no_manual_and_no_advance": true,
+    "always_show_gross_bonus_day": true,
+    "always_show_off_gross_penalty_day": true,
+    "always_show_advance_day": true,
+    "always_show_no_plan_with_completed_orders": true,
+    "toggle_copy": "显示空日",
+    "toggle_shows_count": true,
+    "expanded_keeps_not_imported_or_no_order_tag": true,
+    "recon_formula": "应发 − 代扣 − 预支抵扣 = 实发",
+    "recon_unchanged_by_fold": true,
+    "section_totals_unchanged_by_fold": true,
+    "must_not_hide_stale": true,
+    "daily_net_copy": "当日公式+奖−惩",
+    "daily_net_is_not_period_net": true,
+    "daily_net_not_period_copy": "不是周期实发",
+    "list_ignore_toggle_is_fail": true,
+    "keep_dailies": true,
+    "do_not_change_gross_net": true,
+    "do_not_reopen_cycle2_layers": true,
+    "do_not_new_daily_page": true,
+    "order_count_and_date_deeplink_must_remain": true,
+    "testid_layers": "payroll-layers",
+    "testid_recon": "payroll-reconciliation",
+    "testid_tabs": "payroll-detail-tabs",
+    "testid_stale": "payroll-stale-banner",
+    "testid_order_count_link": "payroll-order-count-link",
+    "no_new_xor_or_gold_must_name": true,
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "feature": "ops-dashboard-no-plan-to-binding",
+  "expected": {
+    "skip_if_missing": false,
+    "row_lands_rider_binding_tab": true,
+    "binding_path": "/rider-salary/rider/{id}",
+    "binding_query": "tab=binding",
+    "list_redirect_rider_id_tab_binding_is_equivalent": true,
+    "calendar_even_with_rider_site_month_is_fail": true,
+    "view_all_empty_calendar_copy": "请选择站点和骑手",
+    "view_all_empty_calendar_is_fail": true,
+    "view_all_may_list_riders_each_to_binding": true,
+    "must_see_binding_timeline": true,
+    "must_create_or_edit_binding": true,
+    "binding_tab_copy": "方案绑定",
+    "binding_create_copy": "新增绑定",
+    "do_not_rewrite_live_predicate": true,
+    "do_not_reopen_import_gap_to_orders": true,
+    "do_not_reopen_cycle4_attention_lock_insight": true,
+    "calendar_cell_bind_regression": "calendar-bind-plan",
+    "testid_binding_goto_calc": "rider-binding-goto-calculate",
+    "live_spec_regression": "ops-dashboard-no-plan-live",
+    "calendar_spec_regression": "ops-calendar-no-plan-deeplink",
+    "no_new_binding_center": true,
+    "no_new_page": true,
+    "no_new_xor_or_gold_must_name": true,
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}
