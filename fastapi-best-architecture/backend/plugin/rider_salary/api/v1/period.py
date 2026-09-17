@@ -12,6 +12,7 @@ from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.schema.period import (
     CalcPrecheckResult,
+    CalcRiderPageResult,
     CalculatePeriodParam,
     CalculatePeriodResult,
     GeneratePeriodParam,
@@ -118,22 +119,60 @@ async def export_period(
         bool | None,
         Query(description='排除需关注订单行（不改应发/实发），默认不排除'),
     ] = None,
+    exclude_attention_adjustments: Annotated[
+        bool | None,
+        Query(description='奖惩同步去掉需关注同日同骑手，默认关闭；关闭时仍导出并标注'),
+    ] = None,
 ) -> StreamingResponse:
     excluded = bool(exclude_attention)
-    content, filename, attention_count, excluded = await export_service.export_period(
+    drop_adj = bool(exclude_attention_adjustments)
+    exported = await export_service.export_period(
         db=db,
         request=request,
         pk=pk,
         exclude_attention=excluded,
+        exclude_attention_adjustments=drop_adj,
     )
-    headers = {'Content-Disposition': content_disposition(filename)}
-    headers['X-QiPay-Attention-Count'] = str(attention_count)
-    headers['X-QiPay-Attention-Excluded'] = '1' if excluded else '0'
+    headers = {'Content-Disposition': content_disposition(exported.filename)}
+    headers['X-QiPay-Attention-Count'] = str(exported.attention_count)
+    headers['X-QiPay-Attention-Excluded'] = '1' if exported.exclude_attention else '0'
+    headers['X-QiPay-Adjustment-Booked'] = str(exported.booked_adjustment_count)
+    headers['X-QiPay-Adjustment-Unbooked'] = str(exported.unbooked_adjustment_count)
+    headers['X-QiPay-Adjustment-Attention'] = str(exported.attention_adjustment_count)
+    headers['X-QiPay-Adjustment-Excluded'] = str(exported.excluded_adjustment_count)
     return StreamingResponse(
-        iter([content]),
+        iter([exported.content]),
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers=headers,
     )
+
+
+@router.get(
+    '/{pk}/calc-riders',
+    summary='算薪骑手搜索分页',
+    description='未选=计算本周期全部骑手。可见列表不是全集时返回 truncated_hint，请搜索第 201+ 人。',
+    dependencies=[
+        DependsJwtAuth,
+        DependsRBAC,
+    ],
+)
+async def list_period_calc_riders(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+    keyword: Annotated[str | None, Query(description='工号或姓名')] = None,
+    page: Annotated[int, Query(ge=1, description='页码')] = 1,
+    size: Annotated[int, Query(gt=0, le=200, description='每页数量，最大 200')] = 200,
+) -> ResponseSchemaModel[CalcRiderPageResult]:
+    data = await period_service.list_calc_riders(
+        db=db,
+        request=request,
+        pk=pk,
+        keyword=keyword,
+        page=page,
+        size=size,
+    )
+    return response_base.success(data=data)
 
 
 @router.get(

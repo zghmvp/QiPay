@@ -44,7 +44,10 @@ class GeneratePeriodParam(SchemaBase):
 class CalculatePeriodParam(SchemaBase):
     """算薪参数"""
 
-    rider_ids: list[int] | None = Field(None, description='指定骑手 ID，空表示周期内全部')
+    rider_ids: list[int] | None = Field(
+        None,
+        description='指定骑手 ID；未选（空或省略）= 计算本周期全部骑手；非空只算选中的人',
+    )
 
 
 class LockPeriodParam(SchemaBase):
@@ -149,7 +152,14 @@ class GetPeriodWithPayrolls(GetPeriodDetail):
     )
     last_calc_status: str | None = Field(None, description='最近一次算薪态 queued/running/done/failed')
     last_calc_status_message: str | None = Field(None, description='最近一次算薪态说明')
+    last_calc_success_ids: list[int] = Field(
+        default_factory=list,
+        description='最近一次算薪成功骑手 ID（F5 还原本次成功表，避免 toast 丢掉失败）',
+    )
     attention_order_count: int = Field(0, description='周期内需关注订单数（与工作台 attention 同谓词）')
+    booked_adjustment_count: int = Field(0, description='本周期已入账奖惩条数')
+    unbooked_adjustment_count: int = Field(0, description='窗口内未入账奖惩条数')
+    attention_adjustment_count: int = Field(0, description='与需关注同日同骑手的奖惩条数（默认仍导出）')
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -203,11 +213,19 @@ class CalculatePeriodResult(SchemaBase):
     calculated: int = Field(description='本次计算成功骑手数')
     warnings: list[str] = Field(default_factory=list, description='非阻断提示（如转入后台）')
     failed: list[CalculateRiderFailure] = Field(default_factory=list, description='失败骑手清单')
+    calculated_rider_ids: list[int] = Field(default_factory=list, description='本次成功骑手 ID')
     queued: bool = Field(False, description='是否转入后台')
     calc_status: str | None = Field(None, description='算薪态 queued/running/done/failed')
     calc_status_label: str | None = Field(None, description='算薪态中文')
     sync_limit: int = Field(200, description='同步算薪骑手上限，超出转入后台')
     target_rider_count: int = Field(0, description='本次目标骑手数')
+    unselected_means_all: str = Field('未选 = 计算本周期全部骑手', description='未选骑手时的计算范围')
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def failed_count(self) -> int:
+        """失败人数；列表算薪不得只 toast 成功人数而丢掉 failed[]"""
+        return len(self.failed)
 
 
 class CalcPrecheckBlocker(SchemaBase):
@@ -243,6 +261,28 @@ class CalcPrecheckResult(SchemaBase):
     calc_status_message: str | None = Field(None, description='算薪态说明')
     sync_limit: int = Field(200, description='同步算薪骑手上限，超出转入后台；CDP 可压低配置')
     attention_order_count: int = Field(0, description='周期内需关注订单数')
+    unselected_means_all: str = Field('未选 = 计算本周期全部骑手', description='未选骑手时的计算范围')
+
+
+class CalcRiderOption(SchemaBase):
+    """算薪骑手选项"""
+
+    id: int = Field(description='骑手 ID')
+    job_no: str = Field(description='工号')
+    name: str = Field(description='姓名')
+
+
+class CalcRiderPageResult(SchemaBase):
+    """算薪骑手搜索分页；未选=全量，可见列表不是全集时 truncated_hint 提示搜索"""
+
+    items: list[CalcRiderOption] = Field(default_factory=list, description='当前页骑手')
+    total: int = Field(description='匹配总数')
+    page: int = Field(description='页码')
+    size: int = Field(description='每页数量，最大 200')
+    listed_count: int = Field(description='本页条数')
+    truncated: bool = Field(description='可见列表是否不是全集')
+    truncated_hint: str | None = Field(None, description='仅列出前 N 人，其余请搜索')
+    unselected_means_all: str = Field('未选 = 计算本周期全部骑手', description='未选骑手时的计算范围')
 
 
 class ReversePeriodResult(SchemaBase):

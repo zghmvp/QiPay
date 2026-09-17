@@ -84,6 +84,10 @@ class TrialResult(SchemaBase):
     trial_hash: str | None = Field(None, description='试算哈希')
     mode: str = Field('full_version', description='试算模式')
     mode_label: str = Field('整版试算', description='试算模式中文')
+    matches_official_calculate: bool = Field(
+        False,
+        description='绑定感知试算时与正式 calculate 同源（应发对拍；预支仍不扣）',
+    )
     summary: TrialSummary
     per_order: list[TrialPerOrderRow] = Field(default_factory=list, description='逐单明细')
     daily: list[TrialDailyRow] = Field(default_factory=list, description='按日汇总')
