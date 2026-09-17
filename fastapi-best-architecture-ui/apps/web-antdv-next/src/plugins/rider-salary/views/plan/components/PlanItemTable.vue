@@ -11,8 +11,7 @@ import {
   findMisplacedGuaranteeKeys,
   isGuaranteeLikeItem,
   STAGE_ORDER,
-  summarizeCondition,
-  summarizeFormula,
+  summarizeItem,
 } from '../helpers';
 
 const props = withDefaults(
@@ -126,10 +125,7 @@ function move(stage: string, index: number, delta: number) {
               </a-tag>
             </div>
             <div class="text-muted-foreground mt-1 truncate text-xs">
-              条件：{{ summarizeCondition(item.condition_json, item.condition_expr) }}
-            </div>
-            <div class="text-muted-foreground truncate text-xs">
-              公式：{{ summarizeFormula(item.formula_json, item.formula_expr) }}
+              {{ summarizeItem(item) }}
             </div>
           </div>
           <div class="flex flex-col items-end gap-1" @click.stop>

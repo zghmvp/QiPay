@@ -52,6 +52,11 @@ const attentionVisible = computed(() =>
   (summary.value?.attention ?? []).some((item) => item.count > 0),
 );
 
+const insightVisible = computed(() => trendVisible.value || topVisible.value);
+
+/** 洞察默认折叠，突出待办主轴 */
+const insightKeys = ref<string[]>([]);
+
 const pageEmpty = computed(() => {
   const data = summary.value;
   if (!data) return !failed.value && !loading.value;
@@ -66,8 +71,7 @@ const pageEmpty = computed(() => {
   return (
     cardsZero &&
     !attentionVisible.value &&
-    !trendVisible.value &&
-    !topVisible.value
+    !insightVisible.value
   );
 });
 
@@ -156,12 +160,23 @@ load();
             :blocks="summary.attention ?? []"
             @refreshed="load"
           />
-          <TrendChart v-if="trendVisible" :data="summary.trend ?? []" />
-          <TopRiders
-            v-if="topVisible"
-            :bottom="summary.top_riders?.bottom ?? []"
-            :top="summary.top_riders?.top ?? []"
-          />
+          <a-collapse
+            v-if="insightVisible"
+            v-model:active-key="insightKeys"
+            :bordered="false"
+            class="bg-transparent"
+          >
+            <a-collapse-panel key="insight" header="洞察（趋势 / Top 骑手）">
+              <div class="flex flex-col gap-4">
+                <TrendChart v-if="trendVisible" :data="summary.trend ?? []" />
+                <TopRiders
+                  v-if="topVisible"
+                  :bottom="summary.top_riders?.bottom ?? []"
+                  :top="summary.top_riders?.top ?? []"
+                />
+              </div>
+            </a-collapse-panel>
+          </a-collapse>
         </div>
       </template>
     </div>

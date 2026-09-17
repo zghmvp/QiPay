@@ -41,6 +41,7 @@ from backend.plugin.rider_salary.service.calendar_service import (
     resolve_period,
 )
 from backend.plugin.rider_salary.service.rider_service import resolve_effective_plans
+from backend.plugin.rider_salary.utils.item_summary import build_item_summary
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
 
@@ -243,6 +244,13 @@ class MeService:
                         MePlanItem(
                             name=item.name,
                             subject_name=getattr(subjects.get(item.subject_id), 'name', str(item.subject_id)),
+                            summary=build_item_summary(
+                                remark=item.remark,
+                                condition_expr=item.condition_expr,
+                                formula_expr=item.formula_expr,
+                                condition_json=item.condition_json,
+                                formula_json=item.formula_json,
+                            ),
                         )
                         for item in items
                         if item.enabled
