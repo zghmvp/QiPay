@@ -50,16 +50,7 @@ const title = computed(() => {
   return `${d.format('M月D日')} 星期${WEEKDAYS[d.day()]}${name}`;
 });
 
-const flagTags = computed(() => {
-  const flag = detail.value?.day_flag;
-  if (!flag) return [];
-  const tags: string[] = [];
-  if (flag.bad_weather) tags.push('恶劣天气');
-  if (flag.high_temp) tags.push('高温');
-  if (flag.promo) tags.push('大促');
-  if (flag.is_holiday) tags.push('节假日');
-  return tags;
-});
+const holidayTag = computed(() => (detail.value?.is_holiday ? '节假日' : ''));
 
 const orderColumns = [
   { dataIndex: 'order_no', key: 'order_no', title: '订单号', width: 140 },
@@ -214,14 +205,9 @@ function onKey(e: KeyboardEvent) {
           <a-descriptions-item label="日状态">
             <StatusTag :options="DAY_STATUS_OPTIONS" :value="detail.day_status" />
           </a-descriptions-item>
-          <a-descriptions-item label="日标记">
-            <a-space v-if="flagTags.length" :size="4" wrap>
-              <a-tag v-for="tag in flagTags" :key="tag">{{ tag }}</a-tag>
-            </a-space>
+          <a-descriptions-item label="节假日">
+            <a-tag v-if="holidayTag">{{ holidayTag }}</a-tag>
             <span v-else>—</span>
-            <div v-if="detail.day_flag?.remark" class="text-muted-foreground mt-1 text-xs">
-              {{ detail.day_flag.remark }}
-            </div>
           </a-descriptions-item>
         </a-descriptions>
 
@@ -229,7 +215,7 @@ function onKey(e: KeyboardEvent) {
           v-if="detail.day_status === 'no_plan'"
           show-icon
           type="warning"
-          message="当日无生效方案，订单未计薪。"
+          message="当日无生效方案。若有完成单，算薪将硬失败，请先绑定方案。"
         >
           <template #action>
             <a-button

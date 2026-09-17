@@ -8,17 +8,18 @@
     { "start": "2026-09-18", "end": "2026-09-30", "plan_version": "B" }
   ],
   "no_plan_days": ["2026-09-15", "2026-09-16", "2026-09-17"],
+  "note": "日历深链仍用无方案有单日；严格算薪下该骑手整周期计算会硬失败直至绑方案。分段试算金标仅用有方案日订单（A150+B100）。",
   "expected": {
     "valid_order_count": 250,
-    "plan_order_count": 200,
-    "segment_order_counts": [100, 100],
-    "order_counts_diverge": true,
+    "plan_order_count": 250,
+    "segment_order_counts": [150, 100],
+    "order_counts_diverge": false,
     "full_version_trial": {
       "valid_order_count_equals_plan_order_count": true
     },
     "binding_segments_trial": {
       "valid_order_count": 250,
-      "plan_order_count": 200
+      "plan_order_count": 250
     },
     "field_contrast_FIX_C17": {
       "ladder": [
@@ -28,7 +29,7 @@
       ],
       "period_valid_field_amount": "1375.00",
       "plan_period_field_on_segment_b_amount": "500.00",
-      "note": "同阶梯：周期有效单量=250→5.5×250；方案期内单量段B=100→5×100"
+      "note": "同阶梯：周期有效单量=250→5.5×250；方案期内单量段B=100→5×100（字段分叉，不依赖无方案日）"
     }
   }
 }

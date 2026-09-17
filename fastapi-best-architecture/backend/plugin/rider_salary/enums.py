@@ -379,24 +379,6 @@ _bind_labels(
 )
 
 
-class NoticeStatus(LabeledStrEnum):
-    """站点公告状态"""
-
-    draft = 'draft'
-    published = 'published'
-    offline = 'offline'
-
-
-_bind_labels(
-    NoticeStatus,
-    {
-        NoticeStatus.draft: '草稿',
-        NoticeStatus.published: '已发布',
-        NoticeStatus.offline: '已下线',
-    },
-)
-
-
 class TrialMode(LabeledStrEnum):
     """方案试算模式"""
 

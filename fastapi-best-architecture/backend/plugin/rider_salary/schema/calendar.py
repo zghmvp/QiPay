@@ -86,16 +86,6 @@ class CalendarPeriodInfo(SchemaBase):
     status: str | None = Field(None, description='状态')
 
 
-class CalendarDayFlagInfo(SchemaBase):
-    """日标记"""
-
-    bad_weather: bool = Field(False, description='恶劣天气')
-    high_temp: bool = Field(False, description='高温')
-    promo: bool = Field(False, description='大促')
-    is_holiday: bool = Field(False, description='节假日')
-    remark: str | None = Field(None, description='备注')
-
-
 class CalendarHitDetail(SchemaBase):
     """订单命中明细"""
 
@@ -155,7 +145,7 @@ class GetCalendarDayDetail(SchemaBase):
     date: dt.date = Field(description='日期')
     plan: CalendarPlanInfo | None = Field(None, description='当日方案')
     period: CalendarPeriodInfo | None = Field(None, description='当日周期')
-    day_flag: CalendarDayFlagInfo | None = Field(None, description='日标记')
+    is_holiday: bool = Field(False, description='是否节假日')
     day_status: str = Field(description='日状态')
     orders: list[CalendarDayOrder] = Field(default_factory=list, description='订单')
     daily_items: list[CalendarDailyItem] = Field(default_factory=list, description='按日项')

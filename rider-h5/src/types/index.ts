@@ -132,13 +132,6 @@ export interface CalendarPeriodInfo {
   status: string | null
 }
 
-export interface CalendarDayFlagInfo {
-  bad_weather: boolean
-  high_temp: boolean
-  promo: boolean
-  is_holiday: boolean
-  remark: string | null
-}
 
 export interface CalendarHitDetail {
   subject: string
@@ -183,7 +176,7 @@ export interface CalendarDayDetail {
   date: string
   plan: CalendarPlanInfo | null
   period: CalendarPeriodInfo | null
-  day_flag: CalendarDayFlagInfo | null
+  is_holiday?: boolean
   day_status: string
   orders: CalendarDayOrder[]
   daily_items: CalendarDailyItem[]
@@ -223,18 +216,6 @@ export interface MePlan {
   bindings: MePlanBinding[]
 }
 
-export interface NoticeDetail {
-  id: number
-  title: string
-  content: string
-  site_id: number | null
-  publisher_id: number
-  publish_time: string | null
-  status: string
-  status_label?: string
-  created_time: string
-  updated_time: string | null
-}
 
 export interface AdvanceLimit {
   limit: MoneyValue

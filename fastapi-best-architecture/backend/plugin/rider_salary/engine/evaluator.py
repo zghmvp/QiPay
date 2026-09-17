@@ -57,11 +57,8 @@ def evaluate(expr: str, names: dict[str, Any] | None = None) -> Any:
 
 
 def evaluate_amount(expr: str, names: dict[str, Any] | None = None) -> Decimal:
-    """求值并将结果四舍五入到分；失败视为 0"""
-    try:
-        result = evaluate(expr, names)
-    except EvalError:
-        return Decimal('0.00')
+    """求值并将结果四舍五入到分；求值异常向上抛出 EvalError"""
+    result = evaluate(expr, names)
     if result is None or result is False:
         return Decimal('0.00')
     if result is True:
@@ -70,9 +67,6 @@ def evaluate_amount(expr: str, names: dict[str, Any] | None = None) -> Decimal:
 
 
 def evaluate_condition(expr: str, names: dict[str, Any] | None = None) -> bool:
-    """求值条件，失败视为假"""
-    try:
-        result = evaluate(expr, names)
-    except EvalError:
-        return False
+    """求值条件；求值异常向上抛出 EvalError"""
+    result = evaluate(expr, names)
     return bool(result)

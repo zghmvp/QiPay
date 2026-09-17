@@ -13,7 +13,7 @@ from backend.core.conf import settings
 from backend.database.db import async_db_session
 from backend.plugin.rider_salary.crud.import_batch import import_batch_dao
 from backend.plugin.rider_salary.crud.order import order_dao
-from backend.plugin.rider_salary.enums import ImportBatchStatus, OrderSource, PeriodStatus
+from backend.plugin.rider_salary.enums import ImportBatchStatus, OrderSource, OrderStatus, PeriodStatus
 from backend.plugin.rider_salary.model.import_batch import RiderSalaryImportBatch
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
 from backend.plugin.rider_salary.model.rider import RiderSalaryRider
@@ -72,7 +72,7 @@ def build_import_template() -> bytes:
         ['时间格式：YYYY-MM-DD HH:mm:ss，亦支持 YYYY/M/D H:mm 与 Excel 日期。'],
         ['订单状态请填写：已完成 / 已取消 / 配送异常 / 已退款（可用别名：完成、取消、异常、退款）。'],
         ['业务日期：有送达时间取送达日期，否则取下单日期；跨午夜按送达日归属。'],
-        ['带 * 的列为必填；配送距离、商品重量须 ≥ 0；订单金额可空。'],
+        ['带 * 的列为必填；已完成订单必须填写送达时间；配送距离、商品重量须 ≥ 0；订单金额可空。'],
         ['同一订单号不可重复；库内已存在的订单号不会被覆盖。'],
     ]
     return write_workbook([
@@ -129,6 +129,9 @@ def validate_row_format(row: dict[str, Any]) -> str | None:  # ruff:ignore[compl
             return '订单金额不能为负数'
     if map_order_status(row.get('status')) is None:
         return '订单状态不合法，请填写已完成/已取消/配送异常/已退款'
+    status = map_order_status(row.get('status'))
+    if status == OrderStatus.completed.value and deliver_time is None:
+        return '已完成订单的送达时间不能为空'
     return None
 
 

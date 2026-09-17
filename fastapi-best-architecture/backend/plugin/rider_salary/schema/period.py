@@ -162,11 +162,20 @@ class GeneratePeriodResult(SchemaBase):
     skipped_count: int = Field(description='已存在跳过数量')
 
 
+class CalculateRiderFailure(SchemaBase):
+    """单骑手算薪失败"""
+
+    rider_id: int = Field(description='骑手 ID')
+    job_no: str | None = Field(None, description='工号')
+    errors: list[str] = Field(default_factory=list, description='错误列表')
+
+
 class CalculatePeriodResult(SchemaBase):
     """算薪结果"""
 
-    calculated: int = Field(description='本次计算骑手数')
-    warnings: list[str] = Field(default_factory=list, description='告警')
+    calculated: int = Field(description='本次计算成功骑手数')
+    warnings: list[str] = Field(default_factory=list, description='非阻断提示（如转入后台）')
+    failed: list[CalculateRiderFailure] = Field(default_factory=list, description='失败骑手清单')
     queued: bool = Field(False, description='是否转入后台')
 
 
