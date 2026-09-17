@@ -1,0 +1,12 @@
+{
+  "feature": "ops-plan-guarantee-last",
+  "expected": {
+    "predicate": "引用本期已计金额或保底类且不是 period 阶段 sort_order 最大",
+    "save_fails": true,
+    "activate_fails": true,
+    "fail_copy": "须放在周期阶段最后",
+    "alt_fail_copy": "须沉底",
+    "cancel_must_not_save": true,
+    "weak_prompt_is_fail": true
+  }
+}

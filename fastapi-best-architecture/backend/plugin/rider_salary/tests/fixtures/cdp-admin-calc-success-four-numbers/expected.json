@@ -1,0 +1,11 @@
+{
+  "feature": "cdp-admin-calc-success-four-numbers",
+  "expected": {
+    "success_columns": ["工号", "姓名", "单量", "应发", "代扣", "预支抵扣", "实发"],
+    "detail_lands_on_layered_payslip": true,
+    "detail_testid_layers": "payroll-layers",
+    "detail_testid_recon": "payroll-reconciliation",
+    "failed_row_shows_rider_name": true,
+    "forbid_job_no_only": true
+  }
+}

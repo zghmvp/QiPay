@@ -1,0 +1,11 @@
+{
+  "feature": "cdp-admin-payslip-layers",
+  "expected": {
+    "recon_formula": "应发 − 代扣 − 预支抵扣 = 实发",
+    "layer_titles": ["应发", "代扣", "预支抵扣", "实发"],
+    "mixed_include_in_gross_splits_rows": true,
+    "advance_not_in_gross_layer": true,
+    "testid_layers": "payroll-layers",
+    "testid_recon": "payroll-reconciliation"
+  }
+}

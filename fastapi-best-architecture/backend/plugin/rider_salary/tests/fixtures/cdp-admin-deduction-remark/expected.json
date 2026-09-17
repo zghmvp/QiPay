@@ -1,0 +1,8 @@
+{
+  "feature": "cdp-admin-deduction-remark",
+  "expected": {
+    "empty_remark": "无说明",
+    "noted_remark_visible": true,
+    "testid": "payroll-deduction-remark"
+  }
+}

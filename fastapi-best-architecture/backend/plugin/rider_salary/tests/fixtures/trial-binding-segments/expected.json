@@ -14,6 +14,7 @@
     "plan_order_count": 250,
     "segment_order_counts": [150, 100],
     "order_counts_diverge": false,
+    "cdp_no_numbers_is_fail": true,
     "full_version_trial": {
       "valid_order_count_equals_plan_order_count": true
     },

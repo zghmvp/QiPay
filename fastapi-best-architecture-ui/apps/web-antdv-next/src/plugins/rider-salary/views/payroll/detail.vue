@@ -24,7 +24,14 @@ import {
   SUBJECT_DIRECTION_OPTIONS,
 } from '../../constants/enums';
 import { toDateTimeString } from '../../utils/date';
+import { formatMoney } from '../../utils/money';
 import PageContainer from '../_shared/PageContainer.vue';
+import {
+  detailRemark,
+  isDeductionDetail,
+  isGrossBreakdown,
+  reconciliationHolds,
+} from './helpers';
 
 const route = useRoute();
 const router = useRouter();
@@ -62,6 +69,59 @@ const subjectFilterName = computed(() => {
     .find((item) => item.subject_id === id);
   return row?.subject_name || row?.subject_code || '';
 });
+
+const allDetails = computed(() =>
+  Object.values(detail.value?.details ?? {}).flat(),
+);
+
+const grossLayerRows = computed(() =>
+  (detail.value?.subject_breakdown ?? []).filter(isGrossBreakdown),
+);
+
+const deductionLayerRows = computed(() =>
+  allDetails.value.filter(isDeductionDetail),
+);
+
+const reconOk = computed(() => {
+  const d = detail.value;
+  if (!d) return false;
+  return reconciliationHolds({
+    advance: d.advance_deduction,
+    deduction: d.deduction_total,
+    gross: d.gross,
+    net: d.net,
+  });
+});
+
+const reconSentence = computed(() => {
+  const d = detail.value;
+  if (!d) return '';
+  return `应发 ${formatMoney(d.gross)} − 代扣 ${formatMoney(d.deduction_total)} − 预支抵扣 ${formatMoney(d.advance_deduction)} = 实发 ${formatMoney(d.net)}`;
+});
+
+const unlockedNote = computed(() => {
+  const d = detail.value;
+  if (!d) return '';
+  const parts: string[] = [];
+  if (d.period_status && d.period_status !== 'locked' && d.period_status !== 'paid') {
+    parts.push('仅供对账');
+  }
+  if (d.stale) parts.push('需重算');
+  return parts.join(' / ');
+});
+
+const layerColumns = [
+  { dataIndex: 'subject_name', title: '科目' },
+  { dataIndex: 'line_count', title: '笔数', width: 70 },
+  { dataIndex: 'amount_sum', key: 'amount', title: '金额', width: 120 },
+];
+
+const deductionColumns = [
+  { dataIndex: 'subject_name', key: 'subject', title: '科目', width: 140 },
+  { dataIndex: 'name', title: '项名称' },
+  { dataIndex: 'amount', key: 'amount', title: '金额', width: 110 },
+  { dataIndex: 'remark', key: 'remark', title: '备注' },
+];
 
 const detailColumns = [
   { dataIndex: 'biz_date', title: '日期', width: 110 },
@@ -474,6 +534,134 @@ onMounted(() => {
               }}
             </a-descriptions-item>
           </a-descriptions>
+        </a-card>
+
+        <a-card
+          class="mb-4"
+          size="small"
+          title="勾稽分层"
+          data-testid="payroll-layers"
+        >
+          <div
+            class="mb-3 text-base font-medium"
+            data-testid="payroll-reconciliation"
+          >
+            {{ reconSentence }}
+            <a-tag v-if="reconOk" class="ml-2" color="success">勾稽成立</a-tag>
+            <a-tag v-else class="ml-2" color="error">勾稽不平</a-tag>
+            <span
+              v-if="unlockedNote"
+              class="text-muted-foreground ml-2 text-sm"
+              data-testid="payroll-recon-note"
+            >
+              {{ unlockedNote }}
+            </span>
+          </div>
+
+          <div class="mb-4" data-testid="payroll-layer-gross">
+            <div class="mb-2 font-medium">应发</div>
+            <a-table
+              size="small"
+              :columns="layerColumns"
+              :data-source="grossLayerRows"
+              :pagination="false"
+              :row-key="
+                (row: SubjectBreakdownItem) =>
+                  `g-${row.subject_id}-${row.include_in_gross}-${row.subject_name}`
+              "
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'amount'">
+                  <MoneyText :value="record.amount_sum" signed />
+                </template>
+              </template>
+            </a-table>
+            <a-empty
+              v-if="!grossLayerRows.length"
+              class="py-2"
+              description="无应发行"
+            />
+          </div>
+
+          <div class="mb-4" data-testid="payroll-layer-deduction">
+            <div class="mb-2 font-medium">代扣</div>
+            <a-table
+              size="small"
+              :columns="deductionColumns"
+              :data-source="deductionLayerRows"
+              :pagination="false"
+              :row-key="
+                (row: PayrollDetailItem) =>
+                  row.id ?? `d-${row.subject_id}-${row.amount}-${row.biz_date}`
+              "
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'amount'">
+                  <MoneyText :value="record.amount" signed />
+                </template>
+                <template v-else-if="column.key === 'remark'">
+                  <span data-testid="payroll-deduction-remark">
+                    {{ detailRemark(record) }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'subject'">
+                  {{ record.subject_name || record.name || '—' }}
+                </template>
+              </template>
+            </a-table>
+            <a-empty
+              v-if="!deductionLayerRows.length"
+              class="py-2"
+              description="无代扣"
+            />
+          </div>
+
+          <div class="mb-4" data-testid="payroll-layer-advance">
+            <div class="mb-2 font-medium">预支抵扣</div>
+            <a-table
+              size="small"
+              :columns="advanceColumns"
+              :data-source="detail.advance_lines"
+              :pagination="false"
+              :row-key="(row) => row.advance_id"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'advance_id'">
+                  <a
+                    class="cursor-pointer text-primary"
+                    @click="goAdvance(record.advance_id)"
+                  >
+                    {{ record.advance_id }}
+                  </a>
+                </template>
+                <template v-else-if="column.key === 'amount'">
+                  <MoneyText :value="record.amount" />
+                </template>
+                <template v-else-if="column.key === 'remaining_after'">
+                  <MoneyText
+                    v-if="record.remaining_after != null"
+                    :value="record.remaining_after"
+                  />
+                  <span v-else>—</span>
+                </template>
+              </template>
+            </a-table>
+            <a-empty
+              v-if="!detail.advance_lines?.length"
+              class="py-2"
+              description="本期无预支抵扣"
+            />
+          </div>
+
+          <div data-testid="payroll-layer-net">
+            <div class="mb-2 font-medium">实发</div>
+            <div class="flex flex-wrap items-center gap-2">
+              <MoneyText :value="detail.net" />
+              <span class="text-muted-foreground text-sm">
+                应发 − 代扣 − 预支抵扣 = 实发
+              </span>
+            </div>
+          </div>
         </a-card>
 
         <a-card class="mb-4" size="small" title="科目汇总">

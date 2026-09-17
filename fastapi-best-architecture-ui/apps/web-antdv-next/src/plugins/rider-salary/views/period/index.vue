@@ -38,6 +38,7 @@ import { useReasonModal } from '../../components/use-reason-modal';
 import PageContainer from '../_shared/PageContainer.vue';
 import GenerateModal from './components/GenerateModal.vue';
 import PeriodDetail from './components/PeriodDetail.vue';
+import { useExportConfirm } from './components/use-export-confirm';
 import { querySchema, useColumns } from './data';
 
 function isUserCancelled(error: unknown) {
@@ -48,6 +49,7 @@ function isUserCancelled(error: unknown) {
 const route = useRoute();
 const router = useRouter();
 const { ReasonModal, prompt } = useReasonModal();
+const { ExportConfirmModal, prompt: promptExport } = useExportConfirm();
 const onlyStale = ref(
   route.query.stale === '1' || route.query.stale === 'true',
 );
@@ -249,7 +251,16 @@ async function onActionClick({
       return;
     }
     if (code === 'export') {
-      await exportPeriodApi(row.id);
+      const { excludeAttention } = await promptExport({
+        dateFrom: row.start_date,
+        dateTo: row.end_date,
+        siteId: row.site_id,
+        title: `导出 ${row.start_date} ~ ${row.end_date}`,
+      });
+      await exportPeriodApi(row.id, { exclude_attention: excludeAttention });
+      message.success(
+        excludeAttention ? '已导出（已排除需关注订单）' : '已导出周期薪资',
+      );
       return;
     }
     if (code === 'remove') {
@@ -390,5 +401,6 @@ onMounted(() => {
     <DetailDrawer />
     <GenModal />
     <ReasonModal />
+    <ExportConfirmModal />
   </PageContainer>
 </template>

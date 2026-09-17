@@ -114,12 +114,25 @@ async def export_period(
     db: CurrentSessionTransaction,
     request: Request,
     pk: Annotated[int, Path(description='周期 ID')],
+    exclude_attention: Annotated[
+        bool | None,
+        Query(description='排除需关注订单行（不改应发/实发），默认不排除'),
+    ] = None,
 ) -> StreamingResponse:
-    content, filename = await export_service.export_period(db=db, request=request, pk=pk)
+    excluded = bool(exclude_attention)
+    content, filename, attention_count, excluded = await export_service.export_period(
+        db=db,
+        request=request,
+        pk=pk,
+        exclude_attention=excluded,
+    )
+    headers = {'Content-Disposition': content_disposition(filename)}
+    headers['X-QiPay-Attention-Count'] = str(attention_count)
+    headers['X-QiPay-Attention-Excluded'] = '1' if excluded else '0'
     return StreamingResponse(
         iter([content]),
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={'Content-Disposition': content_disposition(filename)},
+        headers=headers,
     )
 
 

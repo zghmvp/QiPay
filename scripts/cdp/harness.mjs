@@ -19,8 +19,19 @@
  * Cycle 1 具名：ops-calendar-adjust-date-window / ops-import-not-payroll /
  *   ops-order-missing-delivery-filter / ops-lock-reason-matches-calc /
  *   ops-payroll-list-period-picker / cdp-admin-subject-filter-name
+ * Cycle 2 具名：trial-case-gold / ops-plan-guarantee-last /
+ *   ops-export-attention-parity / cdp-admin-payslip-layers /
+ *   cdp-admin-deduction-remark / cdp-admin-calc-success-four-numbers /
+ *   ops-rider-profile-to-payroll / ops-queued-calc-progress
+ * 钩子对齐 #19：period-export-* / payroll-layers / payroll-reconciliation /
+ *   payroll-deduction-remark / rider-goto-payroll / rider-binding-goto-calculate /
+ *   period-calc-queued / period-calc-refresh。
+ * exclude_attention 须拿掉明细行（#20）；金标 C03/C04/C05A/C17 不得 skip。
+ * trial-binding-segments 无数字 = FAIL（不得 WARN 过）。
  * 旧 import/stale spec 已改「完成」语义（夹具无方案骑手不得纯绿完成）。
- * 叠 PR #14+#16：GET /recalc-jobs/latest 须 200+{site_id,job}，不得当缺失 skip。
+ * 叠 PR #18+#19+#20：Cycle 1 CDP + Cycle 2 前端钩子 + Cycle 2 后端。
+ * queued 阈值替身：CDP_QUEUED_RIDER_THRESHOLD（默认 2）或 Playwright 拦截 queued=true。
+ * 侧栏泄漏保持已知红，本 harness 不改断言。
  *
  * 不传 spec-name 时列出可用场景。
  */

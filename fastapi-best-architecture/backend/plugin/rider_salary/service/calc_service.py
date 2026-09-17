@@ -31,6 +31,7 @@ from backend.plugin.rider_salary.enums import (
     PayrollKind,
     PayrollStatus,
     PeriodStatus,
+    RecalcJobStatus,
     SubjectDirection,
 )
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
@@ -331,6 +332,22 @@ def serialize_calc_failures(failed_rows: list[dict[str, Any]]) -> list[dict[str,
 def persist_last_calc_failures(period: RiderSalarySettlePeriod, failed_rows: list[dict[str, Any]]) -> None:
     """把最近一次算薪 failed[] 写到周期，供 F5 / 回跳读取。"""
     period.last_calc_failures = serialize_calc_failures(failed_rows)
+
+
+def persist_last_calc_status(period: RiderSalarySettlePeriod, *, status: str, message: str) -> None:
+    """排队中 / 计算中 / 完成 / 失败。failed>0 不得写成完成。"""
+    period.last_calc_status = status
+    period.last_calc_status_message = message
+
+
+def finish_period_calc_status(*, calculated: int, failed_count: int) -> tuple[str, str]:
+    """同步/后台收场：有失败则 failed + 部分失败，禁止纯绿完成。"""
+    if failed_count > 0:
+        return (
+            RecalcJobStatus.failed.value,
+            f'部分失败：成功 {calculated} 人，失败 {failed_count} 人',
+        )
+    return RecalcJobStatus.done.value, f'已计算 {calculated} 人'
 
 
 def never_calculated_message(job_no: str, parts: list[str]) -> str:
@@ -1193,6 +1210,8 @@ async def calculate_period(
                 ),
             })
     persist_last_calc_failures(period, failed)
+    status, message = finish_period_calc_status(calculated=len(results), failed_count=len(failed))
+    persist_last_calc_status(period, status=status, message=message)
     await db.flush()
     return results, failed
 

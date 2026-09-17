@@ -15,7 +15,7 @@ from backend.plugin.rider_salary.crud.payroll import payroll_dao
 from backend.plugin.rider_salary.crud.settle_period import SITE_LEVEL_RIDER_ID, settle_period_dao
 from backend.plugin.rider_salary.crud.site import site_dao
 from backend.plugin.rider_salary.engine.context import iter_dates
-from backend.plugin.rider_salary.enums import CycleType, PayrollKind, PayrollStatus, PeriodStatus
+from backend.plugin.rider_salary.enums import CycleType, PayrollKind, PayrollStatus, PeriodStatus, RecalcJobStatus
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
 from backend.plugin.rider_salary.model.import_batch import RiderSalaryImportBatch
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
@@ -52,16 +52,48 @@ from backend.plugin.rider_salary.service.calc_service import (
     load_calc_input_for_precheck,
     lock_hard_fail_message,
     missing_delivery_order_query,
+    persist_last_calc_status,
 )
 from backend.plugin.rider_salary.service.payroll_service import payroll_service
 from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.money import q2
+from backend.plugin.rider_salary.utils.order_attention import count_period_attention_orders
 from backend.plugin.rider_salary.utils.periods import compute_period_range
 from backend.utils.timezone import timezone
 
 CALC_SYNC_LIMIT = 200
 ZERO = Decimal('0.00')
+
+
+def calc_sync_limit() -> int:
+    """同步算薪骑手上限；超出转入后台。CDP 可通过 plugin 配置压低。"""
+    from backend.core.conf import settings
+
+    raw = getattr(settings, 'RIDER_SALARY_CALC_SYNC_LIMIT', CALC_SYNC_LIMIT)
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = CALC_SYNC_LIMIT
+    return value if value >= 0 else CALC_SYNC_LIMIT
+
+
+def should_queue_calculate(target_count: int, *, limit: int | None = None) -> bool:
+    """骑手数严格大于上限才排队（等于上限仍同步）。"""
+    cap = calc_sync_limit() if limit is None else int(limit)
+    return int(target_count) > cap
+
+
+def calc_status_label(status: str | None) -> str | None:
+    """算薪态中文。"""
+    if not status:
+        return None
+    try:
+        return RecalcJobStatus(status).label
+    except ValueError:
+        return status
+
+
 _PERIOD_FIELDS = (
     'id',
     'site_id',
@@ -242,9 +274,30 @@ def _cycle_value(cycle_type: CycleType | str | None, fallback: str) -> str:
 
 
 async def _calculate_period_background(*, period_id: int, rider_ids: list[int] | None) -> None:
-    """后台算薪（独立事务）"""
-    async with async_db_session.begin() as db:
-        await calculate_period(db, period_id=period_id, rider_ids=rider_ids, operator=None)
+    """后台算薪（独立事务，非 Celery）。先落「计算中」，再写完成/部分失败。"""
+    from backend.common.log import log
+
+    try:
+        async with async_db_session.begin() as db:
+            period = await db.get(RiderSalarySettlePeriod, period_id)
+            if period is not None and not getattr(period, 'deleted', 0):
+                persist_last_calc_status(period, status=RecalcJobStatus.running.value, message='计算中')
+                await db.flush()
+        async with async_db_session.begin() as db:
+            await calculate_period(db, period_id=period_id, rider_ids=rider_ids, operator=None)
+    except Exception as exc:
+        log.exception('周期后台算薪失败 period_id=%s', period_id)
+        try:
+            async with async_db_session.begin() as db:
+                period = await db.get(RiderSalarySettlePeriod, period_id)
+                if period is not None and not getattr(period, 'deleted', 0):
+                    persist_last_calc_status(
+                        period,
+                        status=RecalcJobStatus.failed.value,
+                        message=f'失败：{exc}',
+                    )
+        except Exception:
+            log.exception('回写周期算薪失败态异常 period_id=%s', period_id)
 
 
 def import_gap_deeplink(site_id: int, gap_days: list[date]) -> CalcPrecheckDeeplink:
@@ -597,6 +650,9 @@ class PeriodService:
         result.last_calc_failures = [
             CalculateRiderFailure.model_validate(row) for row in (period.last_calc_failures or [])
         ]
+        result.last_calc_status = period.last_calc_status
+        result.last_calc_status_message = period.last_calc_status_message
+        result.attention_order_count = await count_period_attention_orders(db, period)
         return result
 
     async def calc_precheck(
@@ -634,6 +690,11 @@ class PeriodService:
             warnings=warnings,
             eligible_rider_count=len(targets),
             stale_count=stale_count,
+            calc_status=period.last_calc_status,
+            calc_status_label=calc_status_label(period.last_calc_status),
+            calc_status_message=period.last_calc_status_message,
+            sync_limit=calc_sync_limit(),
+            attention_order_count=await count_period_attention_orders(db, period),
         )
 
     async def get_for_date(
@@ -843,13 +904,20 @@ class PeriodService:
             raise errors.RequestError(msg=f'结算周期当前状态为{status_label(period.status)}，不允许执行算薪')
         targets = await _riders_for_period(db, period, obj.rider_ids)
         warnings: list[str] = []
-        if len(targets) > CALC_SYNC_LIMIT:
+        limit = calc_sync_limit()
+        if should_queue_calculate(len(targets), limit=limit):
+            persist_last_calc_status(
+                period,
+                status=RecalcJobStatus.queued.value,
+                message=f'排队中：骑手{len(targets)}人已转入后台计算',
+            )
+            await db.flush()
             background_tasks.add_task(
                 _calculate_period_background,
                 period_id=period.id,
                 rider_ids=obj.rider_ids,
             )
-            warnings.append(f'骑手数超过 {CALC_SYNC_LIMIT}，已转入后台计算')
+            warnings.append(f'骑手数超过 {limit}，已转入后台计算')
             await audit_service.record(
                 db,
                 request,
@@ -863,7 +931,15 @@ class PeriodService:
                     f'骑手{len(targets)}人已转入后台'
                 ),
             )
-            return CalculatePeriodResult(calculated=0, warnings=warnings, queued=True)
+            return CalculatePeriodResult(
+                calculated=0,
+                warnings=warnings,
+                queued=True,
+                calc_status=RecalcJobStatus.queued.value,
+                calc_status_label=RecalcJobStatus.queued.label,
+                sync_limit=limit,
+                target_rider_count=len(targets),
+            )
         results, failed_rows = await calculate_period(
             db, period_id=period.id, rider_ids=obj.rider_ids, operator=request
         )
@@ -890,11 +966,16 @@ class PeriodService:
                 f'成功{len(results)}人，失败{len(failed)}人'
             ),
         )
+        status = period.last_calc_status
         return CalculatePeriodResult(
             calculated=len(results),
             warnings=warnings,
             failed=failed,
             queued=False,
+            calc_status=status,
+            calc_status_label=calc_status_label(status),
+            sync_limit=limit,
+            target_rider_count=len(targets),
         )
 
     async def lock(

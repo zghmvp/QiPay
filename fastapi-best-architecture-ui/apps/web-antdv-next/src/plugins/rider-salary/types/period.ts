@@ -77,6 +77,7 @@ export interface CalculateRiderFailure {
   errors: string[];
   job_no?: null | string;
   rider_id: number;
+  rider_name?: null | string;
 }
 
 export interface CalculatePeriodResult {

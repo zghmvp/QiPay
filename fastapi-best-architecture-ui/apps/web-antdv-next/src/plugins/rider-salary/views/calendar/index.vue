@@ -19,11 +19,13 @@ import SalaryCalendar from '../../components/SalaryCalendar.vue';
 import SiteSelect from '../../components/SiteSelect.vue';
 import { currentMonth } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
+import { useExportConfirm } from '../period/components/use-export-confirm';
 import DayDrawer from './components/DayDrawer.vue';
 import SummaryBar from './components/SummaryBar.vue';
 
 const route = useRoute();
 const router = useRouter();
+const { ExportConfirmModal, prompt: promptExport } = useExportConfirm();
 
 function queryNum(key: string) {
   const raw = route.query[key];
@@ -148,16 +150,34 @@ async function exportMonth() {
     message.warning('本月暂无结算周期，无法导出');
     return;
   }
-  exporting.value = true;
+  if (!siteId.value) {
+    message.warning('请先选择站点');
+    return;
+  }
+  const dateFrom = `${month.value}-01`;
+  const dateTo = dayjs(`${month.value}-01`).endOf('month').format('YYYY-MM-DD');
   try {
-    for (const period of periods) {
-      await exportPeriodApi(period.id);
+    const { excludeAttention } = await promptExport({
+      dateFrom,
+      dateTo,
+      siteId: siteId.value,
+      title: `导出 ${month.value} 明细`,
+    });
+    exporting.value = true;
+    try {
+      for (const period of periods) {
+        await exportPeriodApi(period.id, { exclude_attention: excludeAttention });
+      }
+      message.success(
+        periods.length > 1 ? `已导出 ${periods.length} 个周期明细` : '已导出当月明细',
+      );
+    } finally {
+      exporting.value = false;
     }
-    message.success(
-      periods.length > 1 ? `已导出 ${periods.length} 个周期明细` : '已导出当月明细',
-    );
-  } finally {
-    exporting.value = false;
+  } catch (error: unknown) {
+    const msg = (error as Error)?.message;
+    if (msg === 'cancelled' || msg === 'dialog cancelled') return;
+    throw error;
   }
 }
 
@@ -269,5 +289,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
       :site-id="siteId"
       @shift-date="onShiftDate"
     />
+    <ExportConfirmModal />
   </PageContainer>
 </template>

@@ -49,3 +49,13 @@ class RiderSalarySettlePeriod(Base):
         default=None,
         comment='最近一次算薪失败清单',
     )
+    last_calc_status: Mapped[str | None] = mapped_column(
+        sa.String(20),
+        default=None,
+        comment='最近一次算薪态 queued/running/done/failed',
+    )
+    last_calc_status_message: Mapped[str | None] = mapped_column(
+        UniversalText,
+        default=None,
+        comment='最近一次算薪态说明',
+    )
