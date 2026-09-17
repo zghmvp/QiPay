@@ -6,7 +6,7 @@ import type {
   CalculatePeriodResult,
   GeneratePeriodParam,
   GeneratePeriodResult,
-  LockPreviewResult,
+  LockPreflightResult,
   PeriodQuery,
   PeriodResult,
   PeriodWithPayrolls,
@@ -58,8 +58,8 @@ export async function calculatePeriodApi(
   );
 }
 
-export async function previewLockPeriodApi(pk: number) {
-  return requestClient.get<LockPreviewResult>(`${BASE}/${pk}/lock-preview`);
+export async function lockPreflightPeriodApi(pk: number) {
+  return requestClient.get<LockPreflightResult>(`${BASE}/${pk}/lock-preflight`);
 }
 
 export async function lockPeriodApi(pk: number, reason: string) {

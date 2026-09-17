@@ -51,27 +51,17 @@ const versionId = computed(
   () => drawerApi.getData<{ versionId?: number }>()?.versionId,
 );
 
-function pickCount(...vals: unknown[]): number | undefined {
-  for (const raw of vals) {
-    if (raw === null || raw === undefined || raw === '') continue;
-    const n = Number(raw);
-    if (Number.isFinite(n)) return n;
-  }
-  return undefined;
+function namedCount(raw: unknown): number | undefined {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 const orderCompare = computed(() => {
   const summary = result.value?.summary;
   if (!summary) return null;
-  const valid = pickCount(
-    summary.period_valid_order_count,
-    summary.valid_order_count,
-    summary.order_count,
-  );
-  const plan = pickCount(
-    summary.plan_order_count,
-    summary.plan_period_order_count,
-  );
+  const valid = namedCount(summary.period_valid_order_count);
+  const plan = namedCount(summary.plan_period_order_count);
   const segments = summary.segment_order_counts ?? [];
   return {
     differs: plan !== undefined && valid !== undefined && (valid !== plan || segments.length > 1),
@@ -88,19 +78,12 @@ const cards = computed(() => {
     {
       label: '周期有效单量',
       testId: 'trial-period-valid-order-count-card',
-      value: pickCount(
-        summary.period_valid_order_count,
-        summary.valid_order_count,
-        summary.order_count,
-      ),
+      value: namedCount(summary.period_valid_order_count),
     },
     {
       label: '方案期内单量',
       testId: 'trial-plan-order-count-card',
-      value: pickCount(
-        summary.plan_order_count,
-        summary.plan_period_order_count,
-      ),
+      value: namedCount(summary.plan_period_order_count),
     },
     { label: '单量', value: summary.order_count },
     { label: '逐单', money: summary.per_order_total },
