@@ -105,6 +105,7 @@ class CalcResult:
     payroll_id: int | None
     order_count: int
     valid_order_count: int
+    plan_period_order_count: int
     per_order_total: Decimal
     daily_total: Decimal
     period_total: Decimal
@@ -202,6 +203,23 @@ def _enabled_items(segment: Segment, stage: str) -> list[PlanItemView]:
     items = [item for item in segment.items if item.enabled and item.stage == stage]
     items.sort(key=lambda item: (item.sort_order, item.id or 0))
     return items
+
+
+def plan_period_order_count_of(completed: list[Any], segments: list[Segment]) -> int:
+    """
+    方案期内单量：最后一段所属方案版本的全部生效窗内已完成单数。
+
+    月中换绑时与周期有效单量分叉；单版本整窗则与周期有效单量相同。
+
+    :param completed: 周期内已完成订单
+    :param segments: 方案生效段
+    :return: 方案期内单量
+    """
+    if not segments:
+        return 0
+    version_id = segments[-1].plan_version_id
+    windows = [(row.start_date, row.end_date) for row in segments if row.plan_version_id == version_id]
+    return sum(1 for row in completed if any(start <= row.biz_date <= end for start, end in windows))
 
 
 def _eval_item(
@@ -551,6 +569,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         payroll_id=None,
         order_count=len(orders),
         valid_order_count=len(completed_all),
+        plan_period_order_count=plan_period_order_count_of(completed_all, data.segments),
         per_order_total=q2(per_order_total),
         daily_total=q2(daily_total),
         period_total=q2(period_total),

@@ -12,6 +12,8 @@ class TrialSummary(SchemaBase):
 
     order_count: int = Field(description='单量')
     valid_order_count: int = Field(0, description='有效单量')
+    period_valid_order_count: int = Field(0, description='周期有效单量')
+    plan_period_order_count: int = Field(0, description='方案期内单量')
     gross: Decimal = Field(description='应发')
     deduction_total: Decimal = Field(description='代扣')
     net: Decimal = Field(description='实发')

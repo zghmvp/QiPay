@@ -166,6 +166,8 @@ def build_trial_result(calc: CalcResult, trial_hash: str) -> TrialResult:
     summary = TrialSummary(
         order_count=calc.order_count,
         valid_order_count=calc.valid_order_count,
+        period_valid_order_count=calc.valid_order_count,
+        plan_period_order_count=calc.plan_period_order_count,
         gross=calc.gross,
         deduction_total=calc.deduction_total,
         net=calc.net,
