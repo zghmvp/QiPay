@@ -16,6 +16,7 @@ from backend.plugin.rider_salary.api.v1.payroll import router as payroll_router
 from backend.plugin.rider_salary.api.v1.period import router as period_router
 from backend.plugin.rider_salary.api.v1.plan import router as plan_router
 from backend.plugin.rider_salary.api.v1.plan import version_router as plan_version_router
+from backend.plugin.rider_salary.api.v1.recalc_job import router as recalc_job_router
 from backend.plugin.rider_salary.api.v1.rider import router as rider_router
 from backend.plugin.rider_salary.api.v1.site import router as site_router
 from backend.plugin.rider_salary.api.v1.subject import router as subject_router
@@ -36,6 +37,7 @@ v1.include_router(period_router, prefix='/periods', tags=['结算周期'])
 v1.include_router(payroll_router, prefix='/payrolls', tags=['薪资结果'])
 v1.include_router(calendar_router, prefix='/calendar', tags=['薪资日历'])
 v1.include_router(dashboard_router, prefix='/dashboard', tags=['工作台'])
+v1.include_router(recalc_job_router, prefix='/recalc-jobs', tags=['重算任务'])
 v1.include_router(advance_router, prefix='/advances', tags=['预支审核'])
 v1.include_router(notice_router, prefix='/notices', tags=['站点公告'])
 v1.include_router(audit_router, prefix='/audit-logs', tags=['操作日志'])

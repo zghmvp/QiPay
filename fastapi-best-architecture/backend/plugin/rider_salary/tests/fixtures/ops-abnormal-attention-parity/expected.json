@@ -1,0 +1,7 @@
+{
+  "feature": "ops-abnormal-attention-parity",
+  "expected": {
+    "attention_key": "abnormal_orders",
+    "union": ["abnormal", "refunded", "duration_gt_60_completed"]
+  }
+}

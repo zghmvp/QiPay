@@ -82,6 +82,8 @@ class TrialResult(SchemaBase):
 
     passed: bool = Field(True, description='是否成功')
     trial_hash: str | None = Field(None, description='试算哈希')
+    mode: str = Field('full_version', description='试算模式')
+    mode_label: str = Field('整版试算', description='试算模式中文')
     summary: TrialSummary
     per_order: list[TrialPerOrderRow] = Field(default_factory=list, description='逐单明细')
     daily: list[TrialDailyRow] = Field(default_factory=list, description='按日汇总')

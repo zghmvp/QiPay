@@ -1,0 +1,28 @@
+# 试算分段 · 月中换绑夹具（派生自灯塔切片 / C17–C18）
+
+## 场景
+
+- 站点：灯塔福民（演示切片，固定 2026-09）
+- 骑手：工号 `FIX_C17_R1`
+- 绑定：
+  - 2026-09-01 ~ 2026-09-14 → 方案版本 A（底薪+逐单）
+  - 2026-09-15 ~ 2026-09-17 → **无方案**（连续无方案日，供日历深链）
+  - 2026-09-18 ~ 2026-09-30 → 方案版本 B（周期阶梯，字段=方案期内单量）
+- 订单：区间内 completed；无方案三日各有单，计入「周期有效单量」但不计入「方案期内单量」
+
+## 灌种说明
+
+只写 `rs_*` 表（站长账号另写 `sys_user*` 数据行，不改 FBA 框架）。契约清单：同目录 `seed.json`。
+
+演示机一键灌种（含日历深链 + stale 站长）：
+
+```bash
+API_URL=http://127.0.0.1:8000 CDP_USER=admin CDP_PASS=admin \
+  node scripts/cdp/seed-xiaoxiang-fixtures.mjs
+```
+
+pytest 使用同目录 `expected.json` 做 DB-free 金标（不依赖演示库）。
+
+## CDP
+
+场景名：`trial-binding-segments`（与 `ops-calendar-no-plan-deeplink` 共用本骑手）

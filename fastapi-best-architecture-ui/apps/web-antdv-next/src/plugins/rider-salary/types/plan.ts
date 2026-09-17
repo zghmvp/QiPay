@@ -120,6 +120,8 @@ export interface UpdatePlanVersionParam {
 
 export interface TrialParam {
   end_date: string;
+  /** full_version | binding_segments */
+  mode?: 'binding_segments' | 'full_version';
   rider_id: number;
   start_date: string;
 }
@@ -178,6 +180,8 @@ export interface TrialDailyRow {
 export interface TrialResult {
   adjustments?: Record<string, unknown>[];
   daily: TrialDailyRow[];
+  mode?: string;
+  mode_label?: string;
   passed: boolean;
   period_items: TrialCalcItem[];
   per_order: TrialPerOrderRow[];

@@ -337,17 +337,27 @@ class ImportService:
                 f'文件{filename}，成功{success_rows}行，失败{failed_rows}行'
             ),
         )
+        recalc_job_id: int | None = None
         if auto_recalc and inserted and date_from is not None and date_to is not None:
-            # 先提交导入事务，避免后台重算与请求事务互相回滚
-            await db.commit()
-            background_tasks.add_task(
-                recalc_imported_periods,
+            from backend.plugin.rider_salary.service.recalc_job_service import (
+                recalc_job_service,
+                run_recalc_job,
+            )
+
+            operator_id = int(getattr(request.user, 'id', 0) or 0)
+            job = await recalc_job_service.create_import_job(
+                db,
                 site_id=batch_site_id,
+                batch_id=batch.id,
                 rider_ids=list(rider_ids),
                 date_from=date_from,
                 date_to=date_to,
-                operator_id=int(getattr(request.user, 'id', 0) or 0),
+                operator_id=operator_id,
             )
+            recalc_job_id = job.id
+            # 先提交导入事务，避免后台重算与请求事务互相回滚
+            await db.commit()
+            background_tasks.add_task(run_recalc_job, job_id=job.id)
         return ImportResult(
             batch_id=batch.id,
             total_rows=total_rows,
@@ -355,6 +365,7 @@ class ImportService:
             failed_rows=failed_rows,
             status=batch_status,
             errors=[ImportErrorItem(**item) for item in error_items[:MAX_ERROR_RETURN]],
+            recalc_job_id=recalc_job_id,
         )
 
     @staticmethod
@@ -431,11 +442,16 @@ async def recalc_imported_periods(
     date_from: date,
     date_to: date,
     operator_id: int,
+    job_id: int | None = None,
 ) -> None:
-    """导入后后台重算涉及的开放周期；失败不影响已入库订单。"""
+    """导入后后台重算（兼容旧调用）；优先走 run_recalc_job 以回写可观测状态。"""
     from backend.common.log import log
+    from backend.plugin.rider_salary.service.recalc_job_service import run_recalc_job
 
     _ = operator_id
+    if job_id is not None:
+        await run_recalc_job(job_id=job_id)
+        return
     try:
         from backend.plugin.rider_salary.service.calc_service import calculate_period
     except ImportError:

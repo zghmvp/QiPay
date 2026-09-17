@@ -395,3 +395,57 @@ _bind_labels(
         NoticeStatus.offline: '已下线',
     },
 )
+
+
+class TrialMode(LabeledStrEnum):
+    """方案试算模式"""
+
+    full_version = 'full_version'
+    binding_segments = 'binding_segments'
+
+
+_bind_labels(
+    TrialMode,
+    {
+        TrialMode.full_version: '整版试算',
+        TrialMode.binding_segments: '按绑定分段试算',
+    },
+)
+
+
+class RecalcJobStatus(LabeledStrEnum):
+    """重算任务状态（插件内轻量，非 Celery）"""
+
+    queued = 'queued'
+    running = 'running'
+    done = 'done'
+    failed = 'failed'
+
+
+_bind_labels(
+    RecalcJobStatus,
+    {
+        RecalcJobStatus.queued: '排队中',
+        RecalcJobStatus.running: '计算中',
+        RecalcJobStatus.done: '完成',
+        RecalcJobStatus.failed: '失败',
+    },
+)
+
+
+class RecalcJobSource(LabeledStrEnum):
+    """重算任务来源"""
+
+    import_batch = 'import_batch'
+    stale_batch = 'stale_batch'
+    period = 'period'
+
+
+_bind_labels(
+    RecalcJobSource,
+    {
+        RecalcJobSource.import_batch: '导入后重算',
+        RecalcJobSource.stale_batch: '本站本月批量重算',
+        RecalcJobSource.period: '单周期重算',
+    },
+)

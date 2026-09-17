@@ -15,7 +15,7 @@ from backend.plugin.rider_salary.crud.plan_item import plan_item_dao
 from backend.plugin.rider_salary.crud.plan_version import plan_version_dao
 from backend.plugin.rider_salary.engine.compiler import validate_item
 from backend.plugin.rider_salary.engine.fields import STAGE_ORDER
-from backend.plugin.rider_salary.enums import CalcStage, PlanVersionStatus
+from backend.plugin.rider_salary.enums import CalcStage, PlanVersionStatus, TrialMode
 from backend.plugin.rider_salary.model.plan import RiderSalaryPlan
 from backend.plugin.rider_salary.model.plan_item import RiderSalaryPlanItem
 from backend.plugin.rider_salary.model.plan_version import RiderSalaryPlanVersion
@@ -126,7 +126,12 @@ def _to_version_detail(
     )
 
 
-def build_trial_result(calc: CalcResult, trial_hash: str) -> TrialResult:
+def build_trial_result(
+    calc: CalcResult,
+    trial_hash: str | None,
+    *,
+    mode: TrialMode = TrialMode.full_version,
+) -> TrialResult:
     """将 CalcResult 转为试算接口结构"""
     per_order_map: dict[tuple[Any, ...], TrialPerOrderRow] = {}
     period_items: list[TrialPeriodItem] = []
@@ -194,6 +199,8 @@ def build_trial_result(calc: CalcResult, trial_hash: str) -> TrialResult:
     return TrialResult(
         passed=True,
         trial_hash=trial_hash,
+        mode=mode.value,
+        mode_label=mode.label,
         summary=summary,
         per_order=list(per_order_map.values()),
         daily=daily_rows,
@@ -428,28 +435,39 @@ class PlanService:
         start_date: date,
         end_date: date,
         request: Request,
+        mode: TrialMode = TrialMode.full_version,
     ) -> TrialResult:
-        """试算并回写 trial_hash"""
+        """试算；整版模式回写 trial_hash，分段模式仅对照不写启用门槛"""
         version = await PlanService.get_version_model(db, pk)
         items = await plan_item_dao.list_by_version(db, pk)
         if not items:
             raise errors.RequestError(msg='请先配置方案项再试算')
+        forced = version if mode == TrialMode.full_version else None
         calc = await trial_rider_range(
-            db, rider_id=rider_id, start=start_date, end=end_date, forced_plan_version=version
+            db,
+            rider_id=rider_id,
+            start=start_date,
+            end=end_date,
+            forced_plan_version=forced,
         )
         current_hash = items_hash_of(orm_items_as_dicts(items))
-        version.items_hash = current_hash
-        version.trial_hash = current_hash
-        version.trial_passed = True
-        result = build_trial_result(calc, current_hash)
-        version.trial_snapshot = result.summary.model_dump(mode='json')
-        await db.flush()
+        if mode == TrialMode.full_version:
+            version.items_hash = current_hash
+            version.trial_hash = current_hash
+            version.trial_passed = True
+            result = build_trial_result(calc, current_hash, mode=mode)
+            version.trial_snapshot = result.summary.model_dump(mode='json')
+            await db.flush()
+            action = '试算方案'
+        else:
+            result = build_trial_result(calc, None, mode=mode)
+            action = '按绑定分段试算'
         plan = await plan_dao.get(db, version.plan_id)
         await audit_service.record(
             db,
             request,
             module='薪资方案',
-            action='试算方案',
+            action=action,
             target_type='plan_version',
             target_id=pk,
             target_label=f'方案{plan.name if plan else pk} v{version.version_no}',

@@ -1,0 +1,11 @@
+{
+  "feature": "ops-stale-batch-recalc",
+  "month": "2026-09",
+  "min_stale_riders": 2,
+  "expected": {
+    "permission": "rs:period:calculate",
+    "confirm_contains": ["站点", "周期"],
+    "button_text": "本站本月批量重算",
+    "cancel_no_change": true
+  }
+}

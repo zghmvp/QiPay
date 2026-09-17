@@ -232,7 +232,14 @@ function onKey(e: KeyboardEvent) {
           message="当日无生效方案，订单未计薪。"
         >
           <template #action>
-            <a-button size="small" type="link" @click="goBinding">去绑定方案</a-button>
+            <a-button
+              size="small"
+              type="link"
+              data-testid="drawer-bind-plan"
+              @click="goBinding"
+            >
+              去绑定方案
+            </a-button>
           </template>
         </a-alert>
         <a-alert

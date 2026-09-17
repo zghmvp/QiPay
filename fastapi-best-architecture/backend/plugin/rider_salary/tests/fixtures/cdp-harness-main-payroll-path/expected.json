@@ -1,0 +1,19 @@
+{
+  "feature": "cdp-harness-main-payroll-path",
+  "steps": [
+    "site",
+    "plan_trial_activate",
+    "binding",
+    "import",
+    "adjustment_dayflag",
+    "calculate",
+    "calendar",
+    "lock",
+    "export"
+  ],
+  "expected": {
+    "no_payment_or_tax_copy": true,
+    "assert_chinese_visible_or_amount": true,
+    "screenshot_not_sufficient": true
+  }
+}
