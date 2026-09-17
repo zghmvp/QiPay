@@ -39,9 +39,31 @@ const router = useRouter();
 const route = useRoute();
 const { ReasonModal, prompt } = useReasonModal();
 
+function queryStr(key: string) {
+  const raw = route.query[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === 'string' && v ? v : undefined;
+}
+
+function queryNum(key: string) {
+  const n = Number(queryStr(key));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+const initialStatus = queryStr('status');
+const initialSiteId = queryNum('site_id');
+
 const formOptions: VbenFormProps = {
   collapsed: true,
-  schema: querySchema,
+  schema: querySchema.map((item) => {
+    if (item.fieldName === 'status' && initialStatus) {
+      return { ...item, defaultValue: initialStatus };
+    }
+    if (item.fieldName === 'site_id' && initialSiteId) {
+      return { ...item, defaultValue: initialSiteId };
+    }
+    return item;
+  }),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
 };
@@ -261,6 +283,12 @@ onMounted(() => {
     });
     return;
   }
+  const values: Record<string, unknown> = {};
+  if (initialStatus) values.status = initialStatus;
+  if (initialSiteId) values.site_id = initialSiteId;
+  if (Object.keys(values).length) {
+    void gridApi.formApi.setValues(values);
+  }
   const editId = Number(route.query.edit_id);
   if (Number.isFinite(editId) && editId > 0) {
     void getRiderApi(editId).then((row) => {
@@ -272,6 +300,14 @@ onMounted(() => {
 
 <template>
   <PageContainer>
+    <a-alert
+      v-if="initialStatus === 'on_job'"
+      class="mb-2"
+      data-testid="rider-list-status-scope"
+      show-icon
+      type="info"
+      message="已按工作台跳转筛选：在职骑手"
+    />
     <Grid>
       <template #toolbar-actions>
         <VbenButton

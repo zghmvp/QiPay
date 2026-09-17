@@ -92,7 +92,9 @@ export interface PlanVersionDetail {
   plan_id: number;
   remark?: null | string;
   status: string;
+  binding_trial_passed?: boolean | null;
   trial_hash?: null | string;
+  trial_mode?: null | string;
   trial_passed: boolean;
   trial_snapshot?: null | Record<string, unknown>;
   updated_time?: null | string;

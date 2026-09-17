@@ -40,6 +40,7 @@ import PlanPresetPicker from './components/PlanPresetPicker.vue';
 import TrialPanel from './components/TrialPanel.vue';
 import VersionStatusTag from './components/VersionStatusTag.vue';
 import {
+  ACTIVATE_CONFIRM_CONTENT,
   activateHint,
   canEditVersion,
   COLOR_PRESETS,
@@ -264,12 +265,18 @@ async function removePlan(plan: PlanDetail) {
 
 async function activate(row: PlanVersionDetail) {
   const hint = activateHint({
+    bindingTrialPassed: row.binding_trial_passed,
     itemsHash: row.items_hash,
     trialHash: row.trial_hash,
     trialPassed: row.trial_passed,
   });
   if (hint) {
     message.warning(hint);
+    return;
+  }
+  try {
+    await confirm({ content: ACTIVATE_CONFIRM_CONTENT, icon: 'warning' });
+  } catch {
     return;
   }
   await activatePlanVersionApi(row.id);
@@ -286,6 +293,7 @@ async function disable(row: PlanVersionDetail) {
 
 function trialText(row: PlanVersionDetail) {
   return trialLabel({
+    bindingTrialPassed: row.binding_trial_passed,
     itemsHash: row.items_hash,
     trialHash: row.trial_hash,
     trialPassed: row.trial_passed,
@@ -409,7 +417,7 @@ onMounted(loadAll);
                 {{ record.is_used ? '是' : '否' }}
               </template>
               <template v-else-if="column.key === 'trial'">
-                {{ trialText(record) }}
+                <span data-testid="plan-trial-label">{{ trialText(record) }}</span>
               </template>
               <template v-else-if="column.key === 'created'">
                 {{ toDateTimeString(record.created_time) }}
@@ -436,6 +444,7 @@ onMounted(loadAll);
                   v-if="record.status === 'draft'"
                   :title="
                     activateHint({
+                      bindingTrialPassed: record.binding_trial_passed,
                       itemsHash: record.items_hash,
                       trialHash: record.trial_hash,
                       trialPassed: record.trial_passed,
@@ -448,12 +457,14 @@ onMounted(loadAll);
                       :disabled="
                         Boolean(
                           activateHint({
+                            bindingTrialPassed: record.binding_trial_passed,
                             itemsHash: record.items_hash,
                             trialHash: record.trial_hash,
                             trialPassed: record.trial_passed,
                           }),
                         )
                       "
+                      data-testid="plan-activate-not-full-trial"
                       size="small"
                       type="primary"
                       @click="activate(record)"

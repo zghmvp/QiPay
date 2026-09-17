@@ -268,6 +268,14 @@ onMounted(() => {
         </template>
       </a-alert>
     </div>
+    <a-alert
+      v-if="initialAttention"
+      class="mb-2"
+      data-testid="order-attention-active"
+      show-icon
+      type="info"
+      message="已按工作台异常订单跳转：需关注（异常 ∪ 退款 ∪ 超时>60 分钟），不是只筛 status=abnormal"
+    />
     <Grid>
       <template #toolbar-actions>
         <VbenButton

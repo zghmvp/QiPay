@@ -3,8 +3,12 @@ import type { DashboardRiderRank } from '../../../types/dashboard';
 
 import { useRouter } from 'vue-router';
 
+import { calendarRiderTarget } from '../scope-links';
+
 const props = defineProps<{
   bottom: DashboardRiderRank[];
+  month?: string;
+  siteId?: null | number;
   top: DashboardRiderRank[];
 }>();
 
@@ -17,10 +21,9 @@ const columns = [
 ];
 
 function openRider(row: DashboardRiderRank) {
-  router.push({
-    path: '/rider-salary/calendar',
-    query: { rider_id: String(row.rider_id) },
-  });
+  void router.push(
+    calendarRiderTarget(row.rider_id, props.siteId, props.month),
+  );
 }
 </script>
 
@@ -28,6 +31,7 @@ function openRider(row: DashboardRiderRank) {
   <div
     v-if="top.length || bottom.length"
     class="grid grid-cols-1 gap-3 lg:grid-cols-2"
+    data-testid="dashboard-top-riders"
   >
     <a-card v-if="top.length" size="small" title="单量 Top 10">
       <a-table
