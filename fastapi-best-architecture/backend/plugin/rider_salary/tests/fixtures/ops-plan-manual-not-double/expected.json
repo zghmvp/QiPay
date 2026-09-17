@@ -8,7 +8,9 @@
     "cancel_must_not_save": true,
     "fail_copy_booked": "手工明细已入账",
     "fail_copy_double": "再加会双计",
+    "be_reject_msg": "周期项公式不得把「本期手工奖 / 本期手工惩」当作加项：手工明细已入账，再加会双计",
     "assembler_copy": "可作条件；加进公式 = 双计",
+    "manual_not_double_copy": "本期手工奖 / 本期手工惩可作条件；加进公式 = 双计。手工明细已入账，再加会双计。",
     "weak_prompt_is_fail": true,
     "condition_reference_still_legal": true,
     "guarantee_subtract_still_legal": true,
@@ -29,6 +31,7 @@
     "do_not_forbid_manual_entry": true,
     "do_not_forbid_condition_reference": true,
     "do_not_include_daily_xor": true,
+    "must_2_has_no_be_change": true,
     "no_new_xor_or_gold_must_name": true,
     "hangs_on_existing_plan_save_spec": true,
     "existing_must_names_unchanged": [
@@ -39,6 +42,10 @@
       "ops-plan-guarantee-last"
     ],
     "manual_fields": ["本期手工奖", "本期手工惩"],
+    "testid_root": "ops-plan-manual-not-double",
+    "testid_ok_as_condition": "plan-manual-ok-as-condition",
+    "testid_added_as_formula": "plan-manual-added-as-formula",
+    "testid_field_chip": "plan-manual-field-formula-chip",
     "C05A_gross": "3500.00",
     "locked_gold_unchanged": {
       "C03_gross": "8200.00",

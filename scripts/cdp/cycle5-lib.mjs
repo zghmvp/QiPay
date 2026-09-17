@@ -1,12 +1,19 @@
 /**
- * Cycle 5 CDP 共用。钩子读 status 文件（落地才强制 testid）；未落地则只断言计划合同。
- * 禁止截图即绿；选择器/文案/落地缺失即失败，不得 skip。
- * 金标 8200 / 7800 / 3500 已锁。不新造 XOR / trial-case-gold / 启用闸 Must 名。
- * 不写产品 UI。侧栏泄漏不改断言。
+ * Cycle 5 CDP 共用。#30 具名 testid 缺失即失败，不得 skip。
+ * 禁止截图即绿。金标 8200 / 7800 / 3500 已锁。
+ * 不新造 XOR / trial-case-gold / 启用闸 Must 名。不写产品 UI。
  *
- * 具名：cdp-admin-payslip-hide-empty-days /
- *   ops-dashboard-no-plan-to-binding /
- *   ops-plan-manual-not-double（可挂现有方案保存 spec，不新造 XOR/金标/启用闸名）
+ * #30 钩子：
+ *   cdp-admin-payslip-hide-empty-days / payroll-show-empty-days /
+ *   payroll-empty-day-count / payroll-daily-net-hint / payroll-dailies /
+ *   payroll-empty-day-row / payroll-day-row /
+ *   ops-dashboard-no-plan-to-binding / dashboard-no-plan-row /
+ *   dashboard-no-plan-view-all / rider-list-no-plan-scope /
+ *   rider-tab-binding / rider-binding-timeline / rider-binding-form /
+ *   rider-binding-goto-calculate /
+ *   ops-plan-manual-not-double / plan-manual-ok-as-condition /
+ *   plan-manual-added-as-formula / plan-manual-field-formula-chip
+ * #32 保存/启用硬拦周期公式加项。Must 2 无后端改动。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,17 +33,57 @@ export const MANUAL_PENALTY_FIELD = '本期手工惩';
 export const MANUAL_FIELDS = [MANUAL_BONUS_FIELD, MANUAL_PENALTY_FIELD];
 export const MANUAL_ONCE_AMOUNT = 200;
 
-export const SHOW_EMPTY_DAYS_COPY = /显示空日\s*[（(]\s*\d+\s*[)）]|显示空日/;
+export const SHOW_EMPTY_DAYS_COPY = /显示空日\s*[（(]\s*\d+\s*[)）]/;
+export const DAILY_NET_HINT = '按日「净」= 当日公式+奖−惩，不是周期实发';
 export const DAILY_NET_COPY = /当日公式\s*[+＋]\s*奖\s*[−\-–-]\s*惩/;
 export const DAILY_NET_NOT_PERIOD_COPY = /不是周期实发/;
 export const EMPTY_CALENDAR_COPY = /请选择站点和骑手/;
+export const MANUAL_NOT_DOUBLE_COPY =
+  '本期手工奖 / 本期手工惩可作条件；加进公式 = 双计。手工明细已入账，再加会双计。';
+export const MANUAL_OK_AS_CONDITION_COPY = '本期手工奖 / 本期手工惩可作条件，不会双计。';
+export const MANUAL_ADDED_AS_FORMULA_COPY =
+  '加进公式会把已入账手工明细再计一次（双计）。请改到条件，或只在保底里相减。';
 export const MANUAL_BOOKED_COPY = /手工明细已入账/;
 export const MANUAL_DOUBLE_COPY = /再加会双计/;
 export const MANUAL_ASSEMBLER_COPY = /可作条件/;
 export const MANUAL_ASSEMBLER_DOUBLE_COPY = /加进公式\s*=\s*双计/;
+export const BE32_REJECT_MSG =
+  '周期项公式不得把「本期手工奖 / 本期手工惩」当作加项：手工明细已入账，再加会双计';
 export const BINDING_TAB_COPY = /方案绑定/;
 export const BINDING_CREATE_COPY = /新增绑定|保存绑定/;
+export const NO_PLAN_LIST_COPY = /无方案日待办：请点「方案绑定」/;
 export const LOCKED_GOLD_FORBIDDEN = /4629\.33|预支\s*800/;
+
+export const PR30_PAYSLIP_HOOKS = [
+  'cdp-admin-payslip-hide-empty-days',
+  'payroll-show-empty-days',
+  'payroll-empty-day-count',
+  'payroll-daily-net-hint',
+  'payroll-dailies',
+];
+
+export const PR30_PAYSLIP_LAYER_HOOKS = [
+  'payroll-layers',
+  'payroll-reconciliation',
+];
+
+export const PR30_BINDING_HOOKS = [
+  'ops-dashboard-no-plan-to-binding',
+  'dashboard-no-plan-row',
+  'dashboard-no-plan-view-all',
+];
+
+export const PR30_BINDING_LANDING_HOOKS = [
+  'rider-tab-binding',
+  'rider-binding-timeline',
+  'rider-binding-form',
+  'rider-binding-goto-calculate',
+];
+
+export const PR30_MANUAL_HOOKS = [
+  'ops-plan-manual-not-double',
+  'plan-manual-ok-as-condition',
+];
 
 const STATUS_PATHS = [
   process.env.CYCLE5_STATUS_FILE,
@@ -83,45 +130,26 @@ export function dayHasAdvance(day, details) {
   );
 }
 
-export function dayHasGrossBonus(day, details) {
-  if (moneyOf(day.manual_bonus) !== 0) return true;
-  const date = bizDateOf(day.biz_date);
-  return (details || []).some((row) => {
-    if (bizDateOf(row.biz_date) !== date) return false;
-    if (row.include_in_gross !== true) return false;
-    return moneyOf(row.amount) > 0 && (row.direction === 'bonus' || row.source === 'manual');
-  });
-}
-
-export function dayHasOffGrossPenalty(day, details) {
-  if (moneyOf(day.manual_penalty) !== 0) return true;
-  const date = bizDateOf(day.biz_date);
-  return (details || []).some((row) => {
-    if (bizDateOf(row.biz_date) !== date) return false;
-    return row.include_in_gross === false && row.direction === 'penalty' && moneyOf(row.amount) !== 0;
-  });
+export function isEmptyPayrollDay(day, details) {
+  const orders = Number(day.order_count || 0);
+  const valid = Number(day.valid_order_count || 0);
+  const completed = Math.max(orders, valid);
+  const hasBonus = moneyOf(day.manual_bonus) !== 0;
+  const hasPenalty = moneyOf(day.manual_penalty) !== 0;
+  const hasFormula = moneyOf(day.formula_amount) !== 0;
+  const hasAdvance = dayHasAdvance(day, details);
+  if (hasBonus || hasPenalty || hasAdvance) return false;
+  if (day.day_status === 'no_plan' && completed > 0) return false;
+  if (day.day_status === 'not_imported') return true;
+  return completed === 0 && !hasFormula;
 }
 
 export function isAlwaysVisibleDaily(day, details) {
-  const orders = Number(day.order_count || 0);
-  const valid = Number(day.valid_order_count || 0);
-  if (day.day_status === 'no_plan' && (valid > 0 || orders > 0)) return true;
-  if (dayHasGrossBonus(day, details)) return true;
-  if (dayHasOffGrossPenalty(day, details)) return true;
-  if (dayHasAdvance(day, details)) return true;
-  return false;
+  return !isEmptyPayrollDay(day, details);
 }
 
 export function isDefaultHiddenEmptyDaily(day, details) {
-  if (isAlwaysVisibleDaily(day, details)) return false;
-  const orders = Number(day.order_count || 0);
-  const valid = Number(day.valid_order_count || 0);
-  const noAmount = moneyOf(day.formula_amount) === 0 && moneyOf(day.net_adjust) === 0;
-  const noManual = moneyOf(day.manual_bonus) === 0 && moneyOf(day.manual_penalty) === 0;
-  const noAdvance = !dayHasAdvance(day, details);
-  if (!noManual || !noAdvance) return false;
-  if (day.day_status === 'not_imported') return true;
-  return orders === 0 && valid === 0 && noAmount;
+  return isEmptyPayrollDay(day, details);
 }
 
 export function classifyDailies(detail) {
@@ -160,42 +188,37 @@ export function isCalendarPath(raw) {
 export function isBindingLanding(raw, riderId) {
   const url = parseUrl(raw);
   if (!url) return false;
-  const path = url.pathname;
-  const tab = url.searchParams.get('tab');
-  if (tab !== 'binding') return false;
-  const detail = path.match(/\/rider-salary\/rider\/(\d+)/);
-  if (detail) {
-    return !riderId || String(detail[1]) === String(riderId);
-  }
-  if (/\/rider-salary\/rider\/?$/.test(path)) {
-    const queryId = url.searchParams.get('rider_id');
-    return Boolean(queryId) && (!riderId || String(queryId) === String(riderId));
-  }
-  return false;
+  const detail = url.pathname.match(/\/rider-salary\/rider\/(\d+)/);
+  if (!detail || url.searchParams.get('tab') !== 'binding') return false;
+  return !riderId || String(detail[1]) === String(riderId);
+}
+
+export function isNoPlanViewAll(raw) {
+  const url = parseUrl(raw);
+  if (!url || isCalendarPath(raw)) return false;
+  return /\/rider-salary\/rider\/?$/.test(url.pathname) && url.searchParams.get('from') === 'no_plan';
 }
 
 export function assertRowGoesToBinding(raw, riderId, label = '无方案日行') {
   if (isCalendarPath(raw)) {
     throw new Error(
-      `${label} 只进 /calendar（即使带 rider_id+site_id+month）= FAIL。须落到档案绑定时间轴。实际 ${raw}`,
+      `${label} 只进 /calendar（即使带 rider_id+site_id+month）= FAIL。须 /rider-salary/rider/{id}?tab=binding。实际 ${raw}`,
     );
   }
   if (!isBindingLanding(raw, riderId)) {
     throw new Error(
-      `${label} 须进 /rider/{id}?tab=binding（或带 rider_id+tab=binding 的等价落地）。实际 ${raw}`,
+      `${label} 须进 /rider-salary/rider/{id}?tab=binding。实际 ${raw}`,
     );
   }
 }
 
 export function assertViewAllNotEmptyCalendar(raw, bodyText, label = '无方案日查看全部') {
   const text = String(bodyText || '');
-  if (EMPTY_CALENDAR_COPY.test(text) && isCalendarPath(raw)) {
-    throw new Error(`${label} 不得落到「请选择站点和骑手」空日历。实际 ${raw}`);
+  if (EMPTY_CALENDAR_COPY.test(text) || isCalendarPath(raw)) {
+    throw new Error(`${label} calendar-only = FAIL。须 /rider-salary/rider?from=no_plan。实际 ${raw}`);
   }
-  if (isCalendarPath(raw)) {
-    throw new Error(
-      `${label} 不得进 /calendar。允许骑手名单/档案筛，每行再进绑定。实际 ${raw}`,
-    );
+  if (!isNoPlanViewAll(raw)) {
+    throw new Error(`${label} 须落到 /rider-salary/rider?from=no_plan。实际 ${raw}`);
   }
 }
 
@@ -243,6 +266,31 @@ export function failBlob(res, json) {
   return `${json?.msg || ''} ${JSON.stringify(json || {})} HTTP ${res?.status}`;
 }
 
+export function assertManualRejectMsg(blob, label) {
+  const text = String(blob || '');
+  if (!MANUAL_BOOKED_COPY.test(text) || !MANUAL_DOUBLE_COPY.test(text)) {
+    throw new Error(
+      `${label} 硬拦中文须含「手工明细已入账」和「再加会双计」（#32）：${text.slice(0, 400)}`,
+    );
+  }
+}
+
+export function assertSaveBlocked(label, put) {
+  const blob = failBlob(put.res, put.json);
+  if (put.res.ok && (put.json?.code === 200 || put.json?.data)) {
+    throw new Error(`${label} 周期项把手工字段当加项仍保存成功。须失败：${blob.slice(0, 400)}`);
+  }
+  assertManualRejectMsg(blob, label);
+}
+
+export function assertActivateBlocked(label, act) {
+  const blob = failBlob(act.res, act.json);
+  if (act.res.ok && act.json?.code === 200) {
+    throw new Error(`${label} 周期项把手工字段当加项仍启用成功。须失败：${blob.slice(0, 400)}`);
+  }
+  assertManualRejectMsg(blob, label);
+}
+
 export function readStatusFile() {
   for (const file of STATUS_PATHS) {
     try {
@@ -277,29 +325,28 @@ export function loadCycle5StatusHooks() {
   return { landed: ids.size > 0, ids: [...ids], path: file.path };
 }
 
-export async function requireStatusHooks(page, extraMessage) {
-  const hooks = loadCycle5StatusHooks();
-  for (const testId of hooks.ids) {
+export async function requireHooks(page, testIds, extraMessage) {
+  for (const testId of testIds) {
     await requireTestId(
       page,
       testId,
-      extraMessage || `未见 status 钩子 ${testId}，不得 skip`,
+      extraMessage || `未见 #30 钩子 ${testId}，不得 skip`,
     );
   }
-  return hooks;
 }
 
 export async function requirePlanCopy(page, pattern, message) {
   const body = await page.locator('body').innerText();
-  if (!pattern.test(body)) {
+  const ok = typeof pattern === 'string' ? body.includes(pattern) : pattern.test(body);
+  if (!ok) {
     throw new Error(message || `未见计划合同文案 ${pattern}，不得 skip`);
   }
   return body;
 }
 
 export async function visibleDailyDates(page) {
-  const tab = page.getByTestId('payroll-detail-tabs');
-  const scope = (await tab.count()) ? tab : page.locator('body');
+  const table = page.getByTestId('payroll-dailies');
+  const scope = (await table.count()) ? table : page.getByTestId('payroll-detail-tabs');
   const texts = await scope.locator('a, td, th, span, div').allInnerTexts();
   return [...new Set(texts.map((text) => (String(text).match(/\d{4}-\d{2}-\d{2}/) || [])[0]).filter(Boolean))];
 }
