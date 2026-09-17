@@ -226,8 +226,8 @@ def test_advance_list_detail_includes_quota_fields() -> None:
 
 
 def test_advance_monthly_quota_sql_patch_exists() -> None:
-    pg_patch = PLUGIN_SQL / 'patch' / '002_site_monthly_advance_limit.sql'
-    mysql_patch = PLUGIN_SQL / 'patch' / '002_site_monthly_advance_limit.mysql.sql'
+    pg_patch = PLUGIN_SQL / 'patch' / '007_site_monthly_advance_limit.sql'
+    mysql_patch = PLUGIN_SQL / 'patch' / '007_site_monthly_advance_limit.mysql.sql'
     assert 'monthly_advance_limit' in pg_patch.read_text(encoding='utf-8')
     assert 'monthly_advance_limit' in mysql_patch.read_text(encoding='utf-8')
     pg_init = (PLUGIN_SQL / 'postgresql' / 'init.sql').read_text(encoding='utf-8')
