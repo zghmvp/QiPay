@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import type {
+  PayrollDailyResult,
   PayrollDetailItem,
   PayrollGroupedDetail,
   SubjectBreakdownItem,
@@ -27,9 +28,12 @@ import { toDateTimeString } from '../../utils/date';
 import { formatMoney } from '../../utils/money';
 import PageContainer from '../_shared/PageContainer.vue';
 import {
+  DAILY_NET_HINT,
   detailRemark,
   isDeductionDetail,
+  isEmptyPayrollDay,
   isGrossBreakdown,
+  partitionPayrollDailies,
   reconciliationHolds,
 } from './helpers';
 
@@ -41,6 +45,7 @@ const detail = ref<PayrollGroupedDetail>();
 const loadError = ref('');
 const activeTab = ref('daily');
 const subjectFilter = ref<null | number>(null);
+const showEmptyDays = ref(false);
 
 const payrollId = computed(() => Number(route.params.id));
 
@@ -110,6 +115,21 @@ const unlockedNote = computed(() => {
   return parts.join(' / ');
 });
 
+const dailyPartition = computed(() =>
+  partitionPayrollDailies(
+    detail.value?.dailies ?? [],
+    allDetails.value,
+  ),
+);
+
+const emptyDayCount = computed(() => dailyPartition.value.empty.length);
+
+const visibleDailies = computed(() =>
+  showEmptyDays.value
+    ? (detail.value?.dailies ?? [])
+    : dailyPartition.value.visible,
+);
+
 const layerColumns = [
   { dataIndex: 'subject_name', title: '科目' },
   { dataIndex: 'line_count', title: '笔数', width: 70 },
@@ -139,7 +159,7 @@ const dailyColumns = [
   { dataIndex: 'formula_amount', key: 'formula_amount', title: '公式' },
   { dataIndex: 'manual_bonus', key: 'manual_bonus', title: '奖' },
   { dataIndex: 'manual_penalty', key: 'manual_penalty', title: '惩' },
-  { dataIndex: 'net_adjust', key: 'net_adjust', title: '净' },
+  { dataIndex: 'net_adjust', key: 'net_adjust', title: '净（当日公式+奖−惩）' },
   { dataIndex: 'day_status', key: 'day_status', title: '日状态', width: 110 },
 ];
 
@@ -700,11 +720,39 @@ onMounted(() => {
 
         <a-tabs v-model:active-key="activeTab" data-testid="payroll-detail-tabs">
           <a-tab-pane key="daily" tab="按日">
+            <div
+              class="mb-3 flex flex-wrap items-center justify-between gap-2"
+              data-testid="cdp-admin-payslip-hide-empty-days"
+            >
+              <span
+                class="text-muted-foreground text-sm"
+                data-testid="payroll-daily-net-hint"
+              >
+                {{ DAILY_NET_HINT }}
+              </span>
+              <a-checkbox
+                v-model:checked="showEmptyDays"
+                data-testid="payroll-show-empty-days"
+              >
+                显示空日（<span data-testid="payroll-empty-day-count">{{
+                  emptyDayCount
+                }}</span>）
+              </a-checkbox>
+            </div>
             <a-table
               size="small"
               :columns="dailyColumns"
-              :data-source="detail.dailies"
+              :custom-row="
+                (row: PayrollDailyResult) => ({
+                  'data-empty': isEmptyPayrollDay(row, allDetails) ? '1' : '0',
+                  'data-testid': isEmptyPayrollDay(row, allDetails)
+                    ? 'payroll-empty-day-row'
+                    : 'payroll-day-row',
+                })
+              "
+              :data-source="visibleDailies"
               :pagination="false"
+              data-testid="payroll-dailies"
               row-key="biz_date"
             >
               <template #bodyCell="{ column, record }">

@@ -110,3 +110,32 @@ export function lockCountdownViewAllTarget(
     },
   };
 }
+
+/** 无方案日该行：档案绑定时间轴。只进日历（即使带齐 rider/site/month）= FAIL。 */
+export function noPlanBindingTarget(
+  riderId: number,
+  siteId?: null | number,
+  month?: string,
+): { path: string; query: Record<string, string> } {
+  return {
+    path: `/rider-salary/rider/${riderId}`,
+    query: {
+      tab: 'binding',
+      ...scopedSiteMonthQuery(siteId, month),
+    },
+  };
+}
+
+/** 无方案日「查看全部」：骑手名单，每行能进绑定。禁止空日历。 */
+export function noPlanViewAllTarget(
+  siteId?: null | number,
+  month?: string,
+): { path: string; query: Record<string, string> } {
+  return {
+    path: '/rider-salary/rider',
+    query: {
+      from: 'no_plan',
+      ...scopedSiteMonthQuery(siteId, month),
+    },
+  };
+}

@@ -1,5 +1,6 @@
 import type { MoneyValue } from '../../types/common';
 import type {
+  PayrollDailyResult,
   PayrollDetailItem,
   SubjectBreakdownItem,
 } from '../../types/payroll';
@@ -75,4 +76,58 @@ export function detailRemark(row: {
   const explicit = row.remark?.trim();
   if (explicit) return explicit;
   return traceRemark(row.calc_trace) || '无说明';
+}
+
+/** 按日「净」只含当日公式+奖−惩，不是周期实发 */
+export const DAILY_NET_HINT = '按日「净」= 当日公式+奖−惩，不是周期实发';
+
+function moneyIsZero(value: MoneyValue): boolean {
+  return moneyEquals(value, 0);
+}
+
+function dailyHasAdvance(
+  day: PayrollDailyResult,
+  details: PayrollDetailItem[] = [],
+): boolean {
+  return details.some(
+    (row) =>
+      row.source === 'advance' &&
+      row.biz_date != null &&
+      String(row.biz_date) === String(day.biz_date),
+  );
+}
+
+/**
+ * 空日：未导入 / 零单且无金额，且无手工奖、无手工惩、无预支。
+ * 永远可见：有奖、有惩、有预支；no_plan 且有完成单（真缺口）。
+ */
+export function isEmptyPayrollDay(
+  day: PayrollDailyResult,
+  details: PayrollDetailItem[] = [],
+): boolean {
+  const orders = Number(day.order_count ?? 0);
+  const valid = Number(day.valid_order_count ?? 0);
+  const completed = Math.max(orders, valid);
+  const hasBonus = !moneyIsZero(day.manual_bonus);
+  const hasPenalty = !moneyIsZero(day.manual_penalty);
+  const hasFormula = !moneyIsZero(day.formula_amount);
+  const hasAdvance = dailyHasAdvance(day, details);
+
+  if (hasBonus || hasPenalty || hasAdvance) return false;
+  if (day.day_status === 'no_plan' && completed > 0) return false;
+  if (day.day_status === 'not_imported') return true;
+  return completed === 0 && !hasFormula;
+}
+
+export function partitionPayrollDailies(
+  days: PayrollDailyResult[],
+  details: PayrollDetailItem[] = [],
+): { empty: PayrollDailyResult[]; visible: PayrollDailyResult[] } {
+  const empty: PayrollDailyResult[] = [];
+  const visible: PayrollDailyResult[] = [];
+  for (const day of days) {
+    if (isEmptyPayrollDay(day, details)) empty.push(day);
+    else visible.push(day);
+  }
+  return { empty, visible };
 }

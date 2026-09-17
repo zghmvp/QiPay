@@ -8,6 +8,7 @@ import { IconifyIcon } from '@vben/icons';
 
 import { evaluateSampleApi } from '../../../api/engine';
 import MoneyText from '../../../components/MoneyText.vue';
+import { formulaFieldLabel } from '../helpers';
 
 const props = withDefaults(
   defineProps<{
@@ -137,7 +138,12 @@ watch(
           <div class="mb-1 text-xs">字段</div>
           <a-select
             :disabled="disabled"
-            :options="numberFields.map((item) => ({ label: item.name, value: item.name }))"
+            :options="
+              numberFields.map((item) => ({
+                label: formulaFieldLabel(item.name),
+                value: item.name,
+              }))
+            "
             :value="value.字段"
             class="min-w-[160px]"
             @update:value="(v) => patch({ 字段: String(v ?? '') })"
