@@ -8,6 +8,13 @@ export interface AdvanceTimelineItem {
   reason?: null | string;
 }
 
+/** 当前自然月预支次数：limit / used / remaining，与金额上限无关。 */
+export interface AdvanceQuota {
+  limit: number;
+  remaining: number;
+  used: number;
+}
+
 export interface AdvanceResult {
   amount: MoneyValue;
   approve_remark?: null | string;
@@ -20,9 +27,13 @@ export interface AdvanceResult {
   deduct_status_label?: string;
   deducted_amount: MoneyValue;
   id: number;
+  monthly_advance_limit?: null | number;
+  monthly_advance_remaining?: null | number;
+  monthly_advance_used?: null | number;
   paid_by?: null | number;
   paid_by_name?: null | string;
   paid_time?: null | string;
+  quota?: AdvanceQuota | null;
   reason: string;
   remaining_amount?: MoneyValue;
   rider_id: number;
