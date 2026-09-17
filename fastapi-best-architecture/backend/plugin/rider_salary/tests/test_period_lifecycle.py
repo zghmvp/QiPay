@@ -146,15 +146,16 @@ def test_reverse_preflight_counts_only_reversible_not_window_riders() -> None:
         ),
     ]
     reversal_count, rider_count = reverse_preflight_counts(payrolls)
-    assert reversal_count == 2
+    assert reversal_count == 3
     assert rider_count == 2
     window_rider_count = len({item.rider_id for item in payrolls})
+    assert window_rider_count == 5
     assert rider_count != window_rider_count
     result = build_reverse_preflight_result(period_id=88, payrolls=payrolls)
     assert result.period_id == 88
-    assert result.reversal_count == 2
+    assert result.reversal_count == 3
     assert result.rider_count == 2
-    assert '2 张' in result.confirm_hint
+    assert '3 张' in result.confirm_hint
     assert '2 人' in result.confirm_hint
     assert '已定稿/已发薪' in result.confirm_hint
 
