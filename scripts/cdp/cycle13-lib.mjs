@@ -199,6 +199,13 @@ export async function pickAntOption(page, root, optionRe) {
   const select = root.locator('.ant-select').first();
   await select.waitFor({ state: 'visible', timeout: 20000 });
   await select.click();
+  // SiteSelect 开启 show-search：先输入缩小虚拟列表，再点选项
+  const search = page.locator('.ant-select-dropdown:visible input').first();
+  if (await search.count()) {
+    const hint = String(optionRe).replace(/^\/|\/[a-z]*$/g, '').split('|')[0] || 'SZ0050';
+    await search.fill(hint.replace(/\\/g, ''));
+    await page.waitForTimeout(300);
+  }
   const opt = page
     .locator('.ant-select-dropdown:visible .ant-select-item-option')
     .filter({ hasText: optionRe })
