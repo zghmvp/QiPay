@@ -111,6 +111,7 @@ export interface CalendarDayDetail {
   date: string;
   is_holiday?: boolean;
   day_status: string;
+  has_daily_cache?: boolean;
   orders: CalendarDayOrder[];
   period?: CalendarPeriodInfo | null;
   plan?: CalendarPlanInfo | null;

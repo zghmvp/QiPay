@@ -12,6 +12,10 @@ import { getAllSubjectsApi } from '../../../api/subject';
 import RiderSelect from '../../../components/RiderSelect.vue';
 import SiteSelect from '../../../components/SiteSelect.vue';
 import SubjectSelect from '../../../components/SubjectSelect.vue';
+import {
+  batchSubmitMessage,
+  classifyBatchRow,
+} from '../batch-rows';
 
 interface BatchRow {
   amount?: number | string;
@@ -47,24 +51,32 @@ const [Modal, modalApi] = useVbenModal({
   confirmText: '提交批量录入',
   destroyOnClose: true,
   async onConfirm() {
-    const items = rows.value
-      .filter((row) => row.rider_id && row.biz_date && row.subject_id && row.remark)
-      .map((row) => ({
-        amount: Number(row.amount),
-        biz_date: row.biz_date as string,
-        remark: row.remark as string,
-        rider_id: row.rider_id as number,
-        subject_id: row.subject_id as number,
-      }));
+    const classified = rows.value.map((row) => ({
+      kind: classifyBatchRow(row),
+      row,
+    }));
+    const complete = classified.filter((item) => item.kind === 'complete');
+    const skipped = classified.filter((item) => item.kind === 'incomplete').length;
+    const items = complete.map(({ row }) => ({
+      amount: Number(row.amount),
+      biz_date: row.biz_date as string,
+      remark: row.remark || '',
+      rider_id: row.rider_id as number,
+      subject_id: row.subject_id as number,
+    }));
     if (items.length === 0) {
-      message.warning('请至少填写一行完整记录');
+      message.warning(
+        skipped > 0
+          ? `没有完整行可录入，跳过未完整 ${skipped} 行`
+          : '请至少填写一行完整记录',
+      );
       return;
     }
     rows.value = rows.value.map((row) => ({ ...row, error: undefined }));
     modalApi.lock();
     try {
       await createAdjustmentBatchApi(items);
-      message.success('批量录入成功');
+      message.success(batchSubmitMessage(items.length, skipped));
       await modalApi.close();
     } catch (error: unknown) {
       const err = error as {
@@ -119,7 +131,7 @@ function rowClassName(record: BatchRow) {
 </script>
 
 <template>
-  <Modal title="批量录入奖惩">
+  <Modal title="批量录入奖惩" data-testid="ops-adj-batch-skip-incomplete-not-all-success">
     <div class="mb-3 flex items-center gap-2">
       <span>站点</span>
       <SiteSelect v-model:value="siteId" />

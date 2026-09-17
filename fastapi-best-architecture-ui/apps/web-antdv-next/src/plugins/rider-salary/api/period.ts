@@ -7,6 +7,7 @@ import type {
   GeneratePeriodParam,
   GeneratePeriodResult,
   LockPreflightResult,
+  PeriodForDateResult,
   PeriodQuery,
   PeriodResult,
   PeriodWithPayrolls,
@@ -25,6 +26,16 @@ export async function getPeriodListApi(params: PeriodQuery) {
 
 export async function getPeriodApi(pk: number) {
   return requestClient.get<PeriodWithPayrolls>(`${BASE}/${pk}`);
+}
+
+export async function getPeriodForDateApi(params: {
+  date: string;
+  rider_id?: number;
+  site_id: number;
+}) {
+  return requestClient.get<PeriodForDateResult>(`${BASE}/for-date`, {
+    params,
+  });
 }
 
 export async function calcPrecheckApi(pk: number) {

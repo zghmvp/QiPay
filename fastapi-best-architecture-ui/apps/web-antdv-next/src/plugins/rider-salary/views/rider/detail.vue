@@ -204,6 +204,10 @@ onMounted(async () => {
   if (typeof tab === 'string' && ['binding', 'employ', 'overview'].includes(tab)) {
     activeTab.value = tab;
   }
+  const qMonth = route.query.month;
+  if (typeof qMonth === 'string' && /^\d{4}-\d{2}$/.test(qMonth)) {
+    month.value = qMonth;
+  }
   await loadRider();
   if (activeTab.value === 'overview') {
     await Promise.all([loadCalendar(), loadPayrolls()]);

@@ -31,6 +31,8 @@ import {
   orderImportTarget,
   pendingAdvanceRowTarget,
   pendingAdvancesViewAllTarget,
+  resignedWithOrdersRowTarget,
+  resignedWithOrdersViewAllTarget,
   stalePeriodCalcTarget,
   stalePeriodsViewAllTarget,
 } from '../scope-links';
@@ -185,6 +187,9 @@ function viewAllLink(block: DashboardAttentionBlock) {
   if (block.key === 'import_gaps') {
     return orderImportTarget(props.siteId, props.month);
   }
+  if (block.key === 'resigned_with_orders') {
+    return resignedWithOrdersViewAllTarget(props.siteId, props.month);
+  }
   return parseLink(block.link);
 }
 
@@ -241,6 +246,15 @@ function rowLink(
     }
     return pendingAdvancesViewAllTarget(props.siteId, props.month);
   }
+  if (block.key === 'resigned_with_orders') {
+    const riderId = Number(record.rider_id);
+    if (!(Number.isFinite(riderId) && riderId > 0)) return null;
+    return resignedWithOrdersRowTarget(
+      riderId,
+      props.siteId ?? Number(record.site_id) ?? undefined,
+      props.month,
+    );
+  }
   if (typeof record.link === 'string' && record.link) {
     return parseLink(record.link);
   }
@@ -251,15 +265,6 @@ function rowLink(
         return pendingAdvanceRowTarget(id, props.siteId, props.month);
       }
       return pendingAdvancesViewAllTarget(props.siteId, props.month);
-    }
-    case 'resigned_with_orders': {
-      const riderId = Number(record.rider_id);
-      return Number.isFinite(riderId) && riderId > 0
-        ? {
-            path: '/rider-salary/rider',
-            query: { rider_id: String(riderId) },
-          }
-        : parseLink(block.link);
     }
     default:
       return parseLink(block.link);
@@ -304,6 +309,7 @@ function blockTestId(key: string) {
   if (key === 'import_gaps') return 'ops-import-gap-wizard-that-day';
   if (key === 'no_plan_days') return 'ops-dashboard-no-plan-to-binding';
   if (key === 'stale_periods') return 'ops-dashboard-stale-to-calc';
+  if (key === 'resigned_with_orders') return 'ops-resigned-order-deeplink';
   return `dashboard-attention-${key}`;
 }
 
@@ -314,6 +320,7 @@ function viewAllTestId(key: string) {
   if (key === 'no_plan_days') return 'dashboard-no-plan-view-all';
   if (key === 'stale_periods') return 'dashboard-stale-view-all';
   if (key === 'pending_advances') return 'dashboard-advance-view-all';
+  if (key === 'resigned_with_orders') return 'dashboard-resigned-view-all';
   return undefined;
 }
 
@@ -324,6 +331,7 @@ function rowTestId(key: string) {
   if (key === 'no_plan_days') return 'dashboard-no-plan-row';
   if (key === 'stale_periods') return 'dashboard-stale-row';
   if (key === 'pending_advances') return 'dashboard-advance-row';
+  if (key === 'resigned_with_orders') return 'dashboard-resigned-row';
   return undefined;
 }
 </script>

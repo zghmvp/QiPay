@@ -37,7 +37,10 @@ import {
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
 import PageContainer from '../_shared/PageContainer.vue';
-import { periodStaleListParams } from '../dashboard/scope-links';
+import {
+  periodStaleListParams,
+  stalePeriodCalcTarget,
+} from '../dashboard/scope-links';
 import GenerateModal from './components/GenerateModal.vue';
 import PeriodDetail from './components/PeriodDetail.vue';
 import { useExportConfirm } from './components/use-export-confirm';
@@ -47,6 +50,10 @@ import {
   buildLockConfirmHint,
   isSiteLevelPeriod,
 } from './lock-confirm';
+import {
+  countReverseTargets,
+  reverseConfirmContent,
+} from './reverse-confirm';
 
 function isUserCancelled(error: unknown) {
   const msg = (error as Error)?.message;
@@ -271,18 +278,20 @@ async function onMarkPaid(row: PeriodResult) {
 }
 
 async function onReverse(row: PeriodResult) {
+  const detail = await getPeriodApi(row.id);
+  const counts = countReverseTargets(detail.payrolls ?? []);
   await confirm({
-    content:
-      '将为已定稿/已发薪的薪资单生成反冲单，原单标记已反冲，周期进入补发中。确认继续？',
+    content: reverseConfirmContent(counts),
     icon: 'warning',
   });
   const { reason } = await prompt({
-    extraHint: '反冲后需重新算薪才会生成补发单。',
+    extraHint: reverseConfirmContent(counts),
     title: '反冲补发原因',
   });
   const res = await reversePeriodApi(row.id, reason);
   message.success(`已生成 ${res.reversal_count} 张反冲单`);
-  onRefresh();
+  const calc = stalePeriodCalcTarget(row.id);
+  await router.push({ path: calc.path, query: calc.query });
 }
 
 async function onActionClick({
