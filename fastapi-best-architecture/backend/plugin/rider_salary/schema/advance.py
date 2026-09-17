@@ -26,6 +26,23 @@ class CreateMeAdvanceParam(SchemaBase):
     reason: str = Field(description='申请原因')
 
 
+class GetAdvanceQuota(SchemaBase):
+    """本月预支次数（管理端 / 骑手端同一口径）"""
+
+    monthly_advance_limit: int = Field(description='本月可预支次数上限')
+    used: int = Field(description='本月已占用次数')
+    remaining: int = Field(description='本月剩余次数')
+    month: str = Field(description='自然月 YYYY-MM')
+    rider_id: int | None = Field(None, description='骑手 ID')
+    site_id: int | None = Field(None, description='站点 ID')
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def limit(self) -> int:
+        """与 monthly_advance_limit 同值，计划口径 limit / used / remaining"""
+        return self.monthly_advance_limit
+
+
 class AdvanceTimelineItem(SchemaBase):
     """预支操作时间线"""
 

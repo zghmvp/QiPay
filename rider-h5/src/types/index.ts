@@ -236,10 +236,24 @@ export interface NoticeDetail {
   updated_time: string | null
 }
 
+export interface AdvanceMonthlyQuota {
+  monthly_advance_limit: number
+  used: number
+  remaining: number
+  month?: string
+  limit?: number
+  rider_id?: number
+  site_id?: number
+}
+
 export interface AdvanceLimit {
   limit: MoneyValue
   used_pending_amount: MoneyValue
   available: MoneyValue
+  monthly_advance_limit?: AdvanceMonthlyQuota | number
+  used?: number
+  remaining?: number
+  month?: string
 }
 
 export interface AdvanceTimelineItem {

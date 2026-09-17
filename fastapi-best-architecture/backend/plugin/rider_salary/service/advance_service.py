@@ -23,8 +23,14 @@ from backend.plugin.rider_salary.schema.advance import (
     AdvanceReasonParam,
     CreateMeAdvanceParam,
     GetAdvanceDetail,
+    GetAdvanceQuota,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
+from backend.plugin.rider_salary.utils.advance_quota import (
+    assert_monthly_advance_quota,
+    monthly_advance_quota,
+    shanghai_natural_month,
+)
 from backend.plugin.rider_salary.utils.audit import require_reason
 from backend.plugin.rider_salary.utils.deps import get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import write_workbook
@@ -352,6 +358,12 @@ class AdvanceService:
         in_flight = await advance_dao.list_in_flight(db, rider.id)
         assert_no_in_flight(len(in_flight))
         site = await site_dao.get(db, rider.site_id)
+        quota = await self.monthly_quota_for_rider(db=db, rider=rider, site=site)
+        assert_monthly_advance_quota(
+            limit=int(quota['monthly_advance_limit']),
+            used=int(quota['used']),
+            month=quota.get('month'),
+        )
         limit = resolve_advance_limit(
             getattr(rider, 'advance_limit', None),
             getattr(site, 'advance_limit', None) if site else None,
@@ -402,8 +414,41 @@ class AdvanceService:
         extras = await self._enrich(db, rows)
         return [GetAdvanceDetail.model_validate(extras[row.id]) for row in rows]
 
-    async def limit_for_rider(self, *, db: AsyncSession, rider: Any) -> dict[str, Decimal]:
-        """预支额度"""
+    async def monthly_quota_for_rider(
+        self,
+        *,
+        db: AsyncSession,
+        rider: Any,
+        site: Any | None = None,
+    ) -> dict[str, Any]:
+        """当前自然月次数额度（monthly_advance_limit / used / remaining）"""
+        if site is None:
+            site = await site_dao.get(db, rider.site_id)
+        start, end, month = shanghai_natural_month()
+        consuming = await advance_dao.list_quota_consuming_in_month(db, rider.id, start, end)
+        site_limit = getattr(site, 'monthly_advance_limit', None) if site else None
+        quota = monthly_advance_quota(limit=site_limit, used=len(consuming), month=month)
+        quota['rider_id'] = getattr(rider, 'id', None)
+        quota['site_id'] = getattr(rider, 'site_id', None)
+        return quota
+
+    async def quota_for_rider_id(
+        self,
+        *,
+        db: AsyncSession,
+        request: Request,
+        rider_id: int,
+    ) -> GetAdvanceQuota:
+        """管理端：GET /advances/quota?rider_id="""
+        rider = await rider_dao.get(db, rider_id)
+        if not rider:
+            raise errors.NotFoundError(msg='骑手不存在')
+        await self._assert_site(db, request, rider.site_id, action_msg='无权访问该站点数据')
+        data = await self.monthly_quota_for_rider(db=db, rider=rider)
+        return GetAdvanceQuota.model_validate(data)
+
+    async def limit_for_rider(self, *, db: AsyncSession, rider: Any) -> dict[str, Any]:
+        """预支额度（金额 + 本月次数，次数字段与 /advances/quota 相同）"""
         site = await site_dao.get(db, rider.site_id)
         limit = resolve_advance_limit(
             getattr(rider, 'advance_limit', None),
@@ -412,7 +457,16 @@ class AdvanceService:
         in_flight = await advance_dao.list_in_flight(db, rider.id)
         used = q2(sum((row.amount for row in in_flight), ZERO))
         available = q2(max(limit - used, ZERO))
-        return {'limit': limit, 'used_pending_amount': used, 'available': available}
+        quota = await self.monthly_quota_for_rider(db=db, rider=rider, site=site)
+        return {
+            'limit': limit,
+            'used_pending_amount': used,
+            'available': available,
+            'monthly_advance_limit': quota['monthly_advance_limit'],
+            'used': quota['used'],
+            'remaining': quota['remaining'],
+            'month': quota['month'],
+        }
 
     async def _models_from_page_items(self, db: AsyncSession, items: list[Any]) -> list[RiderSalaryAdvance]:
         ids: list[int] = []
