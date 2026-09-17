@@ -92,7 +92,7 @@ export async function run({ page, helpers, config }) {
 
   await page.goto(
     `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
   );
 
   await requireTestId(page, 'ops-dashboard-lock-overdue-visible', '未见 #27 块 ops-dashboard-lock-overdue-visible');
@@ -123,7 +123,12 @@ export async function run({ page, helpers, config }) {
     throw new Error('倒计时窗口合同：过期可见、+10 不可见');
   }
 
-  await page.getByTestId('dashboard-lock-overdue').first().click();
+  await page
+    .getByTestId('ops-dashboard-lock-overdue-visible')
+    .locator('tr')
+    .filter({ has: page.getByTestId('dashboard-lock-overdue') })
+    .first()
+    .click();
   const rowUrl = await waitPath(page, /\/rider-salary\/period/);
   if (!rowUrl.includes(String(OVERDUE_ID)) && !queryOf(rowUrl).get('id') && !queryOf(rowUrl).get('period_id')) {
     throw new Error(`点行须带 period_id/id。实际 ${rowUrl}`);
@@ -131,7 +136,7 @@ export async function run({ page, helpers, config }) {
 
   await page.goto(
     `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
   );
   await requireTestId(page, 'ops-dashboard-lock-overdue-visible', '返回工作台未见锁账倒计时块');
   await page.getByTestId('ops-dashboard-lock-overdue-visible').first().click();

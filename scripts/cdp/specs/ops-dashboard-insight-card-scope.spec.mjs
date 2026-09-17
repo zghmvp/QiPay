@@ -61,7 +61,7 @@ export async function run({ page, helpers, config }) {
 
   await page.goto(
     `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
   );
   await requireTestId(page, 'ops-dashboard-insight-card-scope', '未见根钩子 ops-dashboard-insight-card-scope');
 
@@ -125,7 +125,7 @@ export async function run({ page, helpers, config }) {
   for (const card of cards) {
     await page.goto(
       `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
-      { waitUntil: 'networkidle', timeout: 60000 },
+      { waitUntil: 'domcontentloaded', timeout: 60000 },
     );
     await requireTestId(page, card.testId, `未见 #27 卡 ${card.testId}`);
     await page.getByTestId(card.testId).first().click();
@@ -135,7 +135,7 @@ export async function run({ page, helpers, config }) {
 
   await page.goto(
     `${config.adminUrl}/rider-salary/dashboard?month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
   );
   await requireTestId(page, INSIGHT_CARD_IDS.monthOrders, '无站仍须见本月单量卡');
   await page.getByTestId(INSIGHT_CARD_IDS.monthOrders).first().click();
@@ -191,7 +191,7 @@ export async function run({ page, helpers, config }) {
   });
   await page.goto(
     `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
   );
   await requireTestId(page, 'dashboard-empty-import', '未见 #27 空态 dashboard-empty-import，不得 skip');
   const empty = page.getByTestId('dashboard-empty-import').first();
@@ -204,6 +204,7 @@ export async function run({ page, helpers, config }) {
   assertSiteMonthInUrl(emptyUrl, { siteId, month, monthViaWindow: true, label: '空态去导入订单' });
 
   await page.unroute('**/api/v1/rider-salary/dashboard/summary**').catch(() => {});
+  await page.unroute('**/api/v1/rider-salary/recalc-jobs/**').catch(() => {});
   await page.route('**/api/v1/rider-salary/dashboard/summary**', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.continue();
@@ -237,8 +238,13 @@ export async function run({ page, helpers, config }) {
   });
   await page.goto(
     `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
   );
+  // 等洞察卡就绪后再展开默认折叠的「洞察」panel（Top 在体内）
+  await requireTestId(page, INSIGHT_CARD_IDS.onJob, 'Top 阶段未见洞察卡，空态/mock 可能未卸干净');
+  const insightHeader = page.locator('.ant-collapse-header').filter({ hasText: /洞察/ });
+  await insightHeader.first().waitFor({ state: 'visible', timeout: 15000 });
+  await insightHeader.first().click();
   await requireTestId(page, 'dashboard-top-riders', '未见 dashboard-top-riders');
   await page.getByTestId('dashboard-top-riders').locator('tr, .ant-table-row').nth(1).click();
   const calUrl = await waitPath(page, /\/rider-salary\/calendar/);
@@ -250,7 +256,7 @@ export async function run({ page, helpers, config }) {
   riderReqs.length = 0;
   await page.goto(
     `${config.adminUrl}/rider-salary/rider?status=on_job&site_id=${siteId}&month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
   );
   await requireTestId(page, 'rider-list-status-scope', '未见 rider-list-status-scope');
   await page.waitForTimeout(800);

@@ -262,7 +262,7 @@ function viewAllTestId(key: string) {
         </template>
         <a-table
           :columns="columns(block.key)"
-          :custom-row="
+          :on-row="
             (record: Record<string, unknown>) => ({
               class: 'cursor-pointer',
               onClick: () => onRowClick(block, record),

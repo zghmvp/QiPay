@@ -88,7 +88,7 @@ export async function run({ page, helpers, config }) {
   await trialBtn.click();
   await page.getByTestId('trial-mode').waitFor({ state: 'visible', timeout: 30000 });
 
-  const fullBtn = page.getByText('整版试算');
+  const fullBtn = page.getByTestId('trial-mode').getByText('整版试算', { exact: true });
   if (await fullBtn.count()) await fullBtn.click();
   await requireTestId(page, 'ops-plan-activate-not-full-trial', '整版模式须见 ops-plan-activate-not-full-trial');
   await requireTestId(page, 'trial-full-not-payroll', '未见 trial-full-not-payroll');
@@ -103,7 +103,7 @@ export async function run({ page, helpers, config }) {
     throw new Error('整版试算不得展示 trial-matches-official-calculate 当作出账承诺');
   }
 
-  const bindingBtn = page.getByText('按绑定分段试算');
+  const bindingBtn = page.getByTestId('trial-mode').getByText('按绑定分段试算', { exact: true });
   if (await bindingBtn.count()) await bindingBtn.click();
   await requireTestId(page, 'trial-binding-fixed-full-amount', '未见 trial-binding-fixed-full-amount');
   const bindCopy = await page.getByTestId('trial-binding-fixed-full-amount').innerText();

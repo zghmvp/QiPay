@@ -36,7 +36,7 @@ function openRider(row: DashboardRiderRank) {
     <a-card v-if="top.length" size="small" title="单量 Top 10">
       <a-table
         :columns="columns"
-        :custom-row="(record: DashboardRiderRank) => ({
+        :on-row="(record: DashboardRiderRank) => ({
           onClick: () => openRider(record),
           style: { cursor: 'pointer' },
         })"
@@ -49,7 +49,7 @@ function openRider(row: DashboardRiderRank) {
     <a-card v-if="bottom.length" size="small" title="低产 5 名">
       <a-table
         :columns="columns"
-        :custom-row="(record: DashboardRiderRank) => ({
+        :on-row="(record: DashboardRiderRank) => ({
           onClick: () => openRider(record),
           style: { cursor: 'pointer' },
         })"
