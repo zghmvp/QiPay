@@ -3,6 +3,11 @@ import type { EngineField, EngineFunction } from '../../../types/engine';
 
 import { computed, ref } from 'vue';
 
+import {
+  formulaFieldLabel,
+  isManualPeriodField,
+} from '../helpers';
+
 const props = withDefaults(
   defineProps<{
     disabled?: boolean;
@@ -45,10 +50,16 @@ function insertNumber() {
         <a-tag
           v-for="item in stageFields"
           :key="item.name"
+          :color="isManualPeriodField(item.name) ? 'orange' : undefined"
+          :data-testid="
+            isManualPeriodField(item.name)
+              ? 'plan-manual-field-formula-chip'
+              : undefined
+          "
           class="cursor-pointer"
           @click="insert(item.name)"
         >
-          {{ item.name }}
+          {{ formulaFieldLabel(item.name) }}
         </a-tag>
       </div>
     </div>

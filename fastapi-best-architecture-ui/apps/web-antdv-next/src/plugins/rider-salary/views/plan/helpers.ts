@@ -300,6 +300,63 @@ export function canEditVersion(status?: string, isUsed?: boolean) {
   return status === 'draft' && !isUsed;
 }
 
+export const MANUAL_PERIOD_FIELDS = ['本期手工奖', '本期手工惩'] as const;
+
+export const MANUAL_NOT_DOUBLE_COPY =
+  '本期手工奖 / 本期手工惩可作条件；加进公式 = 双计。手工明细已入账，再加会双计。';
+
+export const MANUAL_OK_AS_CONDITION_COPY =
+  '本期手工奖 / 本期手工惩可作条件，不会双计。';
+
+export const MANUAL_ADDED_AS_FORMULA_COPY =
+  '加进公式会把已入账手工明细再计一次（双计）。请改到条件，或只在保底里相减。';
+
+export function isManualPeriodField(name?: null | string): boolean {
+  return name === '本期手工奖' || name === '本期手工惩';
+}
+
+export function formulaFieldLabel(name: string, unit?: null | string): string {
+  if (isManualPeriodField(name)) {
+    return `${name}（可作条件；加进公式=双计）`;
+  }
+  return unit ? `${name}（${unit}）` : name;
+}
+
+export function conditionFieldLabel(name: string, unit?: null | string): string {
+  if (isManualPeriodField(name)) {
+    return `${name}（可作条件）`;
+  }
+  return unit ? `${name}（${unit}）` : name;
+}
+
+/** 字段出现在求和 / 乘除 / 单独成项 = 加项；仅跟在减号后（保底门槛）不是加项 */
+export function manualFieldUsedAsAddend(expr: string): boolean {
+  const compact = expr.replace(/\s+/g, '');
+  for (const field of MANUAL_PERIOD_FIELDS) {
+    let from = 0;
+    while (from < compact.length) {
+      const idx = compact.indexOf(field, from);
+      if (idx < 0) break;
+      const before = idx > 0 ? compact[idx - 1] : undefined;
+      const minusBefore = before === '−' || before === '-';
+      if (!minusBefore) return true;
+      from = idx + field.length;
+    }
+  }
+  return false;
+}
+
+export function formulaAddsManualField(
+  formula: null | Record<string, unknown> | undefined,
+): boolean {
+  if (!formula) return false;
+  const kind = formulaKindOf(formula);
+  if (kind === '字段乘单价' || kind === '阶梯' || kind === '固定金额') {
+    return isManualPeriodField(String(formula.字段 ?? ''));
+  }
+  return manualFieldUsedAsAddend(String(formula.表达式 ?? ''));
+}
+
 export const FULL_TRIAL_NOT_PAYROLL = '整版试算通过 ≠ 按当前绑定出账';
 
 export const BINDING_FIXED_FULL_AMOUNT =

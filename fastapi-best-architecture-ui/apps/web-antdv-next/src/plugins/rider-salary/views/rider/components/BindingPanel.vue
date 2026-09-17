@@ -228,7 +228,7 @@ defineExpose({ reload });
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-4" data-testid="rider-binding-timeline">
     <a-alert type="info" show-icon>
       <template #message>当前生效方案（今日）</template>
       <template #description>
@@ -314,7 +314,11 @@ defineExpose({ reload });
       </div>
     </a-spin>
 
-    <div v-access:code="'rs:rider:binding'" class="rounded border p-3">
+    <div
+      v-access:code="'rs:rider:binding'"
+      class="rounded border p-3"
+      data-testid="rider-binding-form"
+    >
       <div class="mb-2 font-medium">新增绑定</div>
       <Form />
       <div class="mt-2 flex flex-wrap gap-2">
