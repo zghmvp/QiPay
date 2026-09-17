@@ -8,6 +8,7 @@ import { useVbenModal } from '@vben/common-ui';
 import { message } from 'antdv-next';
 
 import { getOrderListApi } from '../../../api/order';
+import { getPeriodApi } from '../../../api/period';
 
 const title = ref('导出周期薪资');
 const attentionCount = ref(0);
@@ -51,31 +52,48 @@ const [Modal, modalApi] = useVbenModal({
     attentionCount.value = 0;
     attentionError.value = '';
     title.value = data?.title || '导出周期薪资';
-    if (!data?.siteId || !data.dateFrom || !data.dateTo) {
+    if (!data) {
       attentionError.value = '缺少站点或周期日期，无法统计需关注条数';
       return;
     }
     attentionLoading.value = true;
-    void getOrderListApi({
+    void loadAttentionCount(data).finally(() => {
+      attentionLoading.value = false;
+    });
+  },
+});
+
+async function loadAttentionCount(data: ExportConfirmOptions) {
+  if (data.periodId) {
+    try {
+      const period = await getPeriodApi(data.periodId);
+      if (typeof period.attention_order_count === 'number') {
+        attentionCount.value = period.attention_order_count;
+        return;
+      }
+    } catch {
+      /* 回退订单 attention 计数 */
+    }
+  }
+  if (!data.siteId || !data.dateFrom || !data.dateTo) {
+    attentionError.value = '缺少站点或周期日期，无法统计需关注条数';
+    return;
+  }
+  try {
+    const res = await getOrderListApi({
       attention: true,
       date_from: data.dateFrom,
       date_to: data.dateTo,
       page: 1,
       site_id: data.siteId,
       size: 1,
-    })
-      .then((res) => {
-        attentionCount.value = Number(res?.total ?? 0) || 0;
-      })
-      .catch(() => {
-        attentionError.value = '需关注条数暂时无法获取，默认不排除。';
-        attentionCount.value = 0;
-      })
-      .finally(() => {
-        attentionLoading.value = false;
-      });
-  },
-});
+    });
+    attentionCount.value = Number(res?.total ?? 0) || 0;
+  } catch {
+    attentionError.value = '需关注条数暂时无法获取，默认不排除。';
+    attentionCount.value = 0;
+  }
+}
 
 const admitCopy = computed(
   () => `本文件含需关注 ${attentionCount.value} 条。排除只影响文件行，不改应发/实发，也不是打款文件。`,

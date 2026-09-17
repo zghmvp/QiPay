@@ -160,6 +160,7 @@ async function exportMonth() {
     const { excludeAttention } = await promptExport({
       dateFrom,
       dateTo,
+      periodId: periods.length === 1 ? periods[0]?.id : undefined,
       siteId: siteId.value,
       title: `导出 ${month.value} 明细`,
     });

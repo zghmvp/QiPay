@@ -26,7 +26,7 @@ import {
 import { getRiderListApi } from '../../api/rider';
 import MoneyText from '../../components/MoneyText.vue';
 import StatusTag from '../../components/StatusTag.vue';
-import { PERIOD_STATUS_OPTIONS } from '../../constants/enums';
+import { CALC_STATUS_OPTIONS, PERIOD_STATUS_OPTIONS, enumLabel } from '../../constants/enums';
 import PageContainer from '../_shared/PageContainer.vue';
 
 const route = useRoute();
@@ -50,7 +50,6 @@ const ridersLoading = ref(false);
 
 const lastResult = ref<CalculatePeriodResult | null>(null);
 const sessionFailed = ref<CalculateRiderFailure[]>([]);
-const queuedPending = ref(false);
 
 const periodId = computed(() => Number(route.params.id));
 
@@ -65,6 +64,41 @@ const startDisabled = computed(() => {
   if (periodLocked.value) return true;
   if (running.value) return true;
   return false;
+});
+
+const calcStatus = computed(
+  () =>
+    precheck.value?.calc_status ||
+    period.value?.last_calc_status ||
+    lastResult.value?.calc_status ||
+    null,
+);
+
+const calcStatusLabel = computed(() => {
+  const label =
+    precheck.value?.calc_status_label ||
+    period.value?.last_calc_status_label ||
+    lastResult.value?.calc_status_label;
+  if (label) return label;
+  const fromEnum = enumLabel(CALC_STATUS_OPTIONS, calcStatus.value);
+  return fromEnum === '—' ? '' : fromEnum;
+});
+
+const calcStatusMessage = computed(
+  () =>
+    precheck.value?.calc_status_message ||
+    period.value?.last_calc_status_message ||
+    '',
+);
+
+const calcInFlight = computed(() => {
+  if (running.value) return true;
+  return calcStatus.value === 'queued' || calcStatus.value === 'running';
+});
+
+const calcFailed = computed(() => {
+  if ((sessionFailed.value?.length ?? 0) > 0) return true;
+  return calcStatus.value === 'failed';
 });
 
 function q(extra: Record<string, string | number | undefined>) {
@@ -209,28 +243,50 @@ async function refreshPrecheckAndResult(options?: { silent?: boolean }) {
       getPeriodApi(periodId.value),
       calcPrecheckApi(periodId.value),
     ]);
-    period.value = periodRes;
-    precheck.value = precheckRes;
-    const persisted = periodRes.last_calc_failures ?? [];
-    if (persisted.length) {
-      sessionFailed.value = persisted;
-    }
-    if (lastResult.value) {
-      lastResult.value = {
-        ...lastResult.value,
-        failed: persisted.length ? persisted : lastResult.value.failed,
-        queued: queuedPending.value || lastResult.value.queued,
-      };
-    } else if (persisted.length) {
-      lastResult.value = {
-        calculated: 0,
-        failed: persisted,
-        queued: queuedPending.value,
-        warnings: [],
-      };
-    }
+    applyCalcSnapshot(periodRes, precheckRes);
   } finally {
     if (!options?.silent) loading.value = false;
+  }
+}
+
+function applyCalcSnapshot(
+  periodRes: PeriodWithPayrolls,
+  precheckRes: CalcPrecheckResult,
+) {
+  period.value = periodRes;
+  precheck.value = precheckRes;
+  const persisted = periodRes.last_calc_failures ?? [];
+  // 刷新以周期/预检 last_calc_status* 为准，不把 POST calculate 的瞬时 queued 当成终态
+  const persistedStatus =
+    precheckRes.calc_status || periodRes.last_calc_status || null;
+  const status =
+    persistedStatus ||
+    lastResult.value?.calc_status ||
+    (lastResult.value?.queued ? 'queued' : null);
+  const inFlight = status === 'queued' || status === 'running';
+  let failed = persisted;
+  if (
+    !persisted.length &&
+    inFlight &&
+    (lastResult.value?.failed?.length ?? 0) > 0
+  ) {
+    failed = lastResult.value?.failed ?? [];
+  }
+  sessionFailed.value = failed;
+  const label =
+    precheckRes.calc_status_label ||
+    periodRes.last_calc_status_label ||
+    lastResult.value?.calc_status_label ||
+    enumLabel(CALC_STATUS_OPTIONS, status);
+  if (status || failed.length || lastResult.value) {
+    lastResult.value = {
+      calc_status: status,
+      calc_status_label: label === '—' ? null : label,
+      calculated: lastResult.value?.calculated ?? 0,
+      failed,
+      queued: inFlight,
+      warnings: lastResult.value?.warnings ?? [],
+    };
   }
 }
 
@@ -277,18 +333,7 @@ async function loadPage() {
       getPeriodApi(periodId.value),
       calcPrecheckApi(periodId.value),
     ]);
-    period.value = periodRes;
-    precheck.value = precheckRes;
-    const persisted = periodRes.last_calc_failures ?? [];
-    if (persisted.length) {
-      sessionFailed.value = persisted;
-      lastResult.value = {
-        calculated: lastResult.value?.calculated ?? 0,
-        failed: persisted,
-        queued: lastResult.value?.queued ?? false,
-        warnings: lastResult.value?.warnings ?? [],
-      };
-    }
+    applyCalcSnapshot(periodRes, precheckRes);
     await loadRiders(
       periodRes.site_id,
       periodRes.rider_id ? periodRes.rider_id : undefined,
@@ -306,14 +351,17 @@ async function onStartCalculate() {
   running.value = true;
   lastResult.value = null;
   sessionFailed.value = [];
-  queuedPending.value = false;
   try {
     const res = await calculatePeriodApi(period.value.id, {
       rider_ids: riderIds.value.length ? riderIds.value : null,
     });
-    lastResult.value = res;
+    lastResult.value = {
+      ...res,
+      calc_status: res.calc_status || (res.queued ? 'queued' : null),
+      calc_status_label:
+        res.calc_status_label || (res.queued ? '排队中' : res.calc_status_label),
+    };
     sessionFailed.value = res.failed ?? [];
-    queuedPending.value = Boolean(res.queued);
     const failedCount = sessionFailed.value.length;
 
     if (res.queued) {
@@ -368,7 +416,6 @@ watch(
   () => {
     lastResult.value = null;
     sessionFailed.value = [];
-    queuedPending.value = false;
     void loadPage();
   },
 );
@@ -440,6 +487,11 @@ onMounted(() => {
           </a-descriptions-item>
           <a-descriptions-item label="应发合计">
             <MoneyText :value="period.gross_total" />
+          </a-descriptions-item>
+          <a-descriptions-item label="最近算薪">
+            <span data-testid="period-calc-status-label">
+              {{ calcStatusLabel || '—' }}
+            </span>
           </a-descriptions-item>
         </a-descriptions>
       </a-card>
@@ -573,37 +625,54 @@ onMounted(() => {
         data-testid="period-calc-result"
       >
         <a-alert
-          v-if="running && !lastResult"
+          v-if="calcInFlight"
           class="mb-3"
           show-icon
           type="info"
           data-testid="period-calc-queued"
-          message="排队中/计算中"
-          description="正在计算。请稍后查看结果；失败人数大于 0 时不会显示完成。"
+          :message="calcStatusLabel || '排队中/计算中'"
+          :description="
+            calcStatusMessage ||
+            '请点「刷新预检/结果」查看是否算完，不要把转入后台当成已出账。'
+          "
         />
-        <template v-else-if="lastResult">
-          <a-alert
-            v-if="queuedPending || lastResult.queued || running"
-            class="mb-3"
-            show-icon
-            type="info"
-            data-testid="period-calc-queued"
-            message="排队中/计算中"
-            description="已转入后台或正在计算。请点「刷新预检/结果」查看是否算完，不要把转入后台当成已出账。"
-          />
-          <a-alert
-            v-else
-            class="mb-3"
-            show-icon
-            :type="(lastResult.failed?.length ?? 0) > 0 ? 'warning' : 'success'"
-            :message="`成功 ${lastResult.calculated} · 失败 ${lastResult.failed?.length ?? 0}`"
-          />
+        <a-alert
+          v-else-if="calcFailed"
+          class="mb-3"
+          show-icon
+          type="warning"
+          data-testid="period-calc-status"
+          :message="calcStatusLabel || '失败'"
+          :description="
+            calcStatusMessage ||
+            `成功 ${lastResult?.calculated ?? 0} · 失败 ${sessionFailed.length}`
+          "
+        />
+        <a-alert
+          v-else-if="calcStatus === 'done'"
+          class="mb-3"
+          show-icon
+          type="success"
+          data-testid="period-calc-status"
+          :message="calcStatusLabel || '完成'"
+          :description="
+            calcStatusMessage ||
+            `成功 ${lastResult?.calculated ?? 0} · 失败 0`
+          "
+        />
+        <a-alert
+          v-else-if="lastResult"
+          class="mb-3"
+          show-icon
+          :type="(lastResult.failed?.length ?? 0) > 0 ? 'warning' : 'success'"
+          :message="`成功 ${lastResult.calculated} · 失败 ${lastResult.failed?.length ?? 0}`"
+        />
 
-          <div
-            v-if="sessionFailed.length"
-            class="mb-4"
-            data-testid="period-calc-failed"
-          >
+        <div
+          v-if="sessionFailed.length"
+          class="mb-4"
+          data-testid="period-calc-failed"
+        >
             <div class="mb-2 font-medium text-red-600">失败清单（主）</div>
             <a-table
               size="small"
@@ -652,14 +721,13 @@ onMounted(() => {
               </template>
             </a-table>
           </div>
-          <a-empty
-            v-else-if="!lastResult.queued"
-            description="无失败骑手"
-            class="mb-2"
-          />
-        </template>
         <a-empty
-          v-else
+          v-else-if="(lastResult || calcStatus) && !calcInFlight"
+          description="无失败骑手"
+          class="mb-2"
+        />
+        <a-empty
+          v-else-if="!calcInFlight && !lastResult && !calcStatus"
           description="尚未开算；点「开始算薪」后在此展示本次结果。上次失败会在刷新后保留。"
         />
       </a-card>

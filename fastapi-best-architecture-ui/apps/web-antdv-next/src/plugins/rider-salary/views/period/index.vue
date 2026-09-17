@@ -254,6 +254,7 @@ async function onActionClick({
       const { excludeAttention } = await promptExport({
         dateFrom: row.start_date,
         dateTo: row.end_date,
+        periodId: row.id,
         siteId: row.site_id,
         title: `导出 ${row.start_date} ~ ${row.end_date}`,
       });

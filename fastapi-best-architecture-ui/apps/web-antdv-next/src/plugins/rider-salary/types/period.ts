@@ -33,7 +33,11 @@ export interface PeriodResult {
 }
 
 export interface PeriodWithPayrolls extends PeriodResult {
+  attention_order_count?: number;
   last_calc_failures?: CalculateRiderFailure[];
+  last_calc_status?: null | string;
+  last_calc_status_label?: null | string;
+  last_calc_status_message?: null | string;
   payrolls: PayrollSummary[];
 }
 
@@ -81,9 +85,13 @@ export interface CalculateRiderFailure {
 }
 
 export interface CalculatePeriodResult {
+  calc_status?: null | string;
+  calc_status_label?: null | string;
   calculated: number;
   failed?: CalculateRiderFailure[];
   queued: boolean;
+  sync_limit?: number;
+  target_rider_count?: number;
   warnings: string[];
 }
 
@@ -108,11 +116,16 @@ export interface CalcPrecheckWarning {
 }
 
 export interface CalcPrecheckResult {
+  attention_order_count?: number;
   blockers: CalcPrecheckBlocker[];
+  calc_status?: null | string;
+  calc_status_label?: null | string;
+  calc_status_message?: null | string;
   can_run: boolean;
   eligible_rider_count: number;
   period_id: number;
   stale_count: number;
+  sync_limit?: number;
   warnings: CalcPrecheckWarning[];
 }
 
