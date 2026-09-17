@@ -1,0 +1,37 @@
+{
+  "feature": "cdp-admin-day-uncalculated-not-zero",
+  "expected": {
+    "skip_if_missing": false,
+    "only_locks_uncalculated_day_empty_state": true,
+    "formula_amount_label": "公式金额",
+    "net_label": "净额",
+    "uncalculated_copy": ["未算薪", "尚未算薪"],
+    "order_not_in_calc_copy": ["未进本次算薪", "尚未进本次算薪", "尚未算薪"],
+    "bare_zero_without_uncalculated_is_fail": true,
+    "empty_amount_dash_or_uncalculated_ok": true,
+    "hit_none_only_is_fail": "无命中项",
+    "withhold_into_daily_manual_without_hint_is_fail": true,
+    "withhold_hint": "代扣不进日手工",
+    "live_calculate_to_persist_is_fail": true,
+    "spread_period_into_daily_net_is_fail": true,
+    "change_gross_net_or_gold_is_fail": true,
+    "assert_cycle13_chip_landing": false,
+    "assert_cycle14_calculated_day_copy": false,
+    "do_not_assert_calendar_period_chip": true,
+    "do_not_assert_calendar_view_period": true,
+    "do_not_assert_period_item_not_daily": true,
+    "do_not_relock_cycle13_must2": true,
+    "do_not_relock_cycle14_must5": true,
+    "testid_block": "cdp-admin-day-uncalculated-not-zero",
+    "testid_formula": "day-drawer-formula-amount",
+    "testid_net": "day-drawer-net",
+    "testid_note": "day-drawer-uncalculated",
+    "testid_order": "day-drawer-order-not-in-calc",
+    "helper_copy": "isUncalculatedEmptyAmount",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

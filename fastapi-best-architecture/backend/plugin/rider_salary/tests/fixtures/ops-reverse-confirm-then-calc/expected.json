@@ -1,0 +1,35 @@
+{
+  "feature": "ops-reverse-confirm-then-calc",
+  "expected": {
+    "skip_if_missing": false,
+    "must_drive_reverse_confirm": true,
+    "must_land_this_period_calc_after_confirm": true,
+    "copy_only_without_landing_is_fail": true,
+    "must_show_reversal_count": true,
+    "must_show_involved_rider_count": true,
+    "numbers_from_backend_preflight": true,
+    "frontend_must_not_copy_list_rider_count": true,
+    "window_full_rider_count_is_fail": true,
+    "period_list_without_calc_entry_is_fail": true,
+    "reopened_is_legal": true,
+    "do_not_open_pending_reissue_block": true,
+    "do_not_change_reverse_predicate": true,
+    "do_not_change_decision_29": true,
+    "do_not_rewrite_cycle13_lock_skip_m": true,
+    "do_not_make_payout": true,
+    "q14_2_copy_only_not_enough": true,
+    "be_preflight_helper": "reverse_preflight",
+    "testid_block": "ops-reverse-confirm-then-calc",
+    "testid_confirm": "period-reverse-confirm",
+    "testid_count": "period-reverse-count",
+    "testid_rider_count": "period-reverse-rider-count",
+    "testid_landing": "period-calc-title",
+    "helper_confirm": "isReverseConfirmScope",
+    "helper_landing": "isCoveringCalcLanding",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "feature": "ops-order-fix-shows-stale",
+  "expected": {
+    "skip_if_missing": false,
+    "must_drive_order_drawer": true,
+    "api_green_instead_of_drawer_is_fail": true,
+    "toast_only_without_stale_is_fail": true,
+    "stale_copy": ["需重算", "未出账"],
+    "fix_only_toast_is_fail": ["已纠错订单", "已补录订单"],
+    "must_land_covering_open_or_reopened_calc": true,
+    "no_covering_period_goes_to_site_month_list": true,
+    "wrong_site_or_period_is_fail": true,
+    "period_list_guess_is_fail": true,
+    "payroll_already_updated_is_fail": true,
+    "auto_calculate_is_fail": true,
+    "writing_still_422_is_fail": true,
+    "writing_skip_errors_is_fail": true,
+    "q15_1_toast_only_not_enough": true,
+    "do_not_relock_cycle13_wizard_file": true,
+    "do_not_relock_cycle14_skip_errors": true,
+    "do_not_use_wizard_result_step": true,
+    "testid_block": "ops-order-fix-shows-stale",
+    "testid_drawer": "order-form-drawer",
+    "testid_stale": "order-fix-stale-copy",
+    "testid_goto": "order-fix-goto-calc",
+    "helper_stale_copy": "isStaleFixCopy",
+    "helper_covering_calc": "isCoveringCalcLanding",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}
