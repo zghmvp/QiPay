@@ -16,6 +16,7 @@ import {
   calcGross,
   trialGross,
 } from '../cycle3-lib.mjs';
+import { assertActivateNotFullTrial } from '../cycle4-lib.mjs';
 
 export const name = 'trial-equals-calc';
 
@@ -147,6 +148,18 @@ export async function run({ page, helpers, config }) {
   if (calcPosts.length && /\/period\/\d+\/calculate/.test(url) === false) {
     throw new Error('列表算薪不得在 Modal 里直接 POST /calculate');
   }
+
+  await page.goto(`${config.adminUrl}/rider-salary/plan`, {
+    waitUntil: 'networkidle',
+    timeout: 60000,
+  });
+  const planRow = page.locator('.vxe-body--row, tr').filter({ hasText: /FIX_C03|底薪 \+ 单量阶梯/ }).first();
+  const openTrial = (await planRow.count())
+    ? planRow.getByRole('button', { name: /^试算$/ }).first()
+    : page.getByRole('button', { name: /^试算$/ }).first();
+  await openTrial.click();
+  await page.getByTestId('trial-mode').waitFor({ state: 'visible', timeout: 20000 });
+  await assertActivateNotFullTrial(page);
 
   helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());
   await helpers.shot(page, 'cdp-trial-equals-calc');

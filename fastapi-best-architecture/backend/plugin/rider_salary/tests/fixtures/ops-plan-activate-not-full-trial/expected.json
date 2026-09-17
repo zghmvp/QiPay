@@ -1,0 +1,38 @@
+{
+  "feature": "ops-plan-activate-not-full-trial",
+  "extends": "trial-equals-calc",
+  "expected": {
+    "skip_if_missing": false,
+    "full_version_pass_not_binding_promise": true,
+    "activate_consumes_binding_aware_or_hard_copy": true,
+    "hard_copy": "整版试算通过 ≠ 按当前绑定出账",
+    "binding_fixed_full_amount_copy": "每段各计一次全额",
+    "segment_full_amount_copy": "本段将按全额计一次",
+    "two_segment_fixed_2000_base_total": "4000.00",
+    "full_version_single_segment_fixed_2000": "2000.00",
+    "allocation_segment1_base": "933.33",
+    "do_not_forbid_full_month_single_segment_fixed_on_save": true,
+    "do_not_invent_case_no": true,
+    "do_not_gold_4629_33": true,
+    "do_not_gold_advance_800": true,
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    },
+    "do_not_relock_xor": true,
+    "do_not_relock_trial_equals_calc_product_sentence": true,
+    "testid_panel": "ops-plan-activate-not-full-trial",
+    "testid_full_not_payroll": "trial-full-not-payroll",
+    "testid_binding_full_amount": "trial-binding-fixed-full-amount",
+    "testid_activate": "plan-activate-not-full-trial",
+    "testid_trial_label": "plan-trial-label",
+    "testid_period_fixed_once": "period-fixed-amount-full-once",
+    "testid_matches_official": "trial-matches-official-calculate",
+    "forbid_green_trial_passed_as_payroll": "试算通过 ✓",
+    "binding_mode": "binding_segments",
+    "full_mode": "full_version",
+    "binding_trial_passed_false_blocks_activate": true,
+    "no_new_xor_or_gold_must_name": true
+  }
+}

@@ -25,15 +25,24 @@
  *   ops-rider-profile-to-payroll / ops-queued-calc-progress
  * Cycle 3 具名：ops-calc-success-vs-existing / ops-export-adjustment-sheet /
  *   trial-equals-calc / ops-plan-threshold-xor / ops-calc-rider-picker-not-truncated
- * 钩子对齐 #19+#24：period-export-* / period-export-adj-* / payroll-layers /
- *   period-calc-run-success / period-calc-payrolls /
- *   period-calc-riders-unselected-all / period-calc-riders-truncated /
+ * Cycle 4 具名：ops-dashboard-insight-card-scope / ops-calendar-month-export-confirm /
+ *   ops-dashboard-abnormal-attention-landing / ops-dashboard-lock-overdue-visible /
+ *   ops-plan-activate-not-full-trial（挂 trial-equals-calc 加一步，不新造 XOR/金标 Must 名）
+ * 钩子对齐 #19+#24+#27：period-export-* / period-export-adj-* /
+ *   period-export-period-row / calendar-export-month /
+ *   dashboard-insight-card-* / dashboard-empty-import / dashboard-top-riders /
+ *   rider-list-status-scope / dashboard-abnormal-view-all / order-attention-active /
+ *   dashboard-lock-title|overdue|remaining|view-all / period-lock-due-scope /
+ *   plan-activate-not-full-trial / trial-full-not-payroll /
+ *   trial-binding-fixed-full-amount / period-fixed-amount-full-once /
  *   trial-matches-official-calculate。
  * exclude_attention 须拿掉明细行（#20）；金标 C03/C04/C05A/C17 不得 skip。
  * Cycle 3：#23 后端 + #24 钩子不得 skip；C08/C05B/C11 金标；calc-riders 搜第 201 人。
+ * Cycle 4：#27 选择器缺失即红，不得 skip。金标 8200/7800/3500 不改。
  * trial-binding-segments 无数字 = FAIL（不得 WARN 过）。
  * 旧 import/stale spec 已改「完成」语义（夹具无方案骑手不得纯绿完成）。
- * 叠 PR #18+#19+#20+#21+#23+#24：Cycle 1/2 CDP + Cycle 3 前后端。
+ * 叠 PR #18+#19+#20+#21+#23+#24+#26+#27：Cycle 1/2/3 CDP + Cycle 4 前端钩子。
+ * #27 选择器缺失即红，不得 skip。金标 8200/7800/3500 不改。
  * queued 阈值替身：CDP_QUEUED_RIDER_THRESHOLD（默认 2）或 Playwright 拦截 queued=true。
  * 侧栏泄漏保持已知红，本 harness 不改断言。
  *
