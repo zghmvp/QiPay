@@ -49,11 +49,22 @@ export async function run({ page, helpers, config }) {
   }
 
   const preflight = await fetchLockPreflight(config.apiUrl, token, siteLevel.id);
-  for (const key of ['order_count', 'adjustment_count', 'payroll_count', 'lock_rider_count', 'skip_rider_count']) {
-    if (preflight?.[key] == null) {
+  const required = {
+    order_count: preflight?.order_count ?? preflight?.freeze_order_count,
+    adjustment_count: preflight?.adjustment_count ?? preflight?.freeze_adjustment_count,
+    payroll_count: preflight?.payroll_count ?? preflight?.freeze_payroll_count,
+    lock_rider_count: preflight?.lock_rider_count,
+    skip_rider_count: preflight?.skip_rider_count,
+  };
+  for (const [key, val] of Object.entries(required)) {
+    if (val == null) {
       throw new Error(`预检须返回 ${key}。人数=窗内全量且无跳过说明 = FAIL`);
     }
   }
+  // normalize short names for later asserts
+  preflight.order_count = required.order_count;
+  preflight.adjustment_count = required.adjustment_count;
+  preflight.payroll_count = required.payroll_count;
   const expectedHint = lockConfirmHintFromPreflight(preflight);
 
   await page.goto(

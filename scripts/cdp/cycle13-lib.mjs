@@ -333,9 +333,15 @@ export function assertAdvanceViewAllScoped(raw, { siteId, month }) {
 }
 
 export function lockConfirmHintFromPreflight(preflight) {
-  const orderCount = Number(preflight?.order_count ?? 0);
-  const adjCount = Number(preflight?.adjustment_count ?? 0);
-  const payrollCount = Number(preflight?.payroll_count ?? 0);
+  const orderCount = Number(
+    preflight?.order_count ?? preflight?.freeze_order_count ?? 0,
+  );
+  const adjCount = Number(
+    preflight?.adjustment_count ?? preflight?.freeze_adjustment_count ?? 0,
+  );
+  const payrollCount = Number(
+    preflight?.payroll_count ?? preflight?.freeze_payroll_count ?? 0,
+  );
   const lockRiders = Number(preflight?.lock_rider_count ?? 0);
   const skipRiders = Number(preflight?.skip_rider_count ?? 0);
   return (
@@ -395,13 +401,19 @@ export async function fetchPeriods(apiUrl, token, params) {
   return { res, json, items: json?.data?.items || [] };
 }
 
-export async function trialVersion(apiUrl, token, versionId, { riderId, start, end }) {
+export async function trialVersion(apiUrl, token, versionId, { riderId, start, end, mode }) {
   return apiFetch(
     apiUrl,
     token,
     'POST',
     `/api/v1/rider-salary/plan-versions/${versionId}/trial`,
-    { rider_id: riderId, start_date: start, end_date: end },
+    {
+      rider_id: Number(riderId),
+      start_date: start,
+      end_date: end,
+      // 月中换绑分叉须按绑定分段；整版强制全程生效两数永远相等 = FAIL
+      mode: mode || 'binding_segments',
+    },
   );
 }
 

@@ -419,7 +419,7 @@ function onKey(e: KeyboardEvent) {
         </VbenButton>
         <VbenButton
           :disabled="!detail?.period?.id"
-          data-testid="calendar-go-period"
+          data-testid="calendar-view-period"
           @click="goPeriod"
         >
           查看周期

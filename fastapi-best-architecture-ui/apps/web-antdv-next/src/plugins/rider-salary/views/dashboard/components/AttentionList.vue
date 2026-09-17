@@ -274,6 +274,7 @@ function blockTestId(key: string) {
   if (key === 'due_periods') return 'ops-dashboard-lock-overdue-visible';
   if (key === 'no_plan_days') return 'ops-dashboard-no-plan-to-binding';
   if (key === 'stale_periods') return 'ops-dashboard-stale-to-calc';
+  if (key === 'pending_advances') return 'ops-advance-todo-deeplink';
   return `dashboard-attention-${key}`;
 }
 

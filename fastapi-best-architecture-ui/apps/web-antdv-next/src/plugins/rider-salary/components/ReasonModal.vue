@@ -12,6 +12,7 @@ const password = ref('');
 const title = ref('请填写操作原因');
 const extraHint = ref('');
 const extraHintTestId = ref<string>();
+const extraSkipHint = ref('');
 const needPassword = ref(false);
 const passwordRequired = ref(false);
 const reasonRequired = ref(true);
@@ -62,6 +63,7 @@ const [Modal, modalApi] = useVbenModal({
     title.value = data?.title || '请填写操作原因';
     extraHint.value = data?.extraHint || '';
     extraHintTestId.value = data?.extraHintTestId;
+    extraSkipHint.value = data?.extraSkipHint || '';
     needPassword.value = Boolean(data?.password);
     passwordRequired.value = Boolean(data?.passwordRequired);
     reasonRequired.value = data?.reasonRequired !== false;
@@ -77,8 +79,30 @@ const [Modal, modalApi] = useVbenModal({
         type="info"
         show-icon
         :data-testid="extraHintTestId"
-        :message="extraHint"
-      />
+      >
+        <template #message>
+          <div
+            :data-testid="
+              extraSkipHint ? 'ops-lock-confirm-skip-rider-level' : undefined
+            "
+          >
+            <div
+              :data-testid="
+                extraSkipHint ? 'period-lock-confirm-hint' : undefined
+              "
+            >
+              {{ extraHint }}
+            </div>
+            <div
+              v-if="extraSkipHint"
+              class="mt-1"
+              data-testid="period-lock-skip-count"
+            >
+              {{ extraSkipHint }}
+            </div>
+          </div>
+        </template>
+      </a-alert>
       <a-textarea
         v-model:value="reason"
         :placeholder="reasonRequired ? '请填写操作原因' : '操作原因（可选）'"

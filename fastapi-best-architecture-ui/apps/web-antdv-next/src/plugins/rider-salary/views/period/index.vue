@@ -228,17 +228,24 @@ async function onLock(row: PeriodResult) {
   }
   let extraHint = `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。有完成单却未算出的骑手会被拒绝。`;
   let extraHintTestId: string | undefined;
+  let extraSkipHint: string | undefined;
   if (isSiteLevelPeriod(row)) {
-    extraHintTestId = 'period-lock-skip-hint';
+    extraHintTestId = 'ops-lock-confirm-skip-rider-level';
     try {
-      extraHint = buildLockConfirmHint(await lockPreflightPeriodApi(row.id));
+      const preflight = await lockPreflightPeriodApi(row.id);
+      extraHint = buildLockConfirmHint(preflight);
+      extraSkipHint =
+        preflight.skip_hint?.trim() ||
+        `跳过骑手级覆盖 ${preflight.skip_rider_count} 人`;
     } catch {
       extraHint = SITE_LEVEL_LOCK_PREFLIGHT_FALLBACK;
+      extraSkipHint = '跳过骑手级覆盖 0 人';
     }
   }
   const { reason } = await prompt({
     extraHint,
     extraHintTestId,
+    extraSkipHint,
     title: '锁账原因',
   });
   try {

@@ -31,11 +31,13 @@ async function openPayslip(periodId: number) {
   <div v-if="summary" class="flex flex-col gap-3">
     <div
       class="flex flex-wrap items-center gap-2 text-sm"
-      data-testid="calendar-month-not-payslip"
+      data-testid="cdp-admin-calendar-month-not-payslip"
     >
       <span class="font-medium" data-testid="calendar-month-total">本月合计</span>
       <span class="text-muted-foreground">·</span>
-      <span data-testid="calendar-period-span">跨 {{ periodCount }} 个周期</span>
+      <span data-testid="calendar-month-period-count"
+        >跨 {{ periodCount }} 个周期</span
+      >
     </div>
     <div class="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
       <a-card size="small">
@@ -92,6 +94,8 @@ async function openPayslip(periodId: number) {
         class="cursor-pointer"
         :color="enumColor(PERIOD_STATUS_OPTIONS, chip.status)"
         data-testid="calendar-period-chip"
+        :data-period-id="chip.id"
+        :data-rider-id="riderId"
         @click="openPayslip(chip.id)"
       >
         {{ chip.range }}

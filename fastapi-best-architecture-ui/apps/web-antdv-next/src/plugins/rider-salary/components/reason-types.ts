@@ -1,6 +1,7 @@
 export interface ReasonPromptOptions {
   extraHint?: string;
   extraHintTestId?: string;
+  extraSkipHint?: string;
   password?: boolean;
   passwordRequired?: boolean;
   reasonRequired?: boolean;

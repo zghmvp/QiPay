@@ -337,7 +337,11 @@ onUnmounted(() => {
       class="mb-4"
       size="small"
     />
-    <div v-if="step === 0" class="flex flex-col gap-3">
+    <div
+      v-if="step === 0"
+      class="flex flex-col gap-3"
+      data-testid="ops-import-wizard-lighthouse"
+    >
       <div>
         <div class="mb-1 text-sm">站点</div>
         <SiteSelect v-model:value="siteId" />
@@ -349,7 +353,7 @@ onUnmounted(() => {
         type="info"
         message="默认整批事务：任一行失败则全部回滚。勾选「跳过错误行」后成功行仍会入库。"
       />
-      <div ref="uploadHost">
+      <div ref="uploadHost" data-testid="import-wizard-file">
         <a-upload-dragger
           v-model:file-list="fileList"
           :accept="ACCEPT"

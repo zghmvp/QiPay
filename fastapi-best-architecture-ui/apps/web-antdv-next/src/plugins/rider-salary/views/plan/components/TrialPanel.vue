@@ -224,7 +224,12 @@ const periodColumns = [
             data-testid="trial-matches-official-calculate"
             message="应发与同骑手同周期正式 calculate 同源（预支仍不扣）"
           />
-          <a-card v-if="orderCompare" size="small" class="border-primary/30">
+          <a-card
+            v-if="orderCompare"
+            size="small"
+            class="border-primary/30"
+            data-testid="ops-trial-period-vs-plan-order-count"
+          >
             <div class="mb-2 text-sm font-medium">单量口径对照</div>
             <div class="grid grid-cols-2 gap-3 md:grid-cols-2">
               <div class="rounded bg-muted/40 px-3 py-2">

@@ -46,6 +46,7 @@ const [Drawer, drawerApi] = useVbenDrawer({
   <Drawer title="预支详情">
     <a-spin :spinning="loading">
       <template v-if="detail">
+        <div data-testid="advance-detail-open">
         <a-descriptions bordered size="small" :column="1" class="mb-4">
           <a-descriptions-item label="骑手">
             {{ [detail.rider_job_no, detail.rider_name].filter(Boolean).join(' ') || '—' }}
@@ -92,6 +93,7 @@ const [Drawer, drawerApi] = useVbenDrawer({
           </a-timeline-item>
         </a-timeline>
         <a-empty v-else description="暂无时间线" />
+        </div>
       </template>
       <a-empty v-else-if="!loading" description="未找到预支单" />
     </a-spin>
