@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
-from backend.plugin.rider_salary.crud.day_flag import day_flag_dao
 from backend.plugin.rider_salary.crud.payroll_daily import payroll_daily_dao
 from backend.plugin.rider_salary.crud.plan import plan_dao
 from backend.plugin.rider_salary.crud.plan_version import plan_version_dao
@@ -40,7 +39,6 @@ from backend.plugin.rider_salary.model.subject import RiderSalarySubject
 from backend.plugin.rider_salary.schema.calendar import (
     CalendarAdjustmentItem,
     CalendarDailyItem,
-    CalendarDayFlagInfo,
     CalendarDayItem,
     CalendarDayOrder,
     CalendarDayTotals,
@@ -449,14 +447,7 @@ class CalendarService:
                 range=period_range_text(period.start_date, period.end_date),
                 status=period.status,
             )
-        flag_row = await day_flag_dao.get_by_site_date(db, rider.site_id, biz_date)
-        day_flag = CalendarDayFlagInfo(
-            bad_weather=bool(getattr(flag_row, 'bad_weather', False)),
-            high_temp=bool(getattr(flag_row, 'high_temp', False)),
-            promo=bool(getattr(flag_row, 'promo', False)),
-            is_holiday=bool(is_holiday(biz_date)),
-            remark=getattr(flag_row, 'remark', None),
-        )
+        is_holiday_day = bool(is_holiday(biz_date))
         orders = await _orders_in_range(db, rider_id, biz_date, biz_date)
         details = await _details_in_range(db, rider_id, biz_date, biz_date)
         subject_ids = {row.subject_id for row in details}
@@ -554,7 +545,7 @@ class CalendarService:
             date=biz_date,
             plan=plan_info,
             period=period_info,
-            day_flag=day_flag,
+            is_holiday=is_holiday_day,
             day_status=day_status,
             orders=order_models,
             daily_items=daily_items,

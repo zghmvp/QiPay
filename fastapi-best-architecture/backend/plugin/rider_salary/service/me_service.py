@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import Request
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -12,9 +12,8 @@ from backend.plugin.rider_salary.crud.plan_item import plan_item_dao
 from backend.plugin.rider_salary.crud.plan_version import plan_version_dao
 from backend.plugin.rider_salary.crud.rider_plan_binding import rider_plan_binding_dao
 from backend.plugin.rider_salary.crud.site import site_dao
-from backend.plugin.rider_salary.enums import BindingType, EmployType, NoticeStatus, PayrollStatus, RiderStatus
+from backend.plugin.rider_salary.enums import BindingType, EmployType, PayrollStatus, RiderStatus
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
-from backend.plugin.rider_salary.model.notice import RiderSalaryNotice
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.model.rider import RiderSalaryRider
 from backend.plugin.rider_salary.model.subject import RiderSalarySubject
@@ -30,7 +29,6 @@ from backend.plugin.rider_salary.schema.me import (
     MeCurrentPlan,
     MePlanItem,
 )
-from backend.plugin.rider_salary.schema.notice import GetNoticeDetail
 from backend.plugin.rider_salary.service.advance_service import advance_service, resolve_advance_limit
 from backend.plugin.rider_salary.service.calc_service import calculate_rider_period
 from backend.plugin.rider_salary.service.calendar_service import (
@@ -258,25 +256,6 @@ class MeService:
                 )
             )
         return GetMePlan(bindings=result)
-
-    async def notices(self, *, db: AsyncSession, rider: RiderSalaryRider) -> list[GetNoticeDetail]:
-        rows = list(
-            (
-                await db.scalars(
-                    select(RiderSalaryNotice)
-                    .where(
-                        RiderSalaryNotice.status == NoticeStatus.published.value,
-                        RiderSalaryNotice.deleted == 0,
-                        or_(
-                            RiderSalaryNotice.site_id.is_(None),
-                            RiderSalaryNotice.site_id == rider.site_id,
-                        ),
-                    )
-                    .order_by(RiderSalaryNotice.publish_time.desc(), RiderSalaryNotice.id.desc())
-                )
-            ).all()
-        )
-        return [GetNoticeDetail.model_validate(row) for row in rows]
 
     async def advance_limit(self, *, db: AsyncSession, rider: RiderSalaryRider) -> GetMeAdvanceLimit:
         data = await advance_service.limit_for_rider(db=db, rider=rider)

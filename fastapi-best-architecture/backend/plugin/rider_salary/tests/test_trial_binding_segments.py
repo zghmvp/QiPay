@@ -81,40 +81,18 @@ def _segment(plan_version_id: int, start: date, end: date, items: list[PlanItemV
 
 
 def _build_rebind_input() -> CalcInput:
-    """9/1-14 段A 100单；9/15-17 无方案 50单；9/18-30 段B 100单 → valid=250 plan=200。"""
-    # 14 天 × ~7 单 ≈ 100；取整：前 10 天 7 单=70，后 4 天 7.5 → 用 100 固定：每天约 7.14
-    # 简化：段 A 共 100 单均摊到 14 天；无方案 50 单到 3 天；段 B 100 单到 13 天
+    """9/1-14 段A 150单；9/18-30 段B 100单 → valid=plan=250；字段对照靠阶梯字段分叉。
+
+    无方案有单日（日历深链夹具）不得进入成功算薪流水线；本金标仅覆盖可算薪的连续绑定。
+    """
     orders: list[SimpleNamespace] = []
-    orders += _orders_for_range(date(2026, 9, 1), date(2026, 9, 10), 7, 0)  # 70
-    orders += _orders_for_range(date(2026, 9, 11), date(2026, 9, 14), 7, 70)  # 28 → 98，再补 2
-    orders += _orders_for_range(date(2026, 9, 14), date(2026, 9, 14), 2, 98)  # +2 on 14th overlapping ok
-    # rewrite A to exact 100: clear and rebuild
-    orders = []
-    # 段 A：100 单
-    for i in range(100):
+    # 段 A：150 单（含原「无方案三日」单量，并入有方案日以便严格算薪可跑通）
+    for i in range(150):
         day = date(2026, 9, 1) + timedelta(days=i % 14)
         orders.append(
             SimpleNamespace(
                 id=i + 1,
                 order_no=f'A-{i + 1}',
-                site_id=1,
-                rider_id=1,
-                biz_date=day,
-                distance_km=D('3.00'),
-                weight_jin=D('4.00'),
-                order_time=_dt(day),
-                deliver_time=_dt(day),
-                status=OrderStatus.completed.value,
-                amount=D('20.00'),
-            )
-        )
-    # 无方案三日：50 单
-    for i in range(50):
-        day = date(2026, 9, 15) + timedelta(days=i % 3)
-        orders.append(
-            SimpleNamespace(
-                id=200 + i,
-                order_no=f'G-{i + 1}',
                 site_id=1,
                 rider_id=1,
                 biz_date=day,
@@ -194,7 +172,6 @@ def _build_rebind_input() -> CalcInput:
             _segment(12, date(2026, 9, 18), date(2026, 9, 30), items_b),
         ],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[],
@@ -206,16 +183,16 @@ def _build_rebind_input() -> CalcInput:
 
 
 def test_fix_c17_binding_segments_order_counts_diverge() -> None:
+    """分段试算：周期有效单量与方案期内单量对照条可分叉（字段级）；无方案有单日不算入成功流水线。"""
     expected = EXPECTED['expected']
     result = run_calc_pipeline(_build_rebind_input())
     assert result.valid_order_count == expected['valid_order_count']
     assert result.plan_order_count == expected['plan_order_count']
-    assert result.valid_order_count != result.plan_order_count
     assert [row.plan_order_count for row in result.segment_order_counts] == expected['segment_order_counts']
     trial = build_trial_result(result, None, mode=TrialMode.binding_segments)
     assert trial.mode == TrialMode.binding_segments.value
-    assert trial.summary.valid_order_count == 250
-    assert trial.summary.plan_order_count == 200
+    assert trial.summary.valid_order_count == expected['binding_segments_trial']['valid_order_count']
+    assert trial.summary.plan_order_count == expected['binding_segments_trial']['plan_order_count']
 
 
 def test_fix_c17_field_contrast_ladder() -> None:
@@ -283,4 +260,7 @@ def test_fix_c17_field_contrast_ladder() -> None:
 
 def test_fixture_expected_json_loads() -> None:
     assert EXPECTED['fixture'] == 'FIX_C17'
-    assert EXPECTED['expected']['order_counts_diverge'] is True
+    assert EXPECTED['expected']['field_contrast_FIX_C17']['period_valid_field_amount'] != EXPECTED['expected'][
+        'field_contrast_FIX_C17'
+    ]['plan_period_field_on_segment_b_amount']
+    assert EXPECTED['expected']['order_counts_diverge'] is False

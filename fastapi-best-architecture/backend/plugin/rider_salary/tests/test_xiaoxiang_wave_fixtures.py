@@ -54,9 +54,7 @@ def test_fix_c17_seed_json_aligns_with_calendar_and_trial() -> None:
     seed_path = Path(__file__).parent / 'fixtures' / 'trial-binding-segments' / 'seed.json'
     seed = json.loads(seed_path.read_text(encoding='utf-8'))
     trial_expected = json.loads(
-        (Path(__file__).parent / 'fixtures' / 'trial-binding-segments' / 'expected.json').read_text(
-            encoding='utf-8'
-        )
+        (Path(__file__).parent / 'fixtures' / 'trial-binding-segments' / 'expected.json').read_text(encoding='utf-8')
     )
     assert seed['rider']['job_no'] == CAL_EXPECTED['rider_job_no']
     assert seed['no_plan_days'] == CAL_EXPECTED['no_plan_days']

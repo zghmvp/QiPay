@@ -6,7 +6,6 @@ from pydantic import Field
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.schema.advance import GetAdvanceDetail
 from backend.plugin.rider_salary.schema.calendar import GetCalendarDayDetail, GetCalendarMonth
-from backend.plugin.rider_salary.schema.notice import GetNoticeDetail
 
 
 class MeCurrentPlan(SchemaBase):
@@ -106,10 +105,6 @@ class GetMeCalendar(GetCalendarMonth):
 
 class GetMeDayDetail(GetCalendarDayDetail):
     """骑手端日详情（不含表达式）"""
-
-
-class GetMeNotice(GetNoticeDetail):
-    """骑手端公告"""
 
 
 class GetMeAdvance(GetAdvanceDetail):

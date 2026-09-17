@@ -241,7 +241,6 @@ def test_cross_segment_month_example() -> None:
         employ_type='full_time',
         segments=[_segment_a(), _segment_b()],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=_adjustments(),
         advances=[
@@ -352,7 +351,6 @@ def test_night_surcharge_shanghai_2305_hits_1300_misses() -> None:
         employ_type='part_time',
         segments=[Segment(plan_version_id=1, start_date=day, end_date=day, items=items)],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[],
@@ -392,7 +390,6 @@ def test_trial_does_not_deduct_advance() -> None:
         employ_type='part_time',
         segments=[Segment(plan_version_id=1, start_date=day, end_date=day, items=[item])],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[
@@ -415,7 +412,11 @@ def test_trial_does_not_deduct_advance() -> None:
     assert data.advances[0].remaining_amount == D('100.00')
 
 
-def test_no_plan_day_warning() -> None:
+def test_no_plan_day_hard_fails() -> None:
+    import pytest
+
+    from backend.common.exception import errors
+
     item = _item(
         pk=1,
         subject_id=1,
@@ -442,7 +443,6 @@ def test_no_plan_day_warning() -> None:
         employ_type='part_time',
         segments=[Segment(plan_version_id=1, start_date=start, end_date=start, items=[item])],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[],
@@ -450,12 +450,49 @@ def test_no_plan_day_warning() -> None:
         site_order_dates={start, date(2026, 9, 2)},
         persist_advance=False,
     )
-    result = run_calc_pipeline(data)
-    assert any('2026-09-02 无生效方案' in msg and '2 单未计薪' in msg for msg in result.warnings)
-    day2 = next(row for row in result.dailies if row.biz_date == date(2026, 9, 2))
-    assert day2.day_status == DayStatus.no_plan.value
-    assert result.per_order_total == D('4.00')
-    assert result.valid_order_count == 3
+    with pytest.raises(errors.RequestError, match='无生效方案') as exc_info:
+        run_calc_pipeline(data)
+    assert '2026-09-02' in (exc_info.value.msg or '')
+    assert '2 单' in (exc_info.value.msg or '')
+
+
+def test_missing_deliver_time_hard_fails() -> None:
+    import pytest
+
+    from backend.common.exception import errors
+
+    item = _item(
+        pk=1,
+        subject_id=1,
+        name='基础单价',
+        stage=CalcStage.per_order.value,
+        sort_order=10,
+        condition={},
+        formula={'类型': '固定金额', '金额': 4},
+    )
+    day = date(2026, 9, 1)
+    order = _order(1, 'MISS-1', day)
+    order.deliver_time = None
+    data = CalcInput(
+        rider_id=1,
+        site_id=1,
+        period_start=day,
+        period_end=day,
+        hire_date=day,
+        leave_date=None,
+        employ_type='part_time',
+        segments=[Segment(plan_version_id=1, start_date=day, end_date=day, items=[item])],
+        orders=[order],
+        employ_history=[],
+        adjustments=[],
+        advances=[],
+        covered_dates={day},
+        site_order_dates={day},
+        persist_advance=False,
+    )
+    with pytest.raises(errors.RequestError, match='送达时间为空') as exc_info:
+        run_calc_pipeline(data)
+    assert 'MISS-1' in (exc_info.value.msg or '')
 
 
 def test_d2_parse_maps_to_calc_segments() -> None:
@@ -525,7 +562,6 @@ def test_guarantee_and_accrued() -> None:
         employ_type='full_time',
         segments=[Segment(plan_version_id=1, start_date=start, end_date=end, items=items)],
         orders=orders,
-        day_flags={},
         employ_history=[],
         adjustments=[],
         advances=[],

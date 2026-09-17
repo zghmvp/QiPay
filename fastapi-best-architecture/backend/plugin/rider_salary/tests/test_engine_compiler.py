@@ -59,7 +59,7 @@ def test_datetime_minutes_use_app_timezone() -> None:
         id=1,
         biz_date=day,
     )
-    ctx = build_order_context(order, build_day_context(1, day, None, 'part_time'))
+    ctx = build_order_context(order, build_day_context(1, day, 'part_time'))
     assert ctx['下单时刻'] == 10 * 60 + 25
     assert ctx['送达时刻'] == 23 * 60 + 5
 
@@ -108,14 +108,14 @@ def test_nested_or() -> None:
         '逻辑': '或',
         '条件': [
             {'字段': '是否节假日', '运算符': '=', '值': True},
-            {'字段': '是否恶劣天气', '运算符': '=', '值': True},
+            {'字段': '是否周末', '运算符': '=', '值': True},
         ],
     }
     expr = compile_condition(raw, STAGE)
     assert '是否节假日 == True' in expr
-    assert '是否恶劣天气 == True' in expr
-    assert evaluate_condition(expr, {'是否节假日': False, '是否恶劣天气': True}) is True
-    assert evaluate_condition(expr, {'是否节假日': False, '是否恶劣天气': False}) is False
+    assert '是否周末 == True' in expr
+    assert evaluate_condition(expr, {'是否节假日': False, '是否周末': True}) is True
+    assert evaluate_condition(expr, {'是否节假日': False, '是否周末': False}) is False
 
 
 def test_nested_and_or_with_night() -> None:
@@ -128,7 +128,7 @@ def test_nested_and_or_with_night() -> None:
                 '逻辑': '或',
                 '条件': [
                     {'字段': '是否节假日', '运算符': '=', '值': True},
-                    {'字段': '是否恶劣天气', '运算符': '=', '值': True},
+                    {'字段': '是否周末', '运算符': '=', '值': True},
                 ],
             },
         ],
@@ -138,10 +138,10 @@ def test_nested_and_or_with_night() -> None:
         '送达时刻': to_minutes('22:18'),
         '配送距离': 7.2,
         '是否节假日': False,
-        '是否恶劣天气': True,
+        '是否周末': True,
     }
     assert evaluate_condition(expr, names) is True
-    names['是否恶劣天气'] = False
+    names['是否周末'] = False
     assert evaluate_condition(expr, names) is False
 
 

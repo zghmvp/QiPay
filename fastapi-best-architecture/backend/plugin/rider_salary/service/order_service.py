@@ -278,6 +278,8 @@ class OrderService:
             raise errors.RequestError(msg='订单金额不能为负数')
         if obj.deliver_time is not None and obj.deliver_time < obj.order_time:
             raise errors.RequestError(msg='送达时间不能早于下单时间')
+        if mapped == OrderStatus.completed.value and obj.deliver_time is None:
+            raise errors.RequestError(msg='已完成订单的送达时间不能为空')
         biz_date = compute_biz_date(obj.order_time, obj.deliver_time)
         emp_error = rider_employment_error(rider, biz_date)
         if emp_error:
@@ -377,6 +379,8 @@ class OrderService:
             order.remark = payload['remark']
         if order.deliver_time is not None and order.deliver_time < order.order_time:
             raise errors.RequestError(msg='送达时间不能早于下单时间')
+        if order.status == OrderStatus.completed.value and order.deliver_time is None:
+            raise errors.RequestError(msg='已完成订单的送达时间不能为空')
         site = await _get_site(db, order.site_id)
         rider = await _get_rider(db, order.rider_id)
         if rider.site_id != site.id:

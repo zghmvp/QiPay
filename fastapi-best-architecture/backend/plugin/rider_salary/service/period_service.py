@@ -25,6 +25,7 @@ from backend.plugin.rider_salary.model.site import RiderSalarySite
 from backend.plugin.rider_salary.schema.period import (
     CalculatePeriodParam,
     CalculatePeriodResult,
+    CalculateRiderFailure,
     GeneratePeriodParam,
     GeneratePeriodResult,
     GetGeneratedPeriodItem,
@@ -654,9 +655,19 @@ class PeriodService:
                 ),
             )
             return CalculatePeriodResult(calculated=0, warnings=warnings, queued=True)
-        results = await calculate_period(db, period_id=period.id, rider_ids=obj.rider_ids, operator=request)
+        results, failed_rows = await calculate_period(
+            db, period_id=period.id, rider_ids=obj.rider_ids, operator=request
+        )
         for result in results:
             warnings.extend(result.warnings or [])
+        failed = [
+            CalculateRiderFailure(
+                rider_id=int(row['rider_id']),
+                job_no=row.get('job_no'),
+                errors=list(row.get('errors') or []),
+            )
+            for row in failed_rows
+        ]
         await audit_service.record(
             db,
             request,
@@ -667,10 +678,15 @@ class PeriodService:
             target_label=_period_label(site, period),
             description=(
                 f'{_operator_name(request)} 于 {_now_str()} 对 {_period_label(site, period)} 执行了算薪，'
-                f'骑手{len(results)}人'
+                f'成功{len(results)}人，失败{len(failed)}人'
             ),
         )
-        return CalculatePeriodResult(calculated=len(results), warnings=warnings, queued=False)
+        return CalculatePeriodResult(
+            calculated=len(results),
+            warnings=warnings,
+            failed=failed,
+            queued=False,
+        )
 
     async def lock(
         self,

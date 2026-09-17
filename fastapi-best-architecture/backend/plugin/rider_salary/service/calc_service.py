@@ -34,7 +34,6 @@ from backend.plugin.rider_salary.enums import (
     SubjectDirection,
 )
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
-from backend.plugin.rider_salary.model.day_flag import RiderSalaryDayFlag
 from backend.plugin.rider_salary.model.import_batch import RiderSalaryImportBatch
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
@@ -148,7 +147,6 @@ class CalcInput:
     employ_type: str
     segments: list[Segment]
     orders: list[Any]
-    day_flags: dict[date, Any]
     employ_history: list[Any]
     adjustments: list[Any]
     advances: list[Any]
@@ -221,16 +219,19 @@ def _eval_item(
     names: dict[str, Any],
     warnings: list[str],
 ) -> tuple[bool, Decimal, dict[str, Any]]:
+    del warnings  # 非阻断 tip 已废止；硬失败走 RequestError
     condition_expr = item.condition_expr or 'True'
     formula_expr = item.formula_expr or '0'
-    hit = evaluate_condition(condition_expr, names)
+    try:
+        hit = evaluate_condition(condition_expr, names)
+    except EvalError as exc:
+        raise errors.RequestError(msg=f'方案项「{item.name}」条件求值失败：{exc}') from exc
     if not hit:
         return False, ZERO, _trace(condition_expr, formula_expr, names, ZERO, hit=False)
     try:
         unsigned = evaluate_amount(formula_expr, names)
-    except EvalError:
-        warnings.append(f'方案项「{item.name}」公式求值失败，已按 0 计算')
-        unsigned = ZERO
+    except EvalError as exc:
+        raise errors.RequestError(msg=f'方案项「{item.name}」公式求值失败：{exc}') from exc
     signed = q2(unsigned * _sign(item.direction))
     return True, signed, _trace(condition_expr, formula_expr, names, unsigned, hit=True)
 
@@ -291,7 +292,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         for day in iter_dates(segment.start_date, segment.end_date):
             covered[day] = segment.plan_version_id
             employ = _employ_on(data.employ_history, data.employ_type, day)
-            day_ctx = build_day_context(data.site_id, day, data.day_flags.get(day), employ)
+            day_ctx = build_day_context(data.site_id, day, employ)
             day_orders = [row for row in orders if row.biz_date == day]
             completed = [row for row in day_orders if _is_completed(row) and not _after_leave(data.leave_date, day)]
             if _after_leave(data.leave_date, day) and any(_is_completed(row) for row in day_orders):
@@ -299,10 +300,11 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             day_per_order = ZERO
             for order in completed:
                 ctx = build_order_context(order, day_ctx)
-                if ctx.pop('_missing_deliver', False):
-                    msg = '字段「配送时长」为空，已按 0 计算'
-                    if msg not in warnings:
-                        warnings.append(msg)
+                if ctx.pop('_missing_duration', False):
+                    order_no = getattr(order, 'order_no', None) or getattr(order, 'id', None) or '未知'
+                    raise errors.RequestError(
+                        msg=f'订单 {order_no}（{day.isoformat()}）已完成但送达时间为空，无法计算配送时长'
+                    )
                 for item in _enabled_items(segment, CalcStage.per_order.value):
                     hit, amount, trace = _eval_item(item, ctx, warnings)
                     if not hit:
@@ -403,6 +405,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                 period_total += amount
 
     no_plan_days: set[date] = set()
+    no_plan_parts: list[str] = []
     for day in iter_dates(data.period_start, data.period_end):
         if day in covered:
             continue
@@ -413,7 +416,9 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         ]
         if day_completed:
             no_plan_days.add(day)
-            warnings.append(f'{day.isoformat()} 无生效方案，{len(day_completed)} 单未计薪')
+            no_plan_parts.append(f'{day.isoformat()}（{len(day_completed)} 单）')
+    if no_plan_parts:
+        raise errors.RequestError(msg=f'算薪中止：以下日期有订单但无生效方案：{"、".join(no_plan_parts)}')
 
     for adj in data.adjustments:
         signed = q2(getattr(adj, 'signed_amount', ZERO) or ZERO)
@@ -669,18 +674,6 @@ async def _load_calc_input(
             )
         ).all()
     )
-    flags = list(
-        (
-            await db.scalars(
-                select(RiderSalaryDayFlag).where(
-                    RiderSalaryDayFlag.site_id == site_id,
-                    RiderSalaryDayFlag.biz_date >= start,
-                    RiderSalaryDayFlag.biz_date <= end,
-                    RiderSalaryDayFlag.deleted == 0,
-                )
-            )
-        ).all()
-    )
     history = list(
         (
             await db.scalars(
@@ -759,7 +752,6 @@ async def _load_calc_input(
         employ_type=rider.employ_type,
         segments=segments,
         orders=orders,
-        day_flags={row.biz_date: row for row in flags},
         employ_history=history,
         adjustments=adjustments,
         advances=advances,
@@ -986,8 +978,8 @@ async def calculate_period(
     period_id: int,
     rider_ids: list[int] | None = None,
     operator: Request | None = None,
-) -> list[CalcResult]:
-    """计算周期内骑手薪资（站点级跳过有骑手级周期覆盖的人）"""
+) -> tuple[list[CalcResult], list[dict[str, Any]]]:
+    """计算周期内骑手薪资；部分骑手失败时其余仍可成功落库。"""
     period = await db.scalar(
         select(RiderSalarySettlePeriod).where(
             RiderSalarySettlePeriod.id == period_id,
@@ -997,11 +989,25 @@ async def calculate_period(
     if period is None:
         raise errors.NotFoundError(msg='结算周期不存在')
     targets = await _riders_for_period(db, period, rider_ids)
-    results: list[CalcResult] = [
-        await calculate_rider_period(db, rider_id=rider_id, period=period, persist=True, operator=operator)
-        for rider_id in targets
-    ]
-    return results
+    results: list[CalcResult] = []
+    failed: list[dict[str, Any]] = []
+    for rider_id in targets:
+        rider = await db.scalar(
+            select(RiderSalaryRider).where(RiderSalaryRider.id == rider_id, RiderSalaryRider.deleted == 0)
+        )
+        job_no = getattr(rider, 'job_no', None) if rider is not None else None
+        try:
+            async with db.begin_nested():
+                results.append(
+                    await calculate_rider_period(db, rider_id=rider_id, period=period, persist=True, operator=operator)
+                )
+        except errors.RequestError as exc:
+            failed.append({
+                'rider_id': rider_id,
+                'job_no': job_no,
+                'errors': [exc.msg or str(exc)],
+            })
+    return results, failed
 
 
 async def _riders_for_period(

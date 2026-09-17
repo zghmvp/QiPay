@@ -185,13 +185,21 @@ async function onRecalculate(
   recalculating.value = periodId;
   try {
     const res = await calculatePeriodApi(periodId, {});
+    const failedCount = res.failed?.length ?? 0;
     if (res.queued) {
       message.info('算薪已转入后台处理');
+    } else if (failedCount > 0) {
+      const detail = (res.failed ?? [])
+        .map((row) => {
+          const who = row.job_no ? `工号 ${row.job_no}` : `骑手 #${row.rider_id}`;
+          return `${who}：${(row.errors ?? []).join('；')}`;
+        })
+        .join('；');
+      message.error(
+        `算薪部分失败：成功 ${res.calculated} 人，失败 ${failedCount} 人。${detail}`,
+      );
     } else {
       message.success(`已计算 ${res.calculated} 名骑手`);
-    }
-    if (res.warnings?.length) {
-      message.warning(res.warnings.join('；'));
     }
     emit('refreshed');
   } finally {

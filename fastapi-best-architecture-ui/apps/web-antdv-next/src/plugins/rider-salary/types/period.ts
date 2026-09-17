@@ -71,8 +71,15 @@ export interface CalculatePeriodParam {
   rider_ids?: null | number[];
 }
 
+export interface CalculateRiderFailure {
+  errors: string[];
+  job_no?: null | string;
+  rider_id: number;
+}
+
 export interface CalculatePeriodResult {
   calculated: number;
+  failed?: CalculateRiderFailure[];
   queued: boolean;
   warnings: string[];
 }

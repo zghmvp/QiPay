@@ -1,5 +1,8 @@
 <script lang="ts" setup>
-import type { PeriodResult } from '../../../types/period';
+import type {
+  CalculatePeriodResult,
+  PeriodResult,
+} from '../../../types/period';
 import type { RiderResult } from '../../../types/rider';
 
 import { ref } from 'vue';
@@ -15,29 +18,52 @@ const riderIds = ref<number[]>([]);
 const options = ref<{ label: string; value: number }[]>([]);
 const loading = ref(false);
 const personal = ref(false);
+const lastResult = ref<CalculatePeriodResult | null>(null);
+
+function formatFailures(res: CalculatePeriodResult): string {
+  return (res.failed ?? [])
+    .map((row) => {
+      const who = row.job_no ? `工号 ${row.job_no}` : `骑手 #${row.rider_id}`;
+      return `${who}：${(row.errors ?? []).join('；')}`;
+    })
+    .join('\n');
+}
 
 const [Modal, modalApi] = useVbenModal({
-  class: 'w-[480px]',
+  class: 'w-[560px]',
   confirmText: '开始算薪',
   destroyOnClose: true,
   async onConfirm() {
     const period = modalApi.getData<PeriodResult & { onSuccess?: () => void }>();
     if (!period?.id) return;
     modalApi.lock();
+    lastResult.value = null;
     try {
       const res = await calculatePeriodApi(period.id, {
         rider_ids: riderIds.value.length ? riderIds.value : null,
       });
+      lastResult.value = res;
+      const failedCount = res.failed?.length ?? 0;
       if (res.queued) {
         message.info('算薪已转入后台处理');
+      } else if (failedCount > 0) {
+        message.error(
+          `算薪部分失败：成功 ${res.calculated} 人，失败 ${failedCount} 人，请查看错误列表`,
+        );
       } else {
         message.success(`已计算 ${res.calculated} 名骑手`);
       }
-      if (res.warnings?.length) {
-        message.warning(res.warnings.join('；'));
+      // 非阻断提示仅保留「转入后台」类；禁止把硬失败当 warning toast
+      const tips = (res.warnings ?? []).filter((w) => w.includes('后台'));
+      if (tips.length) {
+        message.info(tips.join('；'));
       }
-      period.onSuccess?.();
-      await modalApi.close();
+      if (failedCount === 0) {
+        period.onSuccess?.();
+        await modalApi.close();
+      } else {
+        period.onSuccess?.();
+      }
     } finally {
       modalApi.unlock();
     }
@@ -47,6 +73,7 @@ const [Modal, modalApi] = useVbenModal({
     riderIds.value = [];
     options.value = [];
     personal.value = false;
+    lastResult.value = null;
     const period = modalApi.getData<PeriodResult>();
     if (!period?.site_id) return;
     if (period.rider_id) {
@@ -90,6 +117,14 @@ const [Modal, modalApi] = useVbenModal({
       :options="options"
       option-filter-prop="label"
       show-search
+    />
+    <a-alert
+      v-if="lastResult?.failed?.length"
+      class="mt-3"
+      show-icon
+      type="error"
+      message="算薪失败清单"
+      :description="formatFailures(lastResult)"
     />
   </Modal>
 </template>

@@ -63,13 +63,6 @@ export interface CalendarPeriodInfo {
   status?: null | string;
 }
 
-export interface CalendarDayFlagInfo {
-  bad_weather: boolean;
-  high_temp: boolean;
-  is_holiday: boolean;
-  promo: boolean;
-  remark?: null | string;
-}
 
 export interface CalendarHitDetail {
   amount: MoneyValue;
@@ -116,7 +109,7 @@ export interface CalendarDayDetail {
   adjustments: CalendarAdjustmentItem[];
   daily_items: CalendarDailyItem[];
   date: string;
-  day_flag?: CalendarDayFlagInfo | null;
+  is_holiday?: boolean;
   day_status: string;
   orders: CalendarDayOrder[];
   period?: CalendarPeriodInfo | null;

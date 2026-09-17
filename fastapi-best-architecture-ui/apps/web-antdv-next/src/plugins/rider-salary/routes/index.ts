@@ -73,12 +73,6 @@ const routes: RouteRecordRaw[] = [
         path: '/rider-salary/adjustment',
       },
       {
-        component: () => import('../views/day-flag/index.vue'),
-        meta: { icon: 'lucide:calendar-days', title: '日标记' },
-        name: 'RiderSalaryDayFlag',
-        path: '/rider-salary/day-flag',
-      },
-      {
         component: () => import('../views/period/index.vue'),
         meta: { icon: 'lucide:calendar-range', title: '结算周期' },
         name: 'RiderSalaryPeriod',
@@ -95,12 +89,6 @@ const routes: RouteRecordRaw[] = [
         meta: { icon: 'lucide:hand-coins', title: '预支审核' },
         name: 'RiderSalaryAdvance',
         path: '/rider-salary/advance',
-      },
-      {
-        component: () => import('../views/notice/index.vue'),
-        meta: { icon: 'lucide:megaphone', title: '站点公告' },
-        name: 'RiderSalaryNotice',
-        path: '/rider-salary/notice',
       },
       {
         component: () => import('../views/audit/index.vue'),
