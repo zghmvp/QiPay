@@ -4,6 +4,7 @@ from datetime import date
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.plugin.rider_salary.crud.payroll_daily import payroll_daily_dao
 from backend.plugin.rider_salary.enums import PayrollStatus, PeriodStatus
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod
@@ -48,3 +49,28 @@ async def mark_stale(
     )
     result = await db.execute(stmt)
     return int(result.rowcount or 0)
+
+
+async def invalidate_payroll_dailies(
+    db: AsyncSession,
+    *,
+    rider_ids: Iterable[int],
+    date_from: date,
+    date_to: date,
+) -> int:
+    """
+    绑定变更后逻辑删除受影响日的 rs_payroll_daily，避免日历/工作台继续信任过期方案快照。
+
+    :param db: 数据库会话
+    :param rider_ids: 受影响骑手 ID
+    :param date_from: 开始日期
+    :param date_to: 结束日期
+    :return: 删除行数
+    """
+    ids = list({int(rider_id) for rider_id in rider_ids})
+    if not ids or date_to < date_from:
+        return 0
+    total = 0
+    for rider_id in ids:
+        total += await payroll_daily_dao.soft_delete_by_rider_range(db, rider_id, date_from, date_to)
+    return total
