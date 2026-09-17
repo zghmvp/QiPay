@@ -96,6 +96,41 @@ def resolve_day_status(*, has_plan: bool, order_count: int, valid_order_count: i
     return DayStatus.not_imported.value
 
 
+def merge_day_with_live_plan(
+    *,
+    live_plan_vid: int | None,
+    cache: Any | None,
+    live_order_count: int,
+    live_valid_count: int,
+    live_net_adjust: Decimal,
+    imported: bool,
+) -> tuple[int, int, Decimal, str, int | None, int | None]:
+    """
+    合并日汇总缓存与 live 生效方案。
+
+    方案身份 / no_plan 一律以 live 绑定为准；缓存仅提供单量、奖惩净额与 period_id。
+    禁止用 rs_payroll_daily 把「有单无绑」盖成 has_data。
+    """
+    plan_vid = live_plan_vid
+    if cache is not None:
+        order_count = int(cache.order_count or 0)
+        valid_count = int(cache.valid_order_count or 0)
+        net_adjust = q2(cache.net_adjust)
+        period_id = cache.period_id
+    else:
+        order_count = live_order_count
+        valid_count = live_valid_count
+        net_adjust = live_net_adjust
+        period_id = None
+    day_status = resolve_day_status(
+        has_plan=plan_vid is not None,
+        order_count=order_count,
+        valid_order_count=valid_count,
+        imported=imported,
+    )
+    return order_count, valid_count, net_adjust, day_status, plan_vid, period_id
+
+
 def summarize_subjects(names: Sequence[str], *, limit: int = 3) -> list[str]:
     """去重科目名，超出 limit 时追加「等N项」"""
     seen: list[str] = []
@@ -320,26 +355,17 @@ class CalendarService:
             cache = dailies.get(day)
             day_orders = orders_by_day.get(day, [])
             completed = [row for row in day_orders if row.status == OrderStatus.completed.value]
-            plan_vid = plan_by_day.get(day)
+            live_plan_vid = plan_by_day.get(day)
             imported = day in covered or day in site_order_dates
-            if cache is not None:
-                order_count = cache.order_count
-                valid_count = cache.valid_order_count
-                net_adjust = q2(cache.net_adjust)
-                day_status = cache.day_status
-                plan_vid = cache.plan_version_id if cache.plan_version_id is not None else plan_vid
-                period_id = cache.period_id
-            else:
-                order_count = len(day_orders)
-                valid_count = len(completed)
-                net_adjust = q2(sum((row.signed_amount or ZERO for row in adj_by_day.get(day, [])), ZERO))
-                day_status = resolve_day_status(
-                    has_plan=plan_vid is not None,
-                    order_count=order_count,
-                    valid_order_count=valid_count,
-                    imported=imported,
-                )
-                period_id = None
+            live_net = q2(sum((row.signed_amount or ZERO for row in adj_by_day.get(day, [])), ZERO))
+            order_count, valid_count, net_adjust, day_status, plan_vid, period_id = merge_day_with_live_plan(
+                live_plan_vid=live_plan_vid,
+                cache=cache,
+                live_order_count=len(day_orders),
+                live_valid_count=len(completed),
+                live_net_adjust=live_net,
+                imported=imported,
+            )
             period = period_by_day.get(day)
             if period_id is None and period is not None:
                 period_id = period.id
@@ -434,10 +460,10 @@ class CalendarService:
             visible = await get_visible_site_ids(request, db)
             assert_site_visible(visible, rider.site_id)
         segments = await resolve_effective_plans(db, rider_id, biz_date, biz_date)
-        plan_vid = segments[0].plan_version_id if segments else None
+        live_plan_vid = segments[0].plan_version_id if segments else None
         cache = await payroll_daily_dao.get_one(db, rider_id, biz_date)
-        if cache is not None and cache.plan_version_id is not None:
-            plan_vid = cache.plan_version_id
+        # 方案身份以 live 绑定为准；禁止 cache.plan_version_id 覆盖「无方案」
+        plan_vid = live_plan_vid
         plan_info = await _plan_info(db, plan_vid)
         period = await lookup_period(db, site_id=rider.site_id, rider_id=rider_id, biz_date=biz_date)
         period_info = None
@@ -476,7 +502,7 @@ class CalendarService:
                 CalcStage.daily.value,
             }:
                 formula_amount += q2(row.amount)
-        if cache is not None:
+        if cache is not None and plan_vid is not None:
             formula_amount = q2(cache.formula_amount)
         order_models: list[CalendarDayOrder] = []
         for order in orders:
@@ -488,6 +514,8 @@ class CalendarService:
                 )
                 for row in details_by_order.get(order.id, [])
             ]
+            if plan_vid is None:
+                hits = []
             order_models.append(
                 CalendarDayOrder(
                     id=order.id,
@@ -529,17 +557,18 @@ class CalendarService:
         covered, site_order_dates = await _import_coverage(db, rider.site_id, biz_date, biz_date)
         imported = biz_date in covered or biz_date in site_order_dates
         completed = [row for row in orders if row.status == OrderStatus.completed.value]
-        if cache is not None:
-            day_status = cache.day_status
-            order_count = cache.order_count
-        else:
-            day_status = resolve_day_status(
-                has_plan=plan_vid is not None,
-                order_count=len(orders),
-                valid_order_count=len(completed),
-                imported=imported,
-            )
-            order_count = len(orders)
+        order_count, _valid_count, _net_adjust, day_status, plan_vid, _period_id = merge_day_with_live_plan(
+            live_plan_vid=live_plan_vid,
+            cache=cache,
+            live_order_count=len(orders),
+            live_valid_count=len(completed),
+            live_net_adjust=q2(manual_bonus + manual_penalty),
+            imported=imported,
+        )
+        if plan_vid is None:
+            plan_info = CalendarPlanInfo()
+            formula_amount = ZERO
+            daily_items = []
         net = q2(formula_amount + manual_bonus + manual_penalty)
         return GetCalendarDayDetail(
             date=biz_date,

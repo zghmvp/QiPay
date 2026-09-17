@@ -45,7 +45,7 @@ from backend.plugin.rider_salary.schema.rider import (
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
-from backend.plugin.rider_salary.utils.recalc import mark_stale
+from backend.plugin.rider_salary.utils.recalc import invalidate_payroll_dailies, mark_stale
 from backend.utils.timezone import timezone
 
 _OPEN_END = date(9999, 12, 31)
@@ -737,6 +737,7 @@ class RiderService:
         if not version.is_used:
             version.is_used = True
         await mark_stale(db, rider_ids=[pk], date_from=obj.start_date, date_to=_as_end(obj.end_date))
+        await invalidate_payroll_dailies(db, rider_ids=[pk], date_from=obj.start_date, date_to=_as_end(obj.end_date))
         await audit_service.record(
             db,
             request,
@@ -789,6 +790,7 @@ class RiderService:
         date_from = min(row.start_date, start_date)
         date_to = max(_as_end(row.end_date), _as_end(end_date))
         await mark_stale(db, rider_ids=[pk], date_from=date_from, date_to=date_to)
+        await invalidate_payroll_dailies(db, rider_ids=[pk], date_from=date_from, date_to=date_to)
         await audit_service.record(
             db,
             request,
@@ -819,6 +821,7 @@ class RiderService:
         before = snapshot(row, _BINDING_FIELDS)
         count = await rider_plan_binding_dao.delete(db, binding_id)
         await mark_stale(db, rider_ids=[pk], date_from=row.start_date, date_to=_as_end(row.end_date))
+        await invalidate_payroll_dailies(db, rider_ids=[pk], date_from=row.start_date, date_to=_as_end(row.end_date))
         await audit_service.record(
             db,
             request,

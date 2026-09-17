@@ -13,6 +13,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -162,6 +163,44 @@ async function ensureBindings(token, riderId, planA, planB) {
     await api(token, 'POST', `/api/v1/rider-salary/riders/${riderId}/bindings`, body);
   }
   console.log('bindings set: 09-01~14 + 09-18~30 (gap 15~17)');
+}
+
+/**
+ * 绑定挖洞后若曾算薪留下 rs_payroll_daily，缺口日会被缓存盖成 has_data。
+ * 写路径会失效绑定区间内 daily，但缺口日本身不在任一段 → 必须显式清 15~17。
+ * 只改绑定不够；见 council-resolution-calendar-cache-cdp。
+ */
+function clearGapPayrollDailies(riderId) {
+  const days = ['2026-09-15', '2026-09-16', '2026-09-17'];
+  const host = process.env.PGHOST || '127.0.0.1';
+  const port = process.env.PGPORT || '5432';
+  const user = process.env.PGUSER || 'root';
+  const db = process.env.PGDATABASE || 'fba';
+  const password = process.env.PGPASSWORD || 'postgres';
+  const dayList = days.map((d) => `'${d}'::date`).join(', ');
+  const sql = `
+UPDATE rs_payroll_daily
+    SET deleted = id, deleted_time = NOW()
+  WHERE rider_id = ${Number(riderId)}
+    AND biz_date IN (${dayList})
+    AND deleted = 0;
+`;
+  try {
+    const out = execFileSync(
+      'psql',
+      ['-h', host, '-p', String(port), '-U', user, '-d', db, '-v', 'ON_ERROR_STOP=1', '-c', sql],
+      {
+        env: { ...process.env, PGPASSWORD: password },
+        encoding: 'utf8',
+      },
+    );
+    console.log('cleared gap payroll_daily for rider', riderId, 'days', days.join(','), out.trim());
+  } catch (err) {
+    console.warn(
+      'WARN: 未能清缺口日 rs_payroll_daily（日历读路径仍应以 live 绑定判 no_plan；工作台 attention 可能需手工清）:',
+      err.message || err,
+    );
+  }
 }
 
 async function ensureNoPlanOrders(token, siteId, riderId) {
@@ -365,6 +404,7 @@ async function main() {
   const { planA, planB } = await pickPlanVersions(token);
   const rider = await ensureFixRider(token, site.id);
   await ensureBindings(token, rider.id, planA, planB);
+  clearGapPayrollDailies(rider.id);
   await ensureNoPlanOrders(token, site.id, rider.id);
   await ensureSiteOwner(token, site.id);
   await ensureStalePayrolls(token, site.id);
