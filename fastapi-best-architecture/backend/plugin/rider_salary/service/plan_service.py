@@ -48,6 +48,7 @@ from backend.plugin.rider_salary.utils.plan_activate import (
     stamp_trial_for_activate,
 )
 from backend.plugin.rider_salary.utils.plan_guarantee import assert_accrued_guarantee_is_last_period_item
+from backend.plugin.rider_salary.utils.plan_manual import assert_period_formula_not_manual_addend
 from backend.plugin.rider_salary.utils.plan_threshold import assert_threshold_price_period_items_xor
 from backend.utils.timezone import timezone
 
@@ -414,6 +415,7 @@ class PlanService:
             raise errors.RequestError(msg='；'.join(item_errors))
         assert_accrued_guarantee_is_last_period_item(items)
         assert_threshold_price_period_items_xor(items)
+        assert_period_formula_not_manual_addend(items)
         await plan_item_dao.logical_delete_by_version(db, pk)
         for item, condition_expr, formula_expr in compiled:
             await plan_item_dao.create(
@@ -514,6 +516,7 @@ class PlanService:
             raise errors.RequestError(msg='；'.join(activate_errors))
         assert_accrued_guarantee_is_last_period_item(items)
         assert_threshold_price_period_items_xor(items)
+        assert_period_formula_not_manual_addend(items)
         current_hash = items_hash_of(orm_items_as_dicts(items))
         version.items_hash = current_hash
         assert_activate_trial_is_binding_aware(version, current_hash)
