@@ -46,6 +46,10 @@ async def get_orders_paginated(
         bool | None,
         Query(description='需关注：配送异常∪已退款∪配送时长>60分钟（与工作台同源）'),
     ] = None,
+    missing_delivery: Annotated[
+        bool | None,
+        Query(description='已完成且送达时间为空'),
+    ] = None,
 ) -> ResponseSchemaModel[PageData[GetOrderDetail]]:
     page_data = await order_service.get_list(
         db=db,
@@ -59,6 +63,7 @@ async def get_orders_paginated(
         import_batch_id=import_batch_id,
         is_locked=is_locked,
         attention=attention,
+        missing_delivery=missing_delivery,
     )
     return response_base.success(data=page_data)
 

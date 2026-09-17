@@ -1,8 +1,19 @@
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
 from backend.plugin.rider_salary.model.recalc_job import RiderSalaryRecalcJob
+
+
+def latest_recalc_job_select(*, site_id: int, source: str | None = None) -> Select:
+    """本站最近一条重算任务（按 id 倒序）。"""
+    stmt = select(RiderSalaryRecalcJob).where(
+        RiderSalaryRecalcJob.site_id == site_id,
+        RiderSalaryRecalcJob.deleted == 0,
+    )
+    if source:
+        stmt = stmt.where(RiderSalaryRecalcJob.source == source)
+    return stmt.order_by(RiderSalaryRecalcJob.id.desc()).limit(1)
 
 
 class CRUDRecalcJob:
@@ -22,6 +33,16 @@ class CRUDRecalcJob:
         await db.flush()
         await db.refresh(row)
         return row
+
+    async def get_latest_by_site(
+        self,
+        db: AsyncSession,
+        *,
+        site_id: int,
+        source: str | None = None,
+    ) -> RiderSalaryRecalcJob | None:
+        stmt = latest_recalc_job_select(site_id=site_id, source=source)
+        return await db.scalar(stmt)
 
     async def list_by_source(
         self,
