@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 /**
- * CalculateModal 已退役：主路径为 /period/:id/calculate。
- * 残留引用若仍 open，则跳转到独立算薪页。
+ * CalculateModal 已退役：列表「算薪」只进 /period/:id/calculate。
+ * 残留引用若仍 open，立即跳转，不可在此完成算薪。
  */
 import type { PeriodResult } from '../../../types/period';
 
@@ -30,11 +30,12 @@ const [Modal, modalApi] = useVbenModal({
 </script>
 
 <template>
-  <Modal title="计算周期薪资">
+  <Modal title="正在跳转算薪页">
     <a-alert
       show-icon
       type="info"
-      message="算薪已迁至独立页，正在跳转…"
+      data-testid="period-calc-modal-retired"
+      message="算薪已迁至独立页，不能在此弹窗完成计算。正在跳转…"
     />
   </Modal>
 </template>

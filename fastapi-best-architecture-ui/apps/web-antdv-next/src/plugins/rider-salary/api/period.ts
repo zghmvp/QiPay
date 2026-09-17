@@ -1,6 +1,7 @@
 import type { PageResult } from '../types/common';
 import type {
   CalcPrecheckResult,
+  CalcRiderPageResult,
   CalculatePeriodParam,
   CalculatePeriodResult,
   GeneratePeriodParam,
@@ -27,6 +28,19 @@ export async function getPeriodApi(pk: number) {
 
 export async function calcPrecheckApi(pk: number) {
   return requestClient.get<CalcPrecheckResult>(`${BASE}/${pk}/calc-precheck`);
+}
+
+export async function getPeriodCalcRidersApi(
+  pk: number,
+  params?: { keyword?: string; page?: number; size?: number },
+) {
+  return requestClient.get<CalcRiderPageResult>(`${BASE}/${pk}/calc-riders`, {
+    params: {
+      keyword: params?.keyword || undefined,
+      page: params?.page ?? 1,
+      size: params?.size ?? 200,
+    },
+  });
 }
 
 export async function generatePeriodsApi(data: GeneratePeriodParam) {
@@ -63,9 +77,17 @@ export async function deletePeriodApi(pk: number) {
 
 export async function exportPeriodApi(
   pk: number,
-  params?: { exclude_attention?: boolean },
+  params?: {
+    exclude_attention?: boolean;
+    exclude_attention_adjustments?: boolean;
+  },
 ) {
   return downloadNamedBlob(`${BASE}/${pk}/export`, `周期薪资-${pk}.xlsx`, {
-    params: { exclude_attention: Boolean(params?.exclude_attention) },
+    params: {
+      exclude_attention: Boolean(params?.exclude_attention),
+      exclude_attention_adjustments: Boolean(
+        params?.exclude_attention_adjustments,
+      ),
+    },
   });
 }

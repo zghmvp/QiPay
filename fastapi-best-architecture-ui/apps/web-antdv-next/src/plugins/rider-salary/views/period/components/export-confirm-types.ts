@@ -8,5 +8,9 @@ export interface ExportConfirmOptions {
 
 export interface ExportConfirmResult {
   attentionCount: number;
+  bookedAdjustmentCount: number;
   excludeAttention: boolean;
+  excludeAttentionAdjustments: boolean;
+  syncDropCount: number;
+  unbookedAdjustmentCount: number;
 }

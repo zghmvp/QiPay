@@ -251,14 +251,17 @@ async function onActionClick({
       return;
     }
     if (code === 'export') {
-      const { excludeAttention } = await promptExport({
+      const { excludeAttention, excludeAttentionAdjustments } = await promptExport({
         dateFrom: row.start_date,
         dateTo: row.end_date,
         periodId: row.id,
         siteId: row.site_id,
         title: `导出 ${row.start_date} ~ ${row.end_date}`,
       });
-      await exportPeriodApi(row.id, { exclude_attention: excludeAttention });
+      await exportPeriodApi(row.id, {
+        exclude_attention: excludeAttention,
+        exclude_attention_adjustments: excludeAttentionAdjustments,
+      });
       message.success(
         excludeAttention ? '已导出（已排除需关注订单）' : '已导出周期薪资',
       );

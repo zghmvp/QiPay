@@ -33,12 +33,16 @@ export interface PeriodResult {
 }
 
 export interface PeriodWithPayrolls extends PeriodResult {
+  attention_adjustment_count?: number;
   attention_order_count?: number;
+  booked_adjustment_count?: number;
   last_calc_failures?: CalculateRiderFailure[];
   last_calc_status?: null | string;
   last_calc_status_label?: null | string;
   last_calc_status_message?: null | string;
+  last_calc_success_ids?: number[];
   payrolls: PayrollSummary[];
+  unbooked_adjustment_count?: number;
 }
 
 export interface PeriodQuery extends PageParams {
@@ -88,11 +92,31 @@ export interface CalculatePeriodResult {
   calc_status?: null | string;
   calc_status_label?: null | string;
   calculated: number;
+  calculated_rider_ids?: number[];
   failed?: CalculateRiderFailure[];
+  failed_count?: number;
   queued: boolean;
   sync_limit?: number;
   target_rider_count?: number;
+  unselected_means_all?: string;
   warnings: string[];
+}
+
+export interface CalcRiderOption {
+  id: number;
+  job_no: string;
+  name: string;
+}
+
+export interface CalcRiderPageResult {
+  items: CalcRiderOption[];
+  listed_count: number;
+  page: number;
+  size: number;
+  total: number;
+  truncated: boolean;
+  truncated_hint?: null | string;
+  unselected_means_all?: string;
 }
 
 export interface CalcPrecheckDeeplink {
@@ -126,6 +150,7 @@ export interface CalcPrecheckResult {
   period_id: number;
   stale_count: number;
   sync_limit?: number;
+  unselected_means_all?: string;
   warnings: CalcPrecheckWarning[];
 }
 

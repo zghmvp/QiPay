@@ -180,6 +180,7 @@ export interface TrialDailyRow {
 export interface TrialResult {
   adjustments?: Record<string, unknown>[];
   daily: TrialDailyRow[];
+  matches_official_calculate?: boolean;
   mode?: string;
   mode_label?: string;
   passed: boolean;
