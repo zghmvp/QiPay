@@ -6,13 +6,14 @@
  *   CDP_URL=http://127.0.0.1:9222 ADMIN_URL=http://127.0.0.1:5173 API_URL=http://127.0.0.1:8000 \
  *     node scripts/cdp/harness.mjs [spec-name]
  *
- * 灌种（FIX_C17_R1 + site_owner_d2 + stale）：
+ * 灌种（FIX_C17_R1 + site_owner_d2 + stale + FIX_C17_LOCK 无 stale 硬失败周期）：
  *   API_URL=http://127.0.0.1:8000 CDP_USER=admin CDP_PASS=admin \
  *     node scripts/cdp/seed-xiaoxiang-fixtures.mjs
  *
  * 推荐环境（福民演示机）：
  *   CDP_PASS=admin CDP_SITE_ID=<福民> CDP_RIDER_ID=<FIX_C17_R1_id> CDP_MONTH=2026-09
  *   CDP_SITE_OWNER=site_owner_d2 CDP_SITE_OWNER_PASS=Rider@123456
+ *   CDP_LOCK_HARD_FAIL_PERIOD_ID=<FIX_C17_LOCK 骑手级周期，可选>
  *   （勿把正式 Must #5 改成 CDP_SITE_OWNER=admin）
  *
  * 不传 spec-name 时列出可用场景。

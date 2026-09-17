@@ -1,6 +1,40 @@
 /** CDP: ops-calc-sidepath-no-false-success — 工作台立即重算不得直 POST / 假完成 */
 export const name = 'ops-calc-sidepath-no-false-success';
 
+/**
+ * 「立即重算」在折叠 panel 内；默认全收。先点开「需重算周期」再 visible。
+ * 禁止：默认展开产品、只断言 attached、改点 header/批量按钮冒充行跳转。
+ */
+async function expandNeedRecalcPanel(page) {
+  const gotoBtn = page.getByTestId('stale-goto-calculate').first();
+  if (await gotoBtn.isVisible()) return;
+
+  const header = page
+    .locator('.ant-collapse-header')
+    .filter({ hasText: '需重算周期' })
+    .first();
+  const headerByRole = page.getByRole('button', { name: /需重算周期/ });
+  const headerByText = page.getByText('需重算周期', { exact: true }).first();
+
+  try {
+    if (await header.count()) {
+      await header.waitFor({ state: 'visible', timeout: 20000 });
+      await header.click();
+    } else if (await headerByRole.count()) {
+      await headerByRole.first().waitFor({ state: 'visible', timeout: 20000 });
+      await headerByRole.first().click();
+    } else {
+      await headerByText.waitFor({ state: 'visible', timeout: 20000 });
+      await headerByText.click();
+    }
+  } catch (err) {
+    throw new Error(
+      '未找到工作台「需重算周期」折叠头，无法展开行内「立即重算」。请先 seed stale 周期（FIX_C17 / 奖惩 mark_stale）。' +
+        ` 原始错误：${err.message}`,
+    );
+  }
+}
+
 export async function run({ page, helpers, config }) {
   const admin = await helpers.swaggerLogin(config.username, config.password);
   await helpers.injectAdmin(page, admin.access_token, admin.user?.uuid ?? null);
@@ -19,12 +53,14 @@ export async function run({ page, helpers, config }) {
     { waitUntil: 'networkidle', timeout: 60000 },
   );
 
+  await expandNeedRecalcPanel(page);
+
   const btn = page.getByTestId('stale-goto-calculate').first();
   try {
     await btn.waitFor({ state: 'visible', timeout: 20000 });
   } catch (err) {
     throw new Error(
-      '未找到工作台「立即重算」。请先 seed stale 周期（FIX_C17 / 奖惩 mark_stale）。' +
+      '展开「需重算周期」后仍未找到工作台「立即重算」。请先 seed stale 周期（FIX_C17 / 奖惩 mark_stale）。' +
         ` 原始错误：${err.message}`,
     );
   }
