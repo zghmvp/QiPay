@@ -28,6 +28,7 @@ batch_router = APIRouter()
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
+        DependsRBAC,
     ],
 )
 async def get_orders_paginated(
@@ -151,7 +152,7 @@ async def import_orders(
     return response_base.success(res=res, data=result)
 
 
-@router.get('/{pk}', summary='获取订单详情', dependencies=[DependsJwtAuth])
+@router.get('/{pk}', summary='获取订单详情', dependencies=[DependsJwtAuth, DependsRBAC])
 async def get_order(
     db: CurrentSession,
     request: Request,
@@ -220,6 +221,7 @@ async def delete_order(
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
+        DependsRBAC,
     ],
 )
 async def get_import_batches_paginated(
@@ -255,7 +257,7 @@ async def download_error_report(
     )
 
 
-@batch_router.get('/{pk}', summary='获取导入批次详情', dependencies=[DependsJwtAuth])
+@batch_router.get('/{pk}', summary='获取导入批次详情', dependencies=[DependsJwtAuth, DependsRBAC])
 async def get_import_batch(
     db: CurrentSession,
     request: Request,
