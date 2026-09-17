@@ -26,6 +26,19 @@ import {
   rememberImportCalcTarget,
   rememberRecalcJob,
 } from '../../../utils/last-recalc-job';
+import {
+  importOutcomeDetail,
+  importOutcomeHeadline,
+  isImportAllSuccess,
+} from '../import-outcome';
+
+interface ImportWizardOpenData {
+  date?: string;
+  date_from?: string;
+  date_to?: string;
+  onSuccess?: (batchId?: null | number) => void;
+  site_id?: number;
+}
 
 const MAX_SIZE = 10 * 1024 * 1024;
 const ACCEPT = '.xlsx,.xls,.csv';
@@ -33,6 +46,9 @@ const router = useRouter();
 
 const step = ref(0);
 const siteId = ref<number>();
+const dateFrom = ref<string>();
+const dateTo = ref<string>();
+const siteLocked = ref(false);
 const skipErrors = ref(false);
 const autoRecalc = ref(false);
 const fileList = ref<UploadFile[]>([]);
@@ -49,10 +65,27 @@ let pollTimer: null | ReturnType<typeof setInterval> = null;
 const confirmText = computed(() => {
   if (step.value === 0) return '开始导入';
   if (step.value === 1) {
-    return calcPeriodIds.value.length ? '去周期算薪页' : '下一步';
+    const failed = result.value?.failed_rows ?? 0;
+    if (calcPeriodIds.value.length && failed <= 0) return '去周期算薪页';
+    return '下一步';
   }
   return '查看本批次订单';
 });
+
+const dateRange = computed({
+  get: () =>
+    dateFrom.value && dateTo.value
+      ? ([dateFrom.value, dateTo.value] as [string, string])
+      : undefined,
+  set: (value: [string, string] | undefined) => {
+    dateFrom.value = value?.[0];
+    dateTo.value = value?.[1];
+  },
+});
+
+const halfSuccess = computed(
+  () => Boolean(result.value) && !isImportAllSuccess(result.value!),
+);
 
 const recalcStatusText = computed(() => {
   const job = recalcJob.value;
@@ -282,10 +315,11 @@ const [Modal, modalApi] = useVbenModal({
       return;
     }
     if (step.value === 1) {
-      if (calcPeriodIds.value.length) {
+      const failed = result.value?.failed_rows ?? 0;
+      if (calcPeriodIds.value.length && failed <= 0) {
         goPrimaryCalcPage();
         modalApi
-          .getData<{ onSuccess?: (batchId?: null | number) => void }>()
+          .getData<ImportWizardOpenData>()
           ?.onSuccess?.(result.value?.batch_id);
         await modalApi.close();
         return;
@@ -295,7 +329,7 @@ const [Modal, modalApi] = useVbenModal({
       return;
     }
     modalApi
-      .getData<{ onSuccess?: (batchId?: null | number) => void }>()
+      .getData<ImportWizardOpenData>()
       ?.onSuccess?.(result.value?.batch_id);
     await modalApi.close();
   },
@@ -305,8 +339,13 @@ const [Modal, modalApi] = useVbenModal({
       stopPoll();
       return;
     }
+    const data = modalApi.getData<ImportWizardOpenData>() ?? {};
+    const day = data.date || data.date_from;
     step.value = 0;
-    siteId.value = undefined;
+    siteId.value = data.site_id && data.site_id > 0 ? data.site_id : undefined;
+    siteLocked.value = Boolean(siteId.value && (data.date || data.date_from));
+    dateFrom.value = data.date_from || day || undefined;
+    dateTo.value = data.date_to || day || undefined;
     skipErrors.value = false;
     autoRecalc.value = false;
     fileList.value = [];
@@ -337,10 +376,39 @@ onUnmounted(() => {
       class="mb-4"
       size="small"
     />
-    <div v-if="step === 0" class="flex flex-col gap-3">
+    <div
+      v-if="step === 0"
+      class="flex flex-col gap-3"
+      data-testid="import-wizard"
+    >
       <div>
         <div class="mb-1 text-sm">站点</div>
-        <SiteSelect v-model:value="siteId" />
+        <SiteSelect
+          v-model:value="siteId"
+          :disabled="siteLocked"
+          data-testid="import-wizard-site"
+        />
+      </div>
+      <div>
+        <div class="mb-1 text-sm">覆盖日期</div>
+        <a-range-picker
+          v-model:value="dateRange"
+          class="w-full"
+          data-testid="import-wizard-date-range"
+          value-format="YYYY-MM-DD"
+        />
+        <div
+          v-if="dateFrom && dateTo"
+          class="text-muted-foreground mt-1 text-xs"
+          data-testid="import-wizard-preset-day"
+        >
+          将按
+          <span data-testid="import-wizard-date-from">{{ dateFrom }}</span>
+          至
+          <span data-testid="import-wizard-date-to">{{ dateTo }}</span>
+          导入该站该日缺口
+          <span data-testid="import-wizard-site-id">{{ siteId }}</span>
+        </div>
       </div>
       <a-checkbox v-model:checked="skipErrors">跳过错误行</a-checkbox>
       <a-checkbox v-model:checked="autoRecalc">导入后自动重算</a-checkbox>
@@ -367,13 +435,25 @@ onUnmounted(() => {
     </div>
     <div v-else-if="step === 1" class="flex flex-col gap-3">
       <a-spin :spinning="submitting" tip="处理中，请勿关闭页面">
+        <a-alert
+          v-if="result"
+          class="mb-2"
+          :type="halfSuccess ? 'warning' : 'success'"
+          show-icon
+          data-testid="ops-import-skip-errors-not-all-success"
+          :message="importOutcomeHeadline(result)"
+        />
         <a-descriptions v-if="result" bordered size="small" :column="2">
           <a-descriptions-item label="状态">
             <StatusTag :options="IMPORT_BATCH_STATUS_OPTIONS" :value="result.status" />
           </a-descriptions-item>
           <a-descriptions-item label="总行数">{{ result.total_rows }}</a-descriptions-item>
-          <a-descriptions-item label="成功">{{ result.success_rows }}</a-descriptions-item>
-          <a-descriptions-item label="失败">{{ result.failed_rows }}</a-descriptions-item>
+          <a-descriptions-item label="成功">
+            <span data-testid="import-result-success-rows">{{ result.success_rows }}</span>
+          </a-descriptions-item>
+          <a-descriptions-item label="失败">
+            <span data-testid="import-result-failed-rows">{{ result.failed_rows }}</span>
+          </a-descriptions-item>
         </a-descriptions>
         <a-table
           v-if="result?.errors?.length"
@@ -384,7 +464,12 @@ onUnmounted(() => {
           :pagination="false"
           :row-key="(row: ImportErrorItem) => `${row.row}-${row.order_no}`"
         />
-        <a-empty v-else-if="result && result.failed_rows === 0" class="mt-3" description="全部导入成功" />
+        <a-empty
+          v-else-if="result && isImportAllSuccess(result)"
+          class="mt-3"
+          data-testid="import-all-success"
+          description="全部导入成功"
+        />
         <a-alert
           v-if="result && !autoRecalc"
           class="mt-3"
@@ -471,17 +556,50 @@ onUnmounted(() => {
         </a-button>
       </a-spin>
     </div>
-    <div v-else class="py-6 text-center">
-      <p data-testid="import-not-payroll">导入完成 ≠ 已出账。订单已入库，须到周期算薪页计算后才有薪资结果。</p>
+    <div v-else class="flex flex-col gap-3 py-2" data-testid="import-wizard-done">
+      <a-alert
+        v-if="result"
+        :type="halfSuccess ? 'warning' : 'success'"
+        show-icon
+        data-testid="ops-import-skip-errors-not-all-success"
+        :message="importOutcomeHeadline(result)"
+        :description="importOutcomeDetail(result)"
+      />
+      <a-descriptions v-if="result" bordered size="small" :column="2">
+        <a-descriptions-item label="成功">
+          <span data-testid="import-done-success-rows">{{ result.success_rows }}</span>
+        </a-descriptions-item>
+        <a-descriptions-item label="失败">
+          <span data-testid="import-done-failed-rows">{{ result.failed_rows }}</span>
+        </a-descriptions-item>
+      </a-descriptions>
+      <a-table
+        v-if="result?.errors?.length"
+        size="small"
+        :columns="errorColumns"
+        :data-source="result.errors"
+        :pagination="false"
+        :row-key="(row: ImportErrorItem) => `${row.row}-${row.order_no}`"
+      />
+      <a-button
+        v-if="result?.batch_id && result.failed_rows > 0"
+        data-testid="import-done-error-report"
+        @click="downloadReport"
+      >
+        下载完整错误报告
+      </a-button>
+      <p data-testid="import-not-payroll" class="text-center">
+        导入完成 ≠ 已出账。订单已入库，须到周期算薪页计算后才有薪资结果。
+      </p>
       <p
         v-if="recalcJob"
-        class="text-muted-foreground mt-2 text-sm"
+        class="text-muted-foreground text-center text-sm"
         data-testid="import-recalc-final"
       >
         重算：{{ recalcStatusText }}
         <template v-if="recalcJob.message">（{{ recalcJob.message }}）</template>
       </p>
-      <div v-if="calcPeriodIds.length" class="mt-3 flex justify-center gap-2">
+      <div v-if="calcPeriodIds.length" class="flex justify-center gap-2">
         <a-button
           type="primary"
           data-testid="import-goto-calculate"
@@ -490,7 +608,7 @@ onUnmounted(() => {
           去周期算薪页
         </a-button>
       </div>
-      <p v-if="result?.batch_id" class="text-muted-foreground mt-2 text-sm">
+      <p v-if="result?.batch_id" class="text-muted-foreground text-center text-sm">
         点击下方按钮查看本批次订单
       </p>
     </div>

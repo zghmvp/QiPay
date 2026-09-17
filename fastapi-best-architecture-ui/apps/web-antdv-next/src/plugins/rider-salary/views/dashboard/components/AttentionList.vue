@@ -20,11 +20,15 @@ import {
   isOverdueUnlocked,
   LOCK_COUNTDOWN_TITLE,
 } from '../due-countdown';
+import { periodRowLevelLabel } from '../period-row-level';
 import {
   abnormalAttentionTarget,
+  abnormalOrderRowTarget,
+  importGapWizardPreset,
   lockCountdownViewAllTarget,
   noPlanBindingTarget,
   noPlanViewAllTarget,
+  orderImportTarget,
   pendingAdvanceRowTarget,
   pendingAdvancesViewAllTarget,
   stalePeriodCalcTarget,
@@ -35,6 +39,15 @@ const props = defineProps<{
   blocks: DashboardAttentionBlock[];
   month?: string;
   siteId?: null | number;
+}>();
+
+const emit = defineEmits<{
+  'open-import': [payload: {
+    date: string;
+    date_from: string;
+    date_to: string;
+    site_id: number;
+  }];
 }>();
 
 const router = useRouter();
@@ -82,6 +95,7 @@ function columns(key: string) {
     case 'due_periods':
       return [
         { dataIndex: 'range', key: 'range', title: '周期' },
+        { dataIndex: 'level', key: 'level', title: '级别', width: 140 },
         { dataIndex: 'status', key: 'status', title: '状态', width: 90 },
         { dataIndex: 'end_date', key: 'end_date', title: '结束日', width: 120 },
         { dataIndex: 'days_left', key: 'days_left', title: '倒计时', width: 140 },
@@ -117,6 +131,7 @@ function columns(key: string) {
     case 'stale_periods':
       return [
         { dataIndex: 'range', key: 'range', title: '周期' },
+        { dataIndex: 'level', key: 'level', title: '级别', width: 140 },
         { dataIndex: 'status', key: 'status', title: '状态', width: 90 },
         { dataIndex: 'stale_count', key: 'stale_count', title: '需重算', width: 90 },
         {
@@ -167,6 +182,9 @@ function viewAllLink(block: DashboardAttentionBlock) {
   if (block.key === 'pending_advances') {
     return pendingAdvancesViewAllTarget(props.siteId, props.month);
   }
+  if (block.key === 'import_gaps') {
+    return orderImportTarget(props.siteId, props.month);
+  }
   return parseLink(block.link);
 }
 
@@ -175,12 +193,24 @@ function rowLink(
   record: Record<string, unknown>,
 ) {
   if (block.key === 'abnormal_orders') {
+    const id = Number(record.id);
     const orderNo = String(record.order_no ?? '');
+    if (Number.isFinite(id) && id > 0) {
+      return abnormalOrderRowTarget(
+        id,
+        props.siteId ?? Number(record.site_id) ?? undefined,
+        props.month,
+        orderNo || undefined,
+      );
+    }
     return abnormalAttentionTarget(
       props.siteId ?? Number(record.site_id) ?? undefined,
       props.month,
       orderNo || undefined,
     );
+  }
+  if (block.key === 'import_gaps') {
+    return null;
   }
   if (block.key === 'due_periods') {
     const id = Number(record.period_id);
@@ -215,14 +245,6 @@ function rowLink(
     return parseLink(record.link);
   }
   switch (block.key) {
-    case 'import_gaps': {
-      const siteId = Number(record.site_id);
-      const date = String(record.date ?? '');
-      const query: Record<string, string> = {};
-      if (Number.isFinite(siteId) && siteId > 0) query.site_id = String(siteId);
-      if (date) query.date = date;
-      return { path: '/rider-salary/order', query };
-    }
     case 'pending_advances': {
       const id = Number(record.id);
       if (Number.isFinite(id) && id > 0) {
@@ -257,7 +279,14 @@ function onRowClick(
   block: DashboardAttentionBlock,
   record: Record<string, unknown>,
 ) {
-  go(rowLink(block, record));
+  if (block.key === 'import_gaps') {
+    const preset = importGapWizardPreset(record, props.siteId);
+    if (preset) emit('open-import', preset);
+    return;
+  }
+  const target = rowLink(block, record);
+  if (!target) return;
+  go(target);
 }
 
 function onRecalculate(event: Event, record: Record<string, unknown>) {
@@ -272,6 +301,7 @@ function onRecalculate(event: Event, record: Record<string, unknown>) {
 function blockTestId(key: string) {
   if (key === 'abnormal_orders') return 'ops-dashboard-abnormal-attention-landing';
   if (key === 'due_periods') return 'ops-dashboard-lock-overdue-visible';
+  if (key === 'import_gaps') return 'ops-import-gap-wizard-that-day';
   if (key === 'no_plan_days') return 'ops-dashboard-no-plan-to-binding';
   if (key === 'stale_periods') return 'ops-dashboard-stale-to-calc';
   return `dashboard-attention-${key}`;
@@ -280,6 +310,7 @@ function blockTestId(key: string) {
 function viewAllTestId(key: string) {
   if (key === 'abnormal_orders') return 'dashboard-abnormal-view-all';
   if (key === 'due_periods') return 'dashboard-lock-view-all';
+  if (key === 'import_gaps') return 'dashboard-import-gap-view-all';
   if (key === 'no_plan_days') return 'dashboard-no-plan-view-all';
   if (key === 'stale_periods') return 'dashboard-stale-view-all';
   if (key === 'pending_advances') return 'dashboard-advance-view-all';
@@ -287,6 +318,9 @@ function viewAllTestId(key: string) {
 }
 
 function rowTestId(key: string) {
+  if (key === 'abnormal_orders') return 'dashboard-abnormal-row';
+  if (key === 'due_periods') return 'dashboard-due-row';
+  if (key === 'import_gaps') return 'dashboard-import-gap-row';
   if (key === 'no_plan_days') return 'dashboard-no-plan-row';
   if (key === 'stale_periods') return 'dashboard-stale-row';
   if (key === 'pending_advances') return 'dashboard-advance-row';
@@ -317,8 +351,11 @@ function rowTestId(key: string) {
             (record: Record<string, unknown>) => ({
               class: 'cursor-pointer',
               'data-advance-id': record.id,
+              'data-date': record.date,
+              'data-order-id': record.id,
               'data-period-id': record.period_id,
               'data-rider-id': record.rider_id,
+              'data-site-id': record.site_id,
               'data-testid': rowTestId(block.key),
               onClick: () => onRowClick(block, record),
             })
@@ -338,8 +375,16 @@ function rowTestId(key: string) {
           size="small"
         >
           <template #bodyCell="{ column, record }">
+            <span
+              v-if="column.key === 'level'"
+              :data-period-id="record.period_id"
+              :data-rider-id="record.rider_id"
+              data-testid="ops-due-stale-row-level-label"
+            >
+              {{ periodRowLevelLabel(record) }}
+            </span>
             <StatusTag
-              v-if="column.key === 'status' && block.key !== 'abnormal_orders'"
+              v-else-if="column.key === 'status' && block.key !== 'abnormal_orders'"
               :options="PERIOD_STATUS_OPTIONS"
               :value="String(record.status ?? '')"
             />

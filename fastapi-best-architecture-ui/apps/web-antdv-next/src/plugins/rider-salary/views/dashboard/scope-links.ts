@@ -81,7 +81,7 @@ export function calendarRiderTarget(
   };
 }
 
-/** 工作台异常落地：attention=1，禁止只抛 status=abnormal。 */
+/** 工作台异常「查看全部」：attention=1，禁止只抛 status=abnormal。 */
 export function abnormalAttentionTarget(
   siteId?: null | number,
   month?: string,
@@ -95,6 +95,53 @@ export function abnormalAttentionTarget(
       ...monthWindowQuery(month),
       ...(orderNo ? { order_no: orderNo } : {}),
     },
+  };
+}
+
+/** 异常订单该行：带该条 id，进页打开这一单。查看全部不要走这里。 */
+export function abnormalOrderRowTarget(
+  id: number,
+  siteId?: null | number,
+  month?: string,
+  orderNo?: string,
+): { path: string; query: Record<string, string> } {
+  return {
+    path: '/rider-salary/order',
+    query: {
+      attention: '1',
+      id: String(id),
+      ...siteOnly(siteId),
+      ...monthWindowQuery(month),
+      ...(orderNo ? { order_no: orderNo } : {}),
+    },
+  };
+}
+
+/**
+ * 导入缺口该行：打开现有向导并预填该站该日。
+ * 已选站时用当前站，不得串到别站。不是订单空列表。
+ */
+export function importGapWizardPreset(
+  record: { date?: unknown; site_id?: unknown },
+  selectedSiteId?: null | number,
+): {
+  date: string;
+  date_from: string;
+  date_to: string;
+  site_id: number;
+} | null {
+  const rowSite = Number(record.site_id);
+  const siteId =
+    selectedSiteId && selectedSiteId > 0 ? selectedSiteId : rowSite;
+  const date = String(record.date ?? '').trim();
+  if (!(Number.isFinite(siteId) && siteId > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return null;
+  }
+  return {
+    date,
+    date_from: date,
+    date_to: date,
+    site_id: siteId,
   };
 }
 
