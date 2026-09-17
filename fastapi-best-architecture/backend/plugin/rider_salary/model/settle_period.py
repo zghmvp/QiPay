@@ -59,3 +59,8 @@ class RiderSalarySettlePeriod(Base):
         default=None,
         comment='最近一次算薪态说明',
     )
+    last_calc_success_ids: Mapped[list | None] = mapped_column(
+        sa.JSON(),
+        default=None,
+        comment='最近一次算薪成功骑手 ID 列表',
+    )

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -8,9 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.plugin.rider_salary.crud.payroll import payroll_dao
-from backend.plugin.rider_salary.crud.settle_period import SITE_LEVEL_RIDER_ID
 from backend.plugin.rider_salary.enums import CalcStage, DetailSource, OrderStatus, PayrollKind, PayrollStatus
-from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
 from backend.plugin.rider_salary.model.payroll_detail import RiderSalaryPayrollDetail
 from backend.plugin.rider_salary.model.plan import RiderSalaryPlan
@@ -22,6 +21,14 @@ from backend.plugin.rider_salary.service.audit_service import audit_service
 from backend.plugin.rider_salary.service.period_service import period_service
 from backend.plugin.rider_salary.utils.audit import resolve_operator_name
 from backend.plugin.rider_salary.utils.excel import write_workbook
+from backend.plugin.rider_salary.utils.export_adjustment import (
+    AdjustmentSheetStats,
+    attention_rider_day_keys,
+    classify_adjustments,
+    list_period_window_adjustments,
+    manual_detail_keys,
+    sheet_stats,
+)
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.order_attention import (
     attention_confession,
@@ -74,6 +81,9 @@ ADJUSTMENT_HEADERS = [
     '带符号金额',
     '备注',
     '是否锁账',
+    '入账状态',
+    '需关注同日同骑手',
+    '奖惩说明',
 ]
 NET_HEADERS = ['工号', '姓名', '原单', '反冲', '补发', '净差']
 
@@ -142,6 +152,21 @@ def _yes_no(*, flag: bool) -> str:
     return '是' if flag else '否'
 
 
+@dataclass(frozen=True, slots=True)
+class ExportPeriodFile:
+    """周期导出文件（汇总金额不因排除改变）。"""
+
+    content: bytes
+    filename: str
+    attention_count: int
+    exclude_attention: bool
+    booked_adjustment_count: int
+    unbooked_adjustment_count: int
+    attention_adjustment_count: int
+    excluded_adjustment_count: int
+    exclude_attention_adjustments: bool
+
+
 class ExportService:
     """薪资导出服务"""
 
@@ -152,7 +177,8 @@ class ExportService:
         request: Request,
         pk: int,
         exclude_attention: bool = False,
-    ) -> tuple[bytes, str, int, bool]:
+        exclude_attention_adjustments: bool = False,
+    ) -> ExportPeriodFile:
         """
         导出周期薪资 xlsx
 
@@ -160,7 +186,8 @@ class ExportService:
         :param request: 请求对象
         :param pk: 周期 ID
         :param exclude_attention: 是否从文件行排除需关注订单（不改 gross/net）
-        :return: 文件字节, 文件名, 需关注条数, 是否已排除
+        :param exclude_attention_adjustments: 奖惩是否同步去掉需关注同日同骑手（默认关）
+        :return: 导出文件与对账计数
         """
         period, site, _rider = await period_service._load_visible(db, request, pk)
         payrolls = list(await payroll_dao.select_models_order(db, 'id', 'asc', period_id=period.id, deleted=0))
@@ -236,7 +263,14 @@ class ExportService:
                     attention_ids=attention_ids,
                 )
             )
-        adj_rows = await self._adjustment_rows(db, period, riders)
+        adj_rows, adj_stats = await self._adjustment_rows(
+            db,
+            period,
+            riders,
+            details=details,
+            attention_orders=attention_orders,
+            exclude_attention_adjustments=exclude_attention_adjustments,
+        )
         net_rows = self._net_rows(net_acc, riders, ordered_rider_ids)
         sheets: list[tuple[str, list[str], list[list]]] = [
             (SHEET_SUMMARY, SUMMARY_HEADERS, summary_rows),
@@ -255,6 +289,8 @@ class ExportService:
         filename = f'薪资导出_{site_name}_{period.start_date}_{period.end_date}.xlsx'
         confession = attention_confession(count=attention_count, excluded=exclude_attention)
         audit_extra = f'，{confession}' if confession else ''
+        if exclude_attention_adjustments and adj_stats.excluded_count:
+            audit_extra += f'，奖惩同步去掉 {adj_stats.excluded_count} 条'
         await audit_service.record(
             db,
             request,
@@ -268,7 +304,17 @@ class ExportService:
                 f'对 周期{site_name} {period_text} 执行了导出{audit_extra}'
             ),
         )
-        return content, filename, attention_count, exclude_attention
+        return ExportPeriodFile(
+            content=content,
+            filename=filename,
+            attention_count=attention_count,
+            exclude_attention=exclude_attention,
+            booked_adjustment_count=adj_stats.booked_count,
+            unbooked_adjustment_count=adj_stats.unbooked_count,
+            attention_adjustment_count=adj_stats.attention_count,
+            excluded_adjustment_count=adj_stats.excluded_count,
+            exclude_attention_adjustments=exclude_attention_adjustments,
+        )
 
     @staticmethod
     def _attention_notice_rows(
@@ -356,16 +402,12 @@ class ExportService:
         db: AsyncSession,
         period: RiderSalarySettlePeriod,
         payroll_riders: dict[int, RiderSalaryRider],
-    ) -> list[list]:
-        stmt = select(RiderSalaryAdjustment).where(
-            RiderSalaryAdjustment.site_id == period.site_id,
-            RiderSalaryAdjustment.biz_date >= period.start_date,
-            RiderSalaryAdjustment.biz_date <= period.end_date,
-            RiderSalaryAdjustment.deleted == 0,
-        )
-        if period.rider_id and period.rider_id != SITE_LEVEL_RIDER_ID:
-            stmt = stmt.where(RiderSalaryAdjustment.rider_id == period.rider_id)
-        adjustments = list((await db.scalars(stmt.order_by(RiderSalaryAdjustment.biz_date.asc()))).all())
+        *,
+        details: list[RiderSalaryPayrollDetail],
+        attention_orders: list[RiderSalaryOrder],
+        exclude_attention_adjustments: bool,
+    ) -> tuple[list[list], AdjustmentSheetStats]:
+        adjustments = await list_period_window_adjustments(db, period)
         rider_ids = list({row.rider_id for row in adjustments} | set(payroll_riders))
         riders = dict(payroll_riders)
         riders.update(await period_service._rider_map(db, rider_ids))
@@ -374,21 +416,35 @@ class ExportService:
         if subject_ids:
             rows = await db.scalars(select(RiderSalarySubject).where(RiderSalarySubject.id.in_(list(subject_ids))))
             subjects = {row.id: row for row in rows.all()}
+        classified = classify_adjustments(
+            adjustments,
+            period_id=int(period.id),
+            manual_keys=manual_detail_keys(details),
+            attention_keys=attention_rider_day_keys(attention_orders),
+            exclude_attention_adjustments=exclude_attention_adjustments,
+        )
+        stats = sheet_stats(classified)
         rows_out: list[list] = []
-        for item in adjustments:
-            rider = riders.get(item.rider_id)
-            subject = subjects.get(item.subject_id)
+        for item in classified:
+            if item.dropped:
+                continue
+            adj = item.adjustment
+            rider = riders.get(adj.rider_id)
+            subject = subjects.get(adj.subject_id)
             rows_out.append([
-                rider.job_no if rider is not None else str(item.rider_id),
+                rider.job_no if rider is not None else str(adj.rider_id),
                 rider.name if rider is not None else '',
-                item.biz_date.isoformat() if item.biz_date else '',
-                subject.name if subject is not None else str(item.subject_id),
-                _excel_number(item.amount),
-                _excel_number(item.signed_amount if item.signed_amount is not None else item.amount),
-                item.remark or '',
-                _yes_no(flag=bool(item.is_locked)),
+                adj.biz_date.isoformat() if adj.biz_date else '',
+                subject.name if subject is not None else str(adj.subject_id),
+                _excel_number(adj.amount),
+                _excel_number(adj.signed_amount if adj.signed_amount is not None else adj.amount),
+                adj.remark or '',
+                _yes_no(flag=bool(adj.is_locked)),
+                item.booked_label,
+                _yes_no(flag=item.attention_same_day),
+                item.attention_note,
             ])
-        return rows_out
+        return rows_out, stats
 
     @staticmethod
     def _net_rows(
