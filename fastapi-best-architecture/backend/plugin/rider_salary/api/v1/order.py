@@ -16,7 +16,11 @@ from backend.plugin.rider_salary.enums import ImportBatchStatus
 from backend.plugin.rider_salary.schema.import_batch import GetImportBatchDetail, GetImportBatchListItem
 from backend.plugin.rider_salary.schema.order import CreateOrderParam, GetOrderDetail, ImportResult, UpdateOrderParam
 from backend.plugin.rider_salary.service.import_service import build_import_template, import_service
-from backend.plugin.rider_salary.service.order_service import order_service
+from backend.plugin.rider_salary.service.order_service import (
+    ORDER_CREATE_SUCCESS_MSG,
+    ORDER_FIX_SUCCESS_MSG,
+    order_service,
+)
 
 router = APIRouter()
 batch_router = APIRouter()
@@ -170,7 +174,7 @@ async def create_order(
     obj: CreateOrderParam,
 ) -> ResponseSchemaModel[GetOrderDetail]:
     data = await order_service.create(db=db, request=request, obj=obj)
-    return response_base.success(data=data)
+    return response_base.success(res=CustomResponse(code=200, msg=ORDER_CREATE_SUCCESS_MSG), data=data)
 
 
 @router.put(
@@ -188,7 +192,7 @@ async def update_order(
     obj: UpdateOrderParam,
 ) -> ResponseSchemaModel[GetOrderDetail]:
     data = await order_service.update(db=db, request=request, pk=pk, obj=obj)
-    return response_base.success(data=data)
+    return response_base.success(res=CustomResponse(code=200, msg=ORDER_FIX_SUCCESS_MSG), data=data)
 
 
 @router.delete(

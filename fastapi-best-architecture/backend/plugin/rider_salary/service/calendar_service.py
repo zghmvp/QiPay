@@ -63,6 +63,38 @@ ZERO = Decimal('0.00')
 _SITE_LEVEL = 0
 _LOCKED = {PeriodStatus.locked.value, PeriodStatus.paid.value}
 _PAYROLL_OK = {PayrollStatus.draft.value, PayrollStatus.finalized.value, PayrollStatus.paid.value}
+DAY_UNCALCULATED_HINT = '未算薪，不是今日提成为 0'
+ORDER_UNCALCULATED_HINT = '尚未进本次算薪'
+WITHHOLD_HINT = '代扣不进日手工，对账看条'
+
+
+def build_day_uncalculated_hints(
+    *,
+    has_cache: bool,
+    completed_order_count: int,
+    withhold_count: int,
+) -> tuple[bool, str | None, str | None]:
+    """
+    无 daily cache 且有完成单时，公式金额/净额不得读成今日 0 提成。
+    不现场 persist calculate。
+    """
+    if has_cache:
+        return True, None, None
+    uncalculated_hint = DAY_UNCALCULATED_HINT if completed_order_count > 0 else None
+    withhold_hint = WITHHOLD_HINT if withhold_count > 0 else None
+    return False, uncalculated_hint, withhold_hint
+
+
+def is_withholding_subject(subject: Any) -> bool:
+    """include_in_gross=false 的代扣不进未算薪日的手工/净额"""
+    return subject is not None and not bool(getattr(subject, 'include_in_gross', True))
+
+
+def order_uncalculated_hint(*, has_cache: bool, has_hits: bool) -> str | None:
+    """无 cache 且无命中项时，不得只写「无命中项」"""
+    if has_cache or has_hits:
+        return None
+    return ORDER_UNCALCULATED_HINT
 
 
 def parse_month(month: str | None, today: date | None = None) -> tuple[str, date, date]:
@@ -464,29 +496,31 @@ class CalendarService:
         subject_ids |= {row.subject_id for row in adjustments}
         subjects = await _subjects_map(db, subject_ids)
         item_names = await _item_names(db, {row.plan_item_id for row in details if row.plan_item_id})
+        has_cache = cache is not None
         details_by_order: dict[int, list[RiderSalaryPayrollDetail]] = defaultdict(list)
         daily_items: list[CalendarDailyItem] = []
         formula_amount = ZERO
-        for row in details:
-            if row.order_id:
-                details_by_order[row.order_id].append(row)
-            if row.source == DetailSource.formula.value and row.stage == CalcStage.daily.value:
-                sub = subjects.get(row.subject_id)
-                daily_items.append(
-                    CalendarDailyItem(
-                        subject=sub.name if sub else str(row.subject_id),
-                        name=item_names.get(row.plan_item_id) if row.plan_item_id else None,
-                        amount=q2(row.amount),
-                        calc_trace=None if for_rider else row.calc_trace,
-                    )
-                )
-            if row.source == DetailSource.formula.value and row.stage in {
-                CalcStage.per_order.value,
-                CalcStage.daily.value,
-            }:
-                formula_amount += q2(row.amount)
+        # 无 cache 不把残留明细读成今日提成，也不现场 persist calculate
         if cache is not None:
-            formula_amount = q2(cache.formula_amount)
+            for row in details:
+                if row.order_id:
+                    details_by_order[row.order_id].append(row)
+                if row.source == DetailSource.formula.value and row.stage == CalcStage.daily.value:
+                    sub = subjects.get(row.subject_id)
+                    daily_items.append(
+                        CalendarDailyItem(
+                            subject=sub.name if sub else str(row.subject_id),
+                            name=item_names.get(row.plan_item_id) if row.plan_item_id else None,
+                            amount=q2(row.amount),
+                            calc_trace=None if for_rider else row.calc_trace,
+                        )
+                    )
+                if row.source == DetailSource.formula.value and row.stage in {
+                    CalcStage.per_order.value,
+                    CalcStage.daily.value,
+                }:
+                    formula_amount += q2(row.amount)
+            formula_amount = q2(cache.formula_amount)  # cache 已判定非空
         order_models: list[CalendarDayOrder] = []
         for order in orders:
             hits = [
@@ -508,21 +542,27 @@ class CalendarService:
                     status=order.status,
                     amount=order.amount,
                     details=hits,
+                    uncalculated_hint=order_uncalculated_hint(has_cache=has_cache, has_hits=bool(hits)),
                 )
             )
         adj_models: list[CalendarAdjustmentItem] = []
         manual_bonus = ZERO
         manual_penalty = ZERO
+        withhold_count = 0
         for adj in adjustments:
             sub = subjects.get(adj.subject_id)
             signed = q2(adj.signed_amount if adj.signed_amount is not None else adj.amount)
             if sub is not None and adj.signed_amount is None:
                 signed = signed if sub.direction == SubjectDirection.bonus.value else q2(-signed)
             direction = sub.direction if sub else SubjectDirection.bonus.value
-            if direction == SubjectDirection.bonus.value:
-                manual_bonus += signed
-            else:
-                manual_penalty += signed
+            withholding = is_withholding_subject(sub)
+            if withholding:
+                withhold_count += 1
+            if has_cache or not withholding:
+                if direction == SubjectDirection.bonus.value:
+                    manual_bonus += signed
+                else:
+                    manual_penalty += signed
             adj_models.append(
                 CalendarAdjustmentItem(
                     id=adj.id,
@@ -549,6 +589,11 @@ class CalendarService:
                 imported=imported,
             )
             order_count = len(orders)
+        payroll_calculated, uncalculated_hint, withhold_hint = build_day_uncalculated_hints(
+            has_cache=has_cache,
+            completed_order_count=len(completed),
+            withhold_count=withhold_count,
+        )
         net = q2(formula_amount + manual_bonus + manual_penalty)
         return GetCalendarDayDetail(
             date=biz_date,
@@ -566,6 +611,9 @@ class CalendarService:
                 manual_penalty=q2(manual_penalty),
                 net=net,
             ),
+            payroll_calculated=payroll_calculated,
+            uncalculated_hint=uncalculated_hint,
+            withhold_hint=withhold_hint,
         )
 
 

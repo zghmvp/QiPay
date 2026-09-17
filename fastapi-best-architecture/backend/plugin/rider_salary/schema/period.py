@@ -177,6 +177,15 @@ class ReversePeriodResult(SchemaBase):
     reversal_net_total: Decimal = Field(description='反冲金额合计')
 
 
+class ReversePreflightResult(SchemaBase):
+    """反冲补发预检（只计数，不改反冲谓词）"""
+
+    period_id: int = Field(description='周期 ID')
+    reversal_count: int = Field(description='将生成的反冲薪资单数')
+    rider_count: int = Field(description='涉及骑手数（本周期将实际反冲的已定稿/已发薪条）')
+    confirm_hint: str = Field(description='确认中文摘要，含单数与人数')
+
+
 class GetPeriodForDateResult(SchemaBase):
     """按日期查询周期"""
 

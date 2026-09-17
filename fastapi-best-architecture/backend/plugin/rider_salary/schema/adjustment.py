@@ -21,10 +21,20 @@ class CreateAdjustmentParam(AdjustmentSchemaBase):
     """创建奖惩记录参数"""
 
 
+class BatchAdjustmentItemParam(SchemaBase):
+    """批量奖惩行（允许半填，由服务层跳过未完整行）"""
+
+    rider_id: int | None = Field(None, description='骑手 ID')
+    biz_date: date | None = Field(None, description='业务日期')
+    subject_id: int | None = Field(None, description='科目 ID')
+    amount: Decimal | None = Field(None, description='金额（正数；上期补差允许负数）')
+    remark: str | None = Field(None, description='备注')
+
+
 class BatchCreateAdjustmentParam(SchemaBase):
     """批量创建奖惩记录参数"""
 
-    items: list[CreateAdjustmentParam] = Field(description='奖惩记录列表')
+    items: list[BatchAdjustmentItemParam] = Field(description='奖惩记录列表')
 
 
 class UpdateAdjustmentParam(SchemaBase):
@@ -73,3 +83,12 @@ class GetAdjustmentDetail(AdjustmentSchemaBase):
             return SubjectDirection(self.direction).label
         except ValueError:
             return self.direction
+
+
+class BatchCreateAdjustmentResult(SchemaBase):
+    """批量录入奖惩结果"""
+
+    created_count: int = Field(description='已录入行数')
+    skipped_incomplete_count: int = Field(description='跳过未完整行数')
+    items: list[GetAdjustmentDetail] = Field(default_factory=list, description='已录入记录')
+    message: str = Field(description='中文结果说明')

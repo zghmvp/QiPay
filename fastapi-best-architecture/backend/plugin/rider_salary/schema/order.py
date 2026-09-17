@@ -78,6 +78,10 @@ class GetOrderDetail(OrderSchemaBase):
     status_label: str = Field('', description='状态中文')
     created_time: datetime = Field(description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
+    needs_recalc: bool = Field(False, description='需重算')
+    covering_period_id: int | None = Field(None, description='覆盖该日的开放或补发中周期 ID')
+    covering_period_status: str | None = Field(None, description='覆盖周期状态')
+    stale_hint: str | None = Field(None, description='写后出账提示')
 
 
 class ImportErrorItem(SchemaBase):

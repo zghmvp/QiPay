@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.exception import errors
 from backend.common.pagination import paging_data
 from backend.plugin.rider_salary.crud.order import order_dao
-from backend.plugin.rider_salary.enums import OrderSource, OrderStatus
+from backend.plugin.rider_salary.enums import OrderSource, OrderStatus, PeriodStatus
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
 from backend.plugin.rider_salary.model.rider import RiderSalaryRider
 from backend.plugin.rider_salary.model.site import RiderSalarySite
@@ -23,10 +23,15 @@ from backend.plugin.rider_salary.schema.order import (
 from backend.plugin.rider_salary.utils.audit import audit_service
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import write_workbook
-from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
+from backend.plugin.rider_salary.utils.lock_check import assert_not_locked, find_covering_period
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
 from backend.utils.timezone import timezone
+
+ORDER_WRITE_STALE_HINT = '需重算，尚未出账'
+ORDER_CREATE_SUCCESS_MSG = '已补录订单，需重算，尚未出账'
+ORDER_FIX_SUCCESS_MSG = '已纠错订单，需重算，尚未出账'
+_CALCABLE_PERIOD = {PeriodStatus.open.value, PeriodStatus.reopened.value}
 
 ORDER_EXPORT_HEADERS = [
     '站点编码',
@@ -45,6 +50,15 @@ ORDER_EXPORT_HEADERS = [
     '业务日期',
     '是否锁账',
 ]
+
+
+def pick_covering_calc_period(period: Any) -> Any | None:
+    """覆盖该日且可供算薪的周期：仅 open / reopened。不自动 calculate。"""
+    if period is None:
+        return None
+    if getattr(period, 'status', None) in _CALCABLE_PERIOD:
+        return period
+    return None
 
 
 def compute_biz_date(order_time: datetime, deliver_time: datetime | None) -> date:
@@ -310,8 +324,7 @@ class OrderService:
             target_label=f'订单{order.order_no}',
             after=order_snapshot(order),
         )
-        details = await _to_details(db, [order])
-        return details[0]
+        return await _to_write_detail(db, order)
 
     @staticmethod
     async def update(  # ruff:ignore[complex-structure]
@@ -402,8 +415,7 @@ class OrderService:
             before=before,
             after=order_snapshot(order),
         )
-        details = await _to_details(db, [order])
-        return details[0]
+        return await _to_write_detail(db, order)
 
     @staticmethod
     async def delete(*, db: AsyncSession, request: Request, pk: int, reason: str) -> None:
@@ -462,6 +474,26 @@ async def _get_rider(db: AsyncSession, rider_id: int) -> RiderSalaryRider:
     if rider is None:
         raise errors.NotFoundError(msg='骑手不存在')
     return rider
+
+
+async def _to_write_detail(db: AsyncSession, order: RiderSalaryOrder) -> GetOrderDetail:
+    """纠错/补录 2xx：写出需重算，并带上覆盖该日的开放或补发中周期。不自动 calculate。"""
+    details = await _to_details(db, [order])
+    period = await find_covering_period(
+        db,
+        site_id=order.site_id,
+        rider_id=order.rider_id,
+        biz_date=order.biz_date,
+    )
+    covering = pick_covering_calc_period(period)
+    return details[0].model_copy(
+        update={
+            'needs_recalc': True,
+            'covering_period_id': covering.id if covering is not None else None,
+            'covering_period_status': covering.status if covering is not None else None,
+            'stale_hint': ORDER_WRITE_STALE_HINT,
+        }
+    )
 
 
 async def _to_details(db: AsyncSession, orders: Sequence[Any]) -> list[GetOrderDetail]:
