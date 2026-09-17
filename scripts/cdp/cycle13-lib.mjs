@@ -197,12 +197,13 @@ export function lighthouseXlsxPath() {
 
 export async function pickAntOption(page, root, optionRe) {
   const select = root.locator('.ant-select').first();
+  await select.waitFor({ state: 'visible', timeout: 20000 });
   await select.click();
   const opt = page
     .locator('.ant-select-dropdown:visible .ant-select-item-option')
     .filter({ hasText: optionRe })
     .first();
-  await opt.waitFor({ state: 'visible', timeout: 15000 });
+  await opt.waitFor({ state: 'visible', timeout: 30000 });
   await opt.click();
 }
 
