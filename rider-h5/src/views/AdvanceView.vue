@@ -3,20 +3,26 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { Button, Empty, Field, Form, NavBar, showConfirmDialog, showToast, Step, Steps, Tag } from 'vant'
 import AppTabbar from '@/components/AppTabbar.vue'
 import MoneyText from '@/components/MoneyText.vue'
-import { cancelAdvance, createAdvance, getAdvanceLimit, getAdvances } from '@/api/me'
+import { cancelAdvance, createAdvance, getAdvanceLimit, getAdvanceQuota, getAdvances } from '@/api/me'
 import {
   ADVANCE_STATUS_OPTIONS,
   enumColor,
   enumLabel,
   vantTagType,
 } from '@/constants/enums'
+import {
+  monthlyQuotaBlockMessage,
+  readMonthlyAdvanceQuota,
+  remainingAdvanceLabel,
+} from '@/utils/advanceQuota'
 import { moneyNumber } from '@/utils/money'
 import { toDateTimeString } from '@/utils/date'
-import type { AdvanceDetail, AdvanceLimit } from '@/types'
+import type { AdvanceDetail, AdvanceLimit, AdvanceMonthlyQuota } from '@/types'
 
 const loading = ref(true)
 const submitting = ref(false)
 const limit = ref<AdvanceLimit | null>(null)
+const quotaPayload = ref<AdvanceMonthlyQuota | AdvanceLimit | null>(null)
 const list = ref<AdvanceDetail[]>([])
 const form = reactive({
   amount: '',
@@ -24,7 +30,11 @@ const form = reactive({
 })
 
 const available = computed(() => moneyNumber(limit.value?.available))
-const canSubmit = computed(() => available.value > 0)
+const quota = computed(() => readMonthlyAdvanceQuota(quotaPayload.value ?? limit.value))
+const remainingTimes = computed(() => quota.value.remaining)
+const quotaLabel = computed(() => remainingAdvanceLabel(remainingTimes.value))
+const quotaBlock = computed(() => monthlyQuotaBlockMessage(quota.value))
+const canSubmit = computed(() => remainingTimes.value > 0 && available.value > 0)
 
 function canCancel(item: AdvanceDetail) {
   return item.status === 'pending' || item.status === 'draft'
@@ -33,15 +43,24 @@ function canCancel(item: AdvanceDetail) {
 async function load() {
   loading.value = true
   try {
-    const [limitRes, listRes] = await Promise.all([getAdvanceLimit(), getAdvances()])
+    const [limitRes, listRes, quotaRes] = await Promise.all([
+      getAdvanceLimit(),
+      getAdvances(),
+      getAdvanceQuota().catch(() => null),
+    ])
     limit.value = limitRes
     list.value = listRes
+    quotaPayload.value = quotaRes ?? limitRes
   } finally {
     loading.value = false
   }
 }
 
 async function onSubmit() {
+  if (quotaBlock.value) {
+    showToast(quotaBlock.value)
+    return
+  }
   const amount = Number(form.amount)
   if (!Number.isFinite(amount) || amount <= 0) {
     showToast('请输入大于 0 的预支金额')
@@ -103,11 +122,14 @@ onMounted(() => {
             <span class="value"><MoneyText :value="limit.used_pending_amount" /></span>
           </div>
         </div>
-        <p v-if="available <= 0" class="muted">当前无法预支，请联系站点</p>
+        <p class="quota-remain">{{ quotaLabel }}</p>
+        <p v-if="quotaBlock" class="quota-block">{{ quotaBlock }}</p>
       </section>
 
       <div class="section-title"><span>申请预支</span></div>
       <Form class="card-block" @submit="onSubmit">
+        <p class="quota-before-submit">{{ quotaLabel }}</p>
+        <p v-if="quotaBlock" class="quota-block quota-before-submit">{{ quotaBlock }}</p>
         <Field
           v-model="form.amount"
           type="number"
@@ -166,6 +188,29 @@ onMounted(() => {
 <style scoped>
 .actions {
   padding: 12px;
+}
+
+.quota-remain {
+  margin: 12px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.quota-before-submit {
+  margin: 0;
+  padding: 12px 16px 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.quota-block {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.quota-before-submit.quota-block {
+  padding-top: 6px;
 }
 
 .item {

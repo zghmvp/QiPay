@@ -7,6 +7,7 @@ from sqlalchemy_crud_plus import CRUDPlus
 from backend.plugin.rider_salary.enums import AdvanceStatus
 from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance
 from backend.plugin.rider_salary.schema.advance import CreateMeAdvanceParam
+from backend.plugin.rider_salary.utils.advance_quota import QUOTA_CONSUMING_STATUSES
 from backend.utils.timezone import timezone
 
 _IN_FLIGHT = (AdvanceStatus.pending.value, AdvanceStatus.to_pay.value)
@@ -75,6 +76,33 @@ class CRUDAdvance(CRUDPlus[RiderSalaryAdvance]):
                 RiderSalaryAdvance.rider_id == rider_id,
                 RiderSalaryAdvance.status.in_(_IN_FLIGHT),
                 RiderSalaryAdvance.deleted == 0,
+            )
+        )
+        return list(rows.all())
+
+    async def list_quota_consuming_in_month(
+        self,
+        db: AsyncSession,
+        rider_id: int,
+        start: datetime,
+        end: datetime,
+    ) -> list[RiderSalaryAdvance]:
+        """
+        骑手当月占用次数的预支单（pending / to_pay / paid）
+
+        :param db: 数据库会话
+        :param rider_id: 骑手 ID
+        :param start: 自然月起（含）
+        :param end: 自然月止（不含）
+        :return:
+        """
+        rows = await db.scalars(
+            select(RiderSalaryAdvance).where(
+                RiderSalaryAdvance.rider_id == rider_id,
+                RiderSalaryAdvance.status.in_(tuple(QUOTA_CONSUMING_STATUSES)),
+                RiderSalaryAdvance.deleted == 0,
+                RiderSalaryAdvance.submit_time >= start,
+                RiderSalaryAdvance.submit_time < end,
             )
         )
         return list(rows.all())

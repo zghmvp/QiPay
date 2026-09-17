@@ -2,6 +2,7 @@ import { request } from '@/api/http'
 import type {
   AdvanceDetail,
   AdvanceLimit,
+  AdvanceMonthlyQuota,
   CalendarDayDetail,
   CalendarMonth,
   CreateAdvancePayload,
@@ -60,6 +61,14 @@ export function getAdvanceLimit() {
   return request<AdvanceLimit>({
     url: `${PREFIX}/advance-limit`,
     method: 'GET',
+  })
+}
+
+export function getAdvanceQuota() {
+  return request<AdvanceMonthlyQuota>({
+    url: `${PREFIX}/advance-quota`,
+    method: 'GET',
+    skipToast: true,
   })
 }
 

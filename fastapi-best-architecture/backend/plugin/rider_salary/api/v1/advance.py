@@ -11,7 +11,12 @@ from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
-from backend.plugin.rider_salary.schema.advance import AdvanceActionParam, AdvanceReasonParam, GetAdvanceDetail
+from backend.plugin.rider_salary.schema.advance import (
+    AdvanceActionParam,
+    AdvanceReasonParam,
+    GetAdvanceDetail,
+    GetAdvanceQuota,
+)
 from backend.plugin.rider_salary.service.advance_service import advance_service
 
 router = APIRouter()
@@ -79,6 +84,24 @@ async def get_advances_paginated(
         date_to=date_to,
     )
     return response_base.success(data=page_data)
+
+
+@router.get(
+    '/quota',
+    summary='查询骑手本月预支次数',
+    dependencies=[
+        DependsJwtAuth,
+        Depends(RequestPermission('rs:advance:approve')),
+        DependsRBAC,
+    ],
+)
+async def get_advance_quota(
+    db: CurrentSession,
+    request: Request,
+    rider_id: Annotated[int, Query(description='骑手 ID')],
+) -> ResponseSchemaModel[GetAdvanceQuota]:
+    data = await advance_service.quota_for_rider_id(db=db, request=request, rider_id=rider_id)
+    return response_base.success(data=data)
 
 
 @router.get(
