@@ -1,0 +1,31 @@
+{
+  "feature": "ops-calendar-month-export-confirm",
+  "expected": {
+    "skip_if_missing": false,
+    "confirm_before_export_network": true,
+    "silent_for_loop_is_fail": true,
+    "reuse_period_confirm_copy": true,
+    "single_period_shows_attention_and_adj": true,
+    "multi_period_each_counts_visible": true,
+    "forbid_zero_counts_when_no_single_period_id": true,
+    "download_file_count_equals_period_count": true,
+    "default_exclude_orders": false,
+    "default_exclude_adjustments": false,
+    "does_not_change_gross_net": true,
+    "not_bank_template": true,
+    "do_not_redo_period_confirm_main_path": true,
+    "testid_calendar_export": "calendar-export-month",
+    "testid_calendar_confirm": "ops-calendar-month-export-confirm",
+    "testid_confirm": "period-export-confirm",
+    "testid_attention_count": "period-export-attention-count",
+    "testid_adj_booked": "period-export-adj-booked",
+    "testid_adj_unbooked": "period-export-adj-unbooked",
+    "testid_adj_annotation": "period-export-adj-annotation",
+    "testid_adj_sync_toggle": "period-export-adj-sync-toggle",
+    "testid_exclude_toggle": "period-export-exclude-toggle",
+    "testid_admit": "period-export-admit-attention",
+    "testid_period_row": "period-export-period-row",
+    "confirm_button": "确认导出",
+    "calendar_cta": "导出当月明细"
+  }
+}
