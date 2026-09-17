@@ -213,6 +213,59 @@ def missing_delivery_message(order_no: Any, day: date) -> str:
     return f'订单 {order_no}（{day.isoformat()}）已完成但送达时间为空，无法计算配送时长'
 
 
+def missing_delivery_order_query(
+    *,
+    rider_id: int,
+    site_id: int,
+    date_from: date,
+    date_to: date,
+) -> dict[str, str]:
+    """订单列表「已完成且送达为空」筛，供预检/失败「看订单」深链。"""
+    return {
+        'rider_id': str(rider_id),
+        'site_id': str(site_id),
+        'date_from': date_from.isoformat(),
+        'date_to': date_to.isoformat(),
+        'status': OrderStatus.completed.value,
+        'missing_delivery': '1',
+    }
+
+
+def classify_calc_failure_code(msg: str) -> str | None:
+    """从算薪/锁账中文错误归类失败码。"""
+    if '送达时间为空' in msg:
+        return 'missing_delivery'
+    if '无生效方案' in msg:
+        return 'no_plan_with_orders'
+    if '从未成功落库' in msg:
+        return 'never_calculated'
+    return None
+
+
+def calc_failure_deeplink(
+    *,
+    code: str | None,
+    rider_id: int,
+    site_id: int,
+    date_from: date,
+    date_to: date,
+) -> dict[str, Any] | None:
+    """失败行深链；缺送达带上 completed + missing_delivery=1。"""
+    if code == 'missing_delivery':
+        return {
+            'path': '/rider-salary/order',
+            'query': missing_delivery_order_query(
+                rider_id=rider_id,
+                site_id=site_id,
+                date_from=date_from,
+                date_to=date_to,
+            ),
+        }
+    if code == 'no_plan_with_orders':
+        return {'path': f'/rider-salary/rider/{rider_id}', 'query': {'tab': 'binding'}}
+    return None
+
+
 def no_plan_with_orders_message(parts: list[str]) -> str:
     """与 run_calc_pipeline 硬失败文案同口径。"""
     return f'算薪中止：以下日期有订单但无生效方案：{"、".join(parts)}'
@@ -260,14 +313,19 @@ def collect_hard_fail_findings(data: CalcInput) -> list[tuple[str, list[str]]]:
 
 def serialize_calc_failures(failed_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """将 calculate_period 失败行写成可落库 JSON。"""
-    return [
-        {
+    dumped: list[dict[str, Any]] = []
+    for row in failed_rows:
+        item: dict[str, Any] = {
             'rider_id': int(row['rider_id']),
             'job_no': row.get('job_no'),
             'errors': list(row.get('errors') or []),
         }
-        for row in failed_rows
-    ]
+        if row.get('code'):
+            item['code'] = row['code']
+        if row.get('deeplink'):
+            item['deeplink'] = row['deeplink']
+        dumped.append(item)
+    return dumped
 
 
 def persist_last_calc_failures(period: RiderSalarySettlePeriod, failed_rows: list[dict[str, Any]]) -> None:
@@ -1119,10 +1177,20 @@ async def calculate_period(
                     await calculate_rider_period(db, rider_id=rider_id, period=period, persist=True, operator=operator)
                 )
         except errors.RequestError as exc:
+            msg = exc.msg or str(exc)
+            code = classify_calc_failure_code(msg)
             failed.append({
                 'rider_id': rider_id,
                 'job_no': job_no,
-                'errors': [exc.msg or str(exc)],
+                'errors': [msg],
+                'code': code,
+                'deeplink': calc_failure_deeplink(
+                    code=code,
+                    rider_id=rider_id,
+                    site_id=period.site_id,
+                    date_from=period.start_date,
+                    date_to=period.end_date,
+                ),
             })
     persist_last_calc_failures(period, failed)
     await db.flush()

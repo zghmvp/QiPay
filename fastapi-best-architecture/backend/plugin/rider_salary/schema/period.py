@@ -116,12 +116,21 @@ class GetPeriodPayrollItem(GetPayrollSummary):
     rider_name: str | None = Field(None, description='姓名')
 
 
+class CalcPrecheckDeeplink(SchemaBase):
+    """预检/失败深链"""
+
+    path: str = Field(description='前端路径')
+    query: dict[str, str] | None = Field(None, description='查询参数')
+
+
 class CalculateRiderFailure(SchemaBase):
     """单骑手算薪失败"""
 
     rider_id: int = Field(description='骑手 ID')
     job_no: str | None = Field(None, description='工号')
     errors: list[str] = Field(default_factory=list, description='错误列表')
+    code: str | None = Field(None, description='失败码：missing_delivery / no_plan_with_orders / never_calculated')
+    deeplink: CalcPrecheckDeeplink | None = Field(None, description='修复深链')
 
 
 class GetPeriodWithPayrolls(GetPeriodDetail):
@@ -181,13 +190,6 @@ class CalculatePeriodResult(SchemaBase):
     warnings: list[str] = Field(default_factory=list, description='非阻断提示（如转入后台）')
     failed: list[CalculateRiderFailure] = Field(default_factory=list, description='失败骑手清单')
     queued: bool = Field(False, description='是否转入后台')
-
-
-class CalcPrecheckDeeplink(SchemaBase):
-    """预检深链"""
-
-    path: str = Field(description='前端路径')
-    query: dict[str, str] | None = Field(None, description='查询参数')
 
 
 class CalcPrecheckBlocker(SchemaBase):
