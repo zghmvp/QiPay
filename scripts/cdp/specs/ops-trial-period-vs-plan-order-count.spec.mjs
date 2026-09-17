@@ -11,6 +11,7 @@ import {
   requireTestId,
   siteMonth,
   trialOrderCounts,
+  pickAntOption,
   trialVersion,
 } from '../cycle13-lib.mjs';
 
@@ -59,18 +60,40 @@ export async function run({ page, helpers, config }) {
   });
   const trialBtn = page.getByRole('button', { name: /^试算$/ }).first();
   await trialBtn.click();
-  await page.getByTestId('ops-trial-period-vs-plan-order-count').or(page.getByText('开始试算')).first().waitFor({
+  await page.getByText('开始试算').or(page.getByRole('button', { name: /开始试算/ })).first().waitFor({
     state: 'visible',
     timeout: 30000,
   });
 
-  const siteBox = page.locator('.ant-select').first();
-  if (await siteBox.count()) {
-    await siteBox.click();
-    await page.locator('.ant-select-item-option').filter({ hasText: new RegExp(siteCode) }).first().click().catch(() => {});
+  // 换绑分叉须按绑定分段；整版全程生效两数永远相等
+  await page.getByRole('radio', { name: /按绑定分段试算/ }).click().catch(async () => {
+    await page.getByText('按绑定分段试算').click();
+  });
+  await pickAntOption(page, page.getByRole('dialog').or(page.locator('[data-slot="drawer-content"], .vben-drawer')).last(), new RegExp(siteCode));
+  // 骑手选择：第二个 select
+  const riderSelect = page.locator('.ant-select').nth(1);
+  if (await riderSelect.count()) {
+    await riderSelect.click();
+    const riderHint = process.env.CDP_REBIND_JOB_NO || 'FIX_C17_R1';
+    const combo = riderSelect.locator('input').first();
+    if (await combo.count()) await combo.fill(riderHint);
+    else await page.keyboard.type(riderHint, { delay: 20 });
+    await page.waitForTimeout(400);
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: new RegExp(riderHint) }).first().click();
+  }
+  // 日期窗落到夹具月
+  const range = page.locator('.ant-picker').first();
+  if (await range.count()) {
+    await range.click();
+    const inputs = page.locator('.ant-picker-input input');
+    if ((await inputs.count()) >= 2) {
+      await inputs.nth(0).fill(`${month}-01`);
+      await inputs.nth(1).fill(`${month}-30`);
+      await page.keyboard.press('Enter');
+    }
   }
 
-  await page.getByRole('button', { name: /开始试算/ }).click().catch(() => {});
+  await page.getByRole('button', { name: /开始试算/ }).click();
   await requireHooks(
     page,
     MUST4_HOOKS,

@@ -72,7 +72,11 @@ export async function run({ page, helpers, config }) {
     { waitUntil: 'networkidle', timeout: 60000 },
   );
   const rows = page.locator('.vxe-body--row, .vxe-table--body tr, tr');
-  const row = rows.filter({ hasText: siteLevel.start_date || '' }).first();
+  // 站点级行骑手列是「—」；勿点到 FIX_C17_LOCK 骑手级行
+  let row = rows.filter({ hasText: siteLevel.start_date || '' }).filter({ hasText: '—' }).first();
+  if (!(await row.count())) {
+    row = rows.filter({ hasText: siteLevel.start_date || '' }).nth(1);
+  }
   const lockBtn = row.getByText('锁账', { exact: true });
   if (await lockBtn.count()) {
     await lockBtn.first().click();
@@ -85,6 +89,10 @@ export async function run({ page, helpers, config }) {
       throw new Error('未见站点级周期「锁账」，不得 skip');
     }
   }
+  await page.getByTestId('period-lock-confirm-hint').or(page.getByText('锁账原因')).first().waitFor({
+    state: 'visible',
+    timeout: 20000,
+  });
 
   await requireHooks(
     page,

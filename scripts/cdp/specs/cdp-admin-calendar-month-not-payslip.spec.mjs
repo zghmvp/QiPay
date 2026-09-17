@@ -3,7 +3,6 @@ import {
   CROSS_PERIOD_COPY,
   LOCKED_GOLD_FORBIDDEN,
   MONTH_TOTAL_COPY,
-  MUST2_HOOKS,
   PERIOD_PAYSLIP_COPY,
   assertChipGoesToPayslip,
   assertLockedGoldUnchanged,
@@ -30,10 +29,16 @@ export async function run({ page, helpers, config }) {
     `${config.adminUrl}/rider-salary/calendar?site_id=${siteId}&rider_id=${riderId}&month=${month}`,
     { waitUntil: 'networkidle', timeout: 60000 },
   );
+  // 顶栏异步；先等本月合计，勿在未开日抽屉时要求 calendar-view-period
   await requireHooks(
     page,
-    MUST2_HOOKS,
-    '未见 cdp-admin-calendar-month-not-payslip / calendar-month-total / calendar-period-chip / calendar-view-period，不得 skip',
+    [
+      'cdp-admin-calendar-month-not-payslip',
+      'calendar-month-total',
+      'calendar-month-period-count',
+      'calendar-period-chip',
+    ],
+    '未见 cdp-admin-calendar-month-not-payslip / calendar-month-total / calendar-period-chip，不得 skip',
   );
 
   const bar = page.getByTestId('cdp-admin-calendar-month-not-payslip').first();
