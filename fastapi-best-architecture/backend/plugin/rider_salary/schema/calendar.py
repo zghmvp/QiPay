@@ -118,6 +118,7 @@ class CalendarDayOrder(SchemaBase):
     status: str = Field(description='订单状态')
     amount: Decimal | None = Field(None, description='订单金额')
     details: list[CalendarHitDetail] = Field(default_factory=list, description='命中明细')
+    uncalculated_hint: str | None = Field(None, description='尚未进本次算薪说明')
 
 
 class CalendarDailyItem(SchemaBase):
@@ -161,3 +162,6 @@ class GetCalendarDayDetail(SchemaBase):
     daily_items: list[CalendarDailyItem] = Field(default_factory=list, description='按日项')
     adjustments: list[CalendarAdjustmentItem] = Field(default_factory=list, description='手工奖惩')
     totals: CalendarDayTotals = Field(description='合计')
+    payroll_calculated: bool = Field(False, description='是否已有日汇总缓存')
+    uncalculated_hint: str | None = Field(None, description='未算薪说明')
+    withhold_hint: str | None = Field(None, description='代扣不进日手工说明')

@@ -22,6 +22,7 @@ from backend.plugin.rider_salary.schema.period import (
     MarkPaidPeriodParam,
     ReversePeriodParam,
     ReversePeriodResult,
+    ReversePreflightResult,
 )
 from backend.plugin.rider_salary.service.export_service import content_disposition, export_service
 from backend.plugin.rider_salary.service.period_service import period_service
@@ -197,6 +198,24 @@ async def mark_paid_period(
 ) -> ResponseModel:
     await period_service.mark_paid(db=db, request=request, pk=pk, reason=None if obj is None else obj.reason)
     return response_base.success()
+
+
+@router.get(
+    '/{pk}/reverse-preflight',
+    summary='反冲补发预检',
+    description='返回即将反冲的薪资单数与涉及骑手数，供确认框展示；不改反冲谓词',
+    dependencies=[
+        Depends(RequestPermission('rs:period:reverse')),
+        DependsRBAC,
+    ],
+)
+async def reverse_period_preflight(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+) -> ResponseSchemaModel[ReversePreflightResult]:
+    data = await period_service.reverse_preflight(db=db, request=request, pk=pk)
+    return response_base.success(data=data)
 
 
 @router.post(

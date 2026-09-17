@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Request
 
 from backend.common.pagination import DependsPagination, PageData
+from backend.common.response.response_code import CustomResponse
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
@@ -11,6 +12,7 @@ from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.schema.adjustment import (
     BatchCreateAdjustmentParam,
+    BatchCreateAdjustmentResult,
     CreateAdjustmentParam,
     DeleteAdjustmentParam,
     GetAdjustmentDetail,
@@ -66,9 +68,9 @@ async def create_adjustments_batch(
     db: CurrentSessionTransaction,
     request: Request,
     obj: BatchCreateAdjustmentParam,
-) -> ResponseSchemaModel[list[GetAdjustmentDetail]]:
+) -> ResponseSchemaModel[BatchCreateAdjustmentResult]:
     data = await adjustment_service.create_batch(db=db, request=request, items=obj.items)
-    return response_base.success(data=data)
+    return response_base.success(res=CustomResponse(code=200, msg=data.message), data=data)
 
 
 @router.get(

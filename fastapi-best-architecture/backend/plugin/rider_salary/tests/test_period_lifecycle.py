@@ -22,7 +22,9 @@ from backend.plugin.rider_salary.service.export_service import (
 )
 from backend.plugin.rider_salary.service.period_service import (
     assert_can_transition,
+    build_reverse_preflight_result,
     covering_period_ranges,
+    reverse_preflight_counts,
     reversible_payrolls,
     stale_lock_message,
 )
@@ -102,6 +104,60 @@ def test_reverse_selects_finalized_and_skips_reversal() -> None:
     ]
     selected = reversible_payrolls(payrolls)
     assert [item.net for item in selected] == [Decimal('100.00'), Decimal('50.00')]
+
+
+def test_reverse_preflight_counts_only_reversible_not_window_riders() -> None:
+    payrolls = [
+        SimpleNamespace(
+            rider_id=1,
+            kind=PayrollKind.normal.value,
+            status=PayrollStatus.finalized.value,
+            reversed=False,
+        ),
+        SimpleNamespace(
+            rider_id=2,
+            kind=PayrollKind.normal.value,
+            status=PayrollStatus.draft.value,
+            reversed=False,
+        ),
+        SimpleNamespace(
+            rider_id=3,
+            kind=PayrollKind.reversal.value,
+            status=PayrollStatus.finalized.value,
+            reversed=False,
+        ),
+        SimpleNamespace(
+            rider_id=4,
+            kind=PayrollKind.supplement.value,
+            status=PayrollStatus.paid.value,
+            reversed=True,
+        ),
+        SimpleNamespace(
+            rider_id=5,
+            kind=PayrollKind.normal.value,
+            status=PayrollStatus.paid.value,
+            reversed=False,
+        ),
+        SimpleNamespace(
+            rider_id=1,
+            kind=PayrollKind.supplement.value,
+            status=PayrollStatus.finalized.value,
+            reversed=False,
+        ),
+    ]
+    reversal_count, rider_count = reverse_preflight_counts(payrolls)
+    assert reversal_count == 3
+    assert rider_count == 2
+    window_rider_count = len({item.rider_id for item in payrolls})
+    assert window_rider_count == 5
+    assert rider_count != window_rider_count
+    result = build_reverse_preflight_result(period_id=88, payrolls=payrolls)
+    assert result.period_id == 88
+    assert result.reversal_count == 3
+    assert result.rider_count == 2
+    assert '3 张' in result.confirm_hint
+    assert '2 人' in result.confirm_hint
+    assert '已定稿/已发薪' in result.confirm_hint
 
 
 def test_export_workbook_headers() -> None:

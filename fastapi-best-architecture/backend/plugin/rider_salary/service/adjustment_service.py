@@ -13,7 +13,13 @@ from backend.plugin.rider_salary.crud.rider_employ_history import rider_employ_h
 from backend.plugin.rider_salary.crud.subject import subject_dao
 from backend.plugin.rider_salary.enums import EnableStatus, EntryGranularity, RiderStatus, SubjectDirection
 from backend.plugin.rider_salary.model.subject import RiderSalarySubject
-from backend.plugin.rider_salary.schema.adjustment import CreateAdjustmentParam, UpdateAdjustmentParam
+from backend.plugin.rider_salary.schema.adjustment import (
+    BatchAdjustmentItemParam,
+    BatchCreateAdjustmentResult,
+    CreateAdjustmentParam,
+    GetAdjustmentDetail,
+    UpdateAdjustmentParam,
+)
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
@@ -33,6 +39,73 @@ _ADJ_FIELDS = (
     'is_locked',
 )
 _PERIOD_HINT = '该科目按周期入账，业务日期仅用于展示，服务层不改动'
+
+
+def _is_blank_text(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not str(value).strip())
+
+
+def is_blank_batch_adjustment_row(item: BatchAdjustmentItemParam) -> bool:
+    """整行空白（空的「新增一行」可不计）"""
+    return (
+        item.rider_id is None
+        and item.biz_date is None
+        and item.subject_id is None
+        and item.amount is None
+        and _is_blank_text(item.remark)
+    )
+
+
+def is_complete_batch_adjustment_row(item: BatchAdjustmentItemParam) -> bool:
+    """入账所需字段齐全"""
+    return (
+        item.rider_id is not None
+        and item.biz_date is not None
+        and item.subject_id is not None
+        and item.amount is not None
+        and not _is_blank_text(item.remark)
+    )
+
+
+def is_incomplete_batch_adjustment_row(item: BatchAdjustmentItemParam) -> bool:
+    """已填部分字段但未齐"""
+    return not is_blank_batch_adjustment_row(item) and not is_complete_batch_adjustment_row(item)
+
+
+def partition_batch_adjustment_items(
+    items: list[BatchAdjustmentItemParam],
+) -> tuple[list[CreateAdjustmentParam], int]:
+    """拆出可入库行与跳过未完整行数；空白行不计"""
+    complete: list[CreateAdjustmentParam] = []
+    skipped_incomplete = 0
+    for item in items:
+        if is_blank_batch_adjustment_row(item):
+            continue
+        if is_incomplete_batch_adjustment_row(item):
+            skipped_incomplete += 1
+            continue
+        assert item.rider_id is not None
+        assert item.biz_date is not None
+        assert item.subject_id is not None
+        assert item.amount is not None
+        assert item.remark is not None
+        complete.append(
+            CreateAdjustmentParam(
+                rider_id=int(item.rider_id),
+                biz_date=item.biz_date,
+                subject_id=int(item.subject_id),
+                amount=item.amount,
+                remark=str(item.remark).strip(),
+            )
+        )
+    return complete, skipped_incomplete
+
+
+def batch_adjustment_message(*, created_count: int, skipped_incomplete_count: int) -> str:
+    """批量结果中文。半填时必须点名跳过 M，不得写成整表已录入。"""
+    if skipped_incomplete_count:
+        return f'已录入 {created_count} 条，跳过未完整 {skipped_incomplete_count} 条'
+    return f'已录入 {created_count} 条'
 
 
 def compute_signed_amount(direction: str, amount: Decimal) -> Decimal:
@@ -202,11 +275,17 @@ class AdjustmentService:
         return await AdjustmentService._enrich(db, row)
 
     @staticmethod
-    async def create_batch(*, db: AsyncSession, request: Request, items: list[CreateAdjustmentParam]) -> list[dict]:
-        """批量创建奖惩记录（同一事务，任一行失败整批失败）"""
+    async def create_batch(
+        *,
+        db: AsyncSession,
+        request: Request,
+        items: list[BatchAdjustmentItemParam],
+    ) -> BatchCreateAdjustmentResult:
+        """批量创建奖惩记录：跳过半填行；完整行仍同一事务，任一行失败整批失败"""
+        complete, skipped_incomplete = partition_batch_adjustment_items(items)
         result: list[dict] = []
         first_error: tuple[int, str] | None = None
-        for index, item in enumerate(items, start=1):
+        for index, item in enumerate(complete, start=1):
             if first_error is not None:
                 break
             row_or_error = await AdjustmentService._create_or_error(db=db, request=request, obj=item)
@@ -217,7 +296,15 @@ class AdjustmentService:
         if first_error is not None:
             index, reason = first_error
             raise errors.RequestError(msg=f'第 {index} 行：{reason}', data={'row': index, 'reason': reason})
-        return result
+        return BatchCreateAdjustmentResult(
+            created_count=len(result),
+            skipped_incomplete_count=skipped_incomplete,
+            items=[GetAdjustmentDetail.model_validate(row) for row in result],
+            message=batch_adjustment_message(
+                created_count=len(result),
+                skipped_incomplete_count=skipped_incomplete,
+            ),
+        )
 
     @staticmethod
     async def _create_or_error(

@@ -34,6 +34,7 @@ from backend.plugin.rider_salary.schema.period import (
     GetPeriodPayrollItem,
     GetPeriodWithPayrolls,
     ReversePeriodResult,
+    ReversePreflightResult,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
 from backend.plugin.rider_salary.service.calc_service import _riders_for_period, calculate_period
@@ -179,6 +180,29 @@ def reversible_payrolls(payrolls: list[Any]) -> list[Any]:
             continue
         result.append(payroll)
     return result
+
+
+def reverse_preflight_counts(payrolls: list[Any]) -> tuple[int, int]:
+    """
+    反冲预检计数：单数=将反冲条数，人数=这些条上的去重骑手数。
+
+    不把窗内有单全量骑手当人数。谓词与 reversible_payrolls 相同。
+    """
+    targets = reversible_payrolls(payrolls)
+    rider_ids = {int(getattr(item, 'rider_id', 0) or 0) for item in targets if int(getattr(item, 'rider_id', 0) or 0)}
+    return len(targets), len(rider_ids)
+
+
+def build_reverse_preflight_result(*, period_id: int, payrolls: list[Any]) -> ReversePreflightResult:
+    """组装反冲确认文案（含单数与人数）"""
+    reversal_count, rider_count = reverse_preflight_counts(payrolls)
+    confirm_hint = f'将为已定稿/已发薪的薪资单生成反冲单 {reversal_count} 张，涉及骑手 {rider_count} 人，周期进入补发中'
+    return ReversePreflightResult(
+        period_id=period_id,
+        reversal_count=reversal_count,
+        rider_count=rider_count,
+        confirm_hint=confirm_hint,
+    )
 
 
 def empty_kind_counts() -> dict[str, int]:
@@ -772,6 +796,25 @@ class PeriodService:
             after=snapshot(period, _PERIOD_FIELDS),
             description=desc,
         )
+
+    async def reverse_preflight(
+        self,
+        *,
+        db: AsyncSession,
+        request: Request,
+        pk: int,
+    ) -> ReversePreflightResult:
+        """
+        反冲预检：只返回即将反冲的单数与涉及骑手数，不改写、不改谓词
+
+        :param db: 数据库会话
+        :param request: 请求对象
+        :param pk: 周期 ID
+        :return: 预检结果
+        """
+        period, _site, _rider = await self._load_visible(db, request, pk)
+        payrolls = list(await payroll_dao.select_models(db, period_id=period.id, deleted=0))
+        return build_reverse_preflight_result(period_id=period.id, payrolls=payrolls)
 
     async def reverse(
         self,

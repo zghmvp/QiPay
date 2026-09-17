@@ -42,6 +42,17 @@ from backend.utils.timezone import timezone
 ZERO = Decimal('0.00')
 _PAYROLL_OK = {PayrollStatus.draft.value, PayrollStatus.finalized.value, PayrollStatus.paid.value}
 _ATTENTION_LIMIT = 10
+RESIGNED_WITH_ORDERS_ITEM_KEYS = frozenset({'rider_id', 'job_no', 'name', 'order_count'})
+
+
+def resigned_with_orders_item(rider: Any, order_count: int) -> dict[str, Any]:
+    """离职仍有本月订单行。已有 rider_id，不新开字段。"""
+    return {
+        'rider_id': rider.id,
+        'job_no': rider.job_no,
+        'name': rider.name,
+        'order_count': int(order_count or 0),
+    }
 
 
 class DashboardService:
@@ -562,15 +573,7 @@ class DashboardService:
         rows = (await db.execute(stmt)).all()
         if not rows:
             return None
-        items = [
-            {
-                'rider_id': rider.id,
-                'job_no': rider.job_no,
-                'name': rider.name,
-                'order_count': int(cnt or 0),
-            }
-            for rider, cnt in rows[:_ATTENTION_LIMIT]
-        ]
+        items = [resigned_with_orders_item(rider, int(cnt or 0)) for rider, cnt in rows[:_ATTENTION_LIMIT]]
         return DashboardAttentionBlock(
             key='resigned_with_orders',
             title='离职仍有本月订单',
