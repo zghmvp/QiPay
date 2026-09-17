@@ -281,7 +281,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
     </a-empty>
     <a-spin v-else :spinning="loading">
       <div class="flex flex-col gap-4">
-        <SummaryBar :summary="data?.summary" />
+        <SummaryBar :rider-id="riderId" :summary="data?.summary" />
         <SalaryCalendar
           :days="data?.days ?? []"
           :month="month"

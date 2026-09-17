@@ -154,6 +154,36 @@ export function stalePeriodsViewAllTarget(
   };
 }
 
+/** 待审核预支「查看全部」：必须带当前站月，禁止只抛全站 pending。 */
+export function pendingAdvancesViewAllTarget(
+  siteId?: null | number,
+  month?: string,
+): { path: string; query: Record<string, string> } {
+  return {
+    path: '/rider-salary/advance',
+    query: {
+      status: 'pending',
+      ...scopedSiteMonthQuery(siteId, month),
+    },
+  };
+}
+
+/** 待审核预支该行：带该条 id，进页能办这一条。 */
+export function pendingAdvanceRowTarget(
+  id: number,
+  siteId?: null | number,
+  month?: string,
+): { path: string; query: Record<string, string> } {
+  return {
+    path: '/rider-salary/advance',
+    query: {
+      id: String(id),
+      status: 'pending',
+      ...scopedSiteMonthQuery(siteId, month),
+    },
+  };
+}
+
 /**
  * 需重算该行：进该周期算薪页。只开 /period?id= 抽屉 = FAIL。
  * 禁止 auto=1，进页不自动开算。

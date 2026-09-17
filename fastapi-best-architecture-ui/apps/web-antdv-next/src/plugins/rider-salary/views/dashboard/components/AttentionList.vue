@@ -25,6 +25,8 @@ import {
   lockCountdownViewAllTarget,
   noPlanBindingTarget,
   noPlanViewAllTarget,
+  pendingAdvanceRowTarget,
+  pendingAdvancesViewAllTarget,
   stalePeriodCalcTarget,
   stalePeriodsViewAllTarget,
 } from '../scope-links';
@@ -162,6 +164,9 @@ function viewAllLink(block: DashboardAttentionBlock) {
   if (block.key === 'stale_periods') {
     return stalePeriodsViewAllTarget(props.siteId, props.month);
   }
+  if (block.key === 'pending_advances') {
+    return pendingAdvancesViewAllTarget(props.siteId, props.month);
+  }
   return parseLink(block.link);
 }
 
@@ -199,6 +204,13 @@ function rowLink(
       );
     }
   }
+  if (block.key === 'pending_advances') {
+    const id = Number(record.id);
+    if (Number.isFinite(id) && id > 0) {
+      return pendingAdvanceRowTarget(id, props.siteId, props.month);
+    }
+    return pendingAdvancesViewAllTarget(props.siteId, props.month);
+  }
   if (typeof record.link === 'string' && record.link) {
     return parseLink(record.link);
   }
@@ -211,8 +223,13 @@ function rowLink(
       if (date) query.date = date;
       return { path: '/rider-salary/order', query };
     }
-    case 'pending_advances':
-      return { path: '/rider-salary/advance', query: { status: 'pending' } };
+    case 'pending_advances': {
+      const id = Number(record.id);
+      if (Number.isFinite(id) && id > 0) {
+        return pendingAdvanceRowTarget(id, props.siteId, props.month);
+      }
+      return pendingAdvancesViewAllTarget(props.siteId, props.month);
+    }
     case 'resigned_with_orders': {
       const riderId = Number(record.rider_id);
       return Number.isFinite(riderId) && riderId > 0
@@ -265,12 +282,14 @@ function viewAllTestId(key: string) {
   if (key === 'due_periods') return 'dashboard-lock-view-all';
   if (key === 'no_plan_days') return 'dashboard-no-plan-view-all';
   if (key === 'stale_periods') return 'dashboard-stale-view-all';
+  if (key === 'pending_advances') return 'dashboard-advance-view-all';
   return undefined;
 }
 
 function rowTestId(key: string) {
   if (key === 'no_plan_days') return 'dashboard-no-plan-row';
   if (key === 'stale_periods') return 'dashboard-stale-row';
+  if (key === 'pending_advances') return 'dashboard-advance-row';
   return undefined;
 }
 </script>
@@ -297,6 +316,7 @@ function rowTestId(key: string) {
           :custom-row="
             (record: Record<string, unknown>) => ({
               class: 'cursor-pointer',
+              'data-advance-id': record.id,
               'data-period-id': record.period_id,
               'data-rider-id': record.rider_id,
               'data-testid': rowTestId(block.key),

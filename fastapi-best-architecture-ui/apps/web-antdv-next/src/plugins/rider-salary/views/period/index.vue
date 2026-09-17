@@ -30,6 +30,7 @@ import {
   getPeriodApi,
   getPeriodListApi,
   lockPeriodApi,
+  lockPreflightPeriodApi,
   markPaidPeriodApi,
   reversePeriodApi,
 } from '../../api/period';
@@ -41,6 +42,11 @@ import GenerateModal from './components/GenerateModal.vue';
 import PeriodDetail from './components/PeriodDetail.vue';
 import { useExportConfirm } from './components/use-export-confirm';
 import { querySchema, useColumns } from './data';
+import {
+  SITE_LEVEL_LOCK_PREFLIGHT_FALLBACK,
+  buildLockConfirmHint,
+  isSiteLevelPeriod,
+} from './lock-confirm';
 
 function isUserCancelled(error: unknown) {
   const msg = (error as Error)?.message;
@@ -220,8 +226,19 @@ async function onLock(row: PeriodResult) {
     message.error(lockFailText.value);
     return;
   }
+  let extraHint = `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。有完成单却未算出的骑手会被拒绝。`;
+  let extraHintTestId: string | undefined;
+  if (isSiteLevelPeriod(row)) {
+    extraHintTestId = 'period-lock-skip-hint';
+    try {
+      extraHint = buildLockConfirmHint(await lockPreflightPeriodApi(row.id));
+    } catch {
+      extraHint = SITE_LEVEL_LOCK_PREFLIGHT_FALLBACK;
+    }
+  }
   const { reason } = await prompt({
-    extraHint: `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。有完成单却未算出的骑手会被拒绝。`,
+    extraHint,
+    extraHintTestId,
     title: '锁账原因',
   });
   try {

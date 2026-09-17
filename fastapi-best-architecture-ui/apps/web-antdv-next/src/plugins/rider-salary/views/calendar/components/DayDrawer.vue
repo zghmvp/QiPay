@@ -25,6 +25,7 @@ import {
   SUBJECT_DIRECTION_OPTIONS,
 } from '../../../constants/enums';
 import { toDateTimeString } from '../../../utils/date';
+import { resolveRiderPeriodPayslip } from '../payslip';
 
 const props = defineProps<{
   date?: string;
@@ -149,10 +150,10 @@ function goAdjustment() {
   });
 }
 
-function goPeriod() {
+async function goPeriod() {
   const id = detail.value?.period?.id;
-  if (!id) return;
-  router.push({ path: '/rider-salary/period', query: { id: String(id) } });
+  if (!id || !props.riderId) return;
+  router.push(await resolveRiderPeriodPayslip(props.riderId, id));
 }
 
 function goCalculate() {
@@ -416,7 +417,11 @@ function onKey(e: KeyboardEvent) {
         >
           录入奖惩
         </VbenButton>
-        <VbenButton :disabled="!detail?.period?.id" @click="goPeriod">
+        <VbenButton
+          :disabled="!detail?.period?.id"
+          data-testid="calendar-go-period"
+          @click="goPeriod"
+        >
           查看周期
         </VbenButton>
         <VbenButton

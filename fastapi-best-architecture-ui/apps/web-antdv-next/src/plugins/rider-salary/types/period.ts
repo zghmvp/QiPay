@@ -154,6 +154,17 @@ export interface CalcPrecheckResult {
   warnings: CalcPrecheckWarning[];
 }
 
+export interface LockPreflightResult {
+  confirm_hint: string;
+  freeze_adjustment_count: number;
+  freeze_order_count: number;
+  freeze_payroll_count: number;
+  is_site_level: boolean;
+  lock_rider_count: number;
+  skip_hint: string;
+  skip_rider_count: number;
+}
+
 export interface ReversePeriodResult {
   reversal_count: number;
   reversal_net_total: MoneyValue;
