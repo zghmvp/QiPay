@@ -12,8 +12,17 @@
 
 ## 灌种说明
 
-只写 `rs_*` 表。演示机可用本目录 `seed.json` 作为 API 灌种清单；pytest 使用同目录 expected 做 DB-free 金标。
+只写 `rs_*` 表（站长账号另写 `sys_user*` 数据行，不改 FBA 框架）。契约清单：同目录 `seed.json`。
+
+演示机一键灌种（含日历深链 + stale 站长）：
+
+```bash
+API_URL=http://127.0.0.1:8000 CDP_USER=admin CDP_PASS=admin \
+  node scripts/cdp/seed-xiaoxiang-fixtures.mjs
+```
+
+pytest 使用同目录 `expected.json` 做 DB-free 金标（不依赖演示库）。
 
 ## CDP
 
-场景名：`trial-binding-segments`
+场景名：`trial-binding-segments`（与 `ops-calendar-no-plan-deeplink` 共用本骑手）

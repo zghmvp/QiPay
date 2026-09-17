@@ -6,6 +6,15 @@
  *   CDP_URL=http://127.0.0.1:9222 ADMIN_URL=http://127.0.0.1:5173 API_URL=http://127.0.0.1:8000 \
  *     node scripts/cdp/harness.mjs [spec-name]
  *
+ * 灌种（FIX_C17_R1 + site_owner_d2 + stale）：
+ *   API_URL=http://127.0.0.1:8000 CDP_USER=admin CDP_PASS=admin \
+ *     node scripts/cdp/seed-xiaoxiang-fixtures.mjs
+ *
+ * 推荐环境（福民演示机）：
+ *   CDP_PASS=admin CDP_SITE_ID=<福民> CDP_RIDER_ID=<FIX_C17_R1_id> CDP_MONTH=2026-09
+ *   CDP_SITE_OWNER=site_owner_d2 CDP_SITE_OWNER_PASS=Rider@123456
+ *   （勿把正式 Must #5 改成 CDP_SITE_OWNER=admin）
+ *
  * 不传 spec-name 时列出可用场景。
  */
 import fs from 'node:fs';
@@ -130,6 +139,7 @@ async function main() {
     console.log('可用 CDP 场景：');
     for (const name of specs.keys()) console.log(' -', name);
     console.log('\n运行：node scripts/cdp/harness.mjs <scene>');
+    console.log('灌种：node scripts/cdp/seed-xiaoxiang-fixtures.mjs');
     process.exit(0);
   }
   const mod = specs.get(wanted);
