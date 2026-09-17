@@ -2,7 +2,6 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
-from urllib.parse import quote
 
 from fastapi import Request
 from sqlalchemy import and_, func, select, true
@@ -43,7 +42,12 @@ from backend.plugin.rider_salary.service.rider_service import BindingView, resol
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.order_attention import (
-    lock_countdown_statuses,
+    DUE_PERIODS_TITLE,
+    abnormal_orders_landing_url,
+    due_period_sql_filters,
+    due_periods_view_all_link,
+    is_lock_due_period,
+    lock_due_countdown,
     order_attention_condition,
 )
 from backend.utils.timezone import timezone
@@ -507,6 +511,7 @@ class DashboardService:
             ).all()
         )
         rider_map = await _riders_by_id(db, [row.rider_id for row in matched])
+        view_site = _single_site_id(site_ids)
         items = []
         for row in matched:
             duration = None
@@ -519,14 +524,19 @@ class DashboardService:
                 'rider_name': getattr(rider_map.get(row.rider_id), 'name', ''),
                 'status': row.status,
                 'duration_min': duration,
-                'link': (f'/rider-salary/order?attention=1&order_no={quote(row.order_no, safe="")}'),
+                'link': abnormal_orders_landing_url(
+                    site_id=view_site if view_site is not None else row.site_id,
+                    start=start,
+                    end=end,
+                    order_no=row.order_no,
+                ),
             })
         return DashboardAttentionBlock(
             key='abnormal_orders',
             title='异常订单',
             count=total,
             items=items,
-            link='/rider-salary/order?attention=1',
+            link=abnormal_orders_landing_url(site_id=view_site, start=start, end=end),
         )
 
     async def _due_periods(
@@ -535,41 +545,42 @@ class DashboardService:
         site_ids: set[int] | None,
         today: date,
     ) -> DashboardAttentionBlock | None:
-        # 产品语义：未锁 open/reopened 按 end_date 升序倒计时，不限「未来 3 天」窗口
+        # open|reopened 且 end_date ≤ today+3（含已过期未锁）；远周期不占待办
         rows = list(
             (
                 await db.scalars(
                     select(RiderSalarySettlePeriod)
                     .where(
-                        RiderSalarySettlePeriod.status.in_(lock_countdown_statuses()),
                         RiderSalarySettlePeriod.deleted == 0,
                         _site_filter(RiderSalarySettlePeriod.site_id, site_ids),
+                        *due_period_sql_filters(today),
                     )
                     .order_by(RiderSalarySettlePeriod.end_date.asc(), RiderSalarySettlePeriod.id.asc())
                 )
             ).all()
         )
+        rows = [row for row in rows if is_lock_due_period(status=row.status, end_date=row.end_date, today=today)]
         if not rows:
             return None
-        items = [
-            {
+        items = []
+        for row in rows[:_DUE_PERIODS_LIMIT]:
+            countdown = lock_due_countdown(end_date=row.end_date, today=today)
+            items.append({
                 'period_id': row.id,
                 'site_id': row.site_id,
                 'rider_id': row.rider_id,
                 'range': period_range_text(row.start_date, row.end_date),
                 'status': row.status,
                 'end_date': row.end_date.isoformat(),
-                'days_left': (row.end_date - today).days,
                 'link': f'/rider-salary/period?id={row.id}',
-            }
-            for row in rows[:_DUE_PERIODS_LIMIT]
-        ]
+                **countdown,
+            })
         return DashboardAttentionBlock(
             key='due_periods',
-            title='锁账倒计时',
+            title=DUE_PERIODS_TITLE,
             count=len(rows),
             items=items,
-            link='/rider-salary/period',
+            link=due_periods_view_all_link(_single_site_id(site_ids)),
         )
 
     async def _resigned_with_orders(
@@ -767,6 +778,12 @@ def _import_gap_view_all(
     if sid:
         return f'/rider-salary/order?site_id={sid}&date_from={start.isoformat()}&date_to={gap_end.isoformat()}'
     return f'/rider-salary/order?date_from={start.isoformat()}&date_to={gap_end.isoformat()}'
+
+
+def _single_site_id(site_ids: set[int] | None) -> int | None:
+    if site_ids and len(site_ids) == 1:
+        return next(iter(site_ids))
+    return None
 
 
 def _site_filter(column: Any, site_ids: set[int] | None) -> Any:
