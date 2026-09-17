@@ -261,3 +261,4 @@ values
 (94031, 'BASE_SALARY', '底薪', 'bonus', 'fixed', null, 1, 'period', '[]', '[]', 1, 'enable', 31, null, now(), null),
 (94032, 'GUARANTEE_TOPUP', '保底补足', 'bonus', 'formula', null, 1, 'period', '[]', '[]', 1, 'enable', 32, null, now(), null),
 (94033, 'COMMISSION', '提成', 'bonus', 'formula', null, 1, 'period', '[]', '[]', 1, 'enable', 33, null, now(), null);
+set @rs_site_monthly_advance_limit_default = 1;

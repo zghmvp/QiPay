@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import Request
 from sqlalchemy import select
@@ -23,10 +24,16 @@ from backend.plugin.rider_salary.schema.advance import (
     AdvanceReasonParam,
     CreateMeAdvanceParam,
     GetAdvanceDetail,
+    GetAdvanceMonthlyQuota,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
+<<<<<<< HEAD
 from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
 from backend.plugin.rider_salary.utils.deps import get_visible_site_ids
+=======
+from backend.plugin.rider_salary.utils.audit import require_reason
+from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
+>>>>>>> origin/cursor/advance-site-quota-e2c8
 from backend.plugin.rider_salary.utils.excel import write_workbook
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
@@ -34,6 +41,15 @@ from backend.utils.timezone import timezone
 
 ZERO = Decimal('0.00')
 IN_FLIGHT_STATUSES = frozenset({AdvanceStatus.pending.value, AdvanceStatus.to_pay.value})
+QUOTA_CONSUMING_STATUSES = frozenset({
+    AdvanceStatus.pending.value,
+    AdvanceStatus.to_pay.value,
+    AdvanceStatus.paid.value,
+})
+DEFAULT_MONTHLY_ADVANCE_LIMIT = 1
+SHANGHAI_TZ = ZoneInfo('Asia/Shanghai')
+MSG_QUOTA_EXHAUSTED = '本月预支次数已用完'
+MSG_SITE_ADVANCE_BANNED = '本站暂不可预支'
 _ALLOWED: frozenset[tuple[str, str]] = frozenset({
     (AdvanceStatus.draft.value, AdvanceStatus.pending.value),
     (AdvanceStatus.draft.value, AdvanceStatus.cancelled.value),
@@ -135,6 +151,121 @@ def assert_advance_amount(amount: Decimal, limit: Decimal) -> Decimal:
     if value > cap:
         raise errors.RequestError(msg=f'预支金额不能超过上限 {cap} 元')
     return value
+
+
+def resolve_monthly_advance_limit(site_limit: int | None) -> int:
+    """
+    站点每月可预支次数：空字段按 1；0 表示本站禁止预支。
+
+    :param site_limit: 站点配置，None 视为未填
+    :return:
+    """
+    if site_limit is None:
+        return DEFAULT_MONTHLY_ADVANCE_LIMIT
+    limit = int(site_limit)
+    if limit < 0:
+        raise errors.RequestError(msg='每月可预支次数不能小于 0')
+    return limit
+
+
+def shanghai_calendar_month_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
+    """
+    当前自然月起止（Asia/Shanghai，含起不含止）。不使用结算周期。
+
+    :param now: 参考时刻，缺省为当前时间
+    :return:
+    """
+    current = now or timezone.now()
+    current = current.replace(tzinfo=SHANGHAI_TZ) if current.tzinfo is None else current.astimezone(SHANGHAI_TZ)
+    start = current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+    return start, end
+
+
+def monthly_quota_view(limit: int, used: int, *, month: str | None = None) -> dict[str, int | str]:
+    """
+    组装 monthly_advance_limit / used / remaining（limit 为同值别名）。
+
+    :param limit: 每月次数上限
+    :param used: 本月已占用次数
+    :param month: 自然月 YYYY-MM
+    :return:
+    """
+    remaining = max(limit - used, 0)
+    payload: dict[str, int | str] = {
+        'monthly_advance_limit': limit,
+        'limit': limit,
+        'used': used,
+        'remaining': remaining,
+    }
+    if month:
+        payload['month'] = month
+    return payload
+
+
+def assert_monthly_quota(limit: int, used: int) -> None:
+    """申请时强校验本月次数；与金额上限错误分离。"""
+    if limit <= 0:
+        raise errors.RequestError(msg=MSG_SITE_ADVANCE_BANNED)
+    if used >= limit:
+        raise errors.RequestError(msg=MSG_QUOTA_EXHAUSTED)
+
+
+def count_consumed_in_month(
+    rows: list[Any],
+    *,
+    rider_id: int,
+    site_id: int,
+    month_start: datetime,
+    month_end: datetime,
+) -> int:
+    """
+    按骑手 × 站点 × 自然月统计占用次数。已驳回 / 已取消不占。
+
+    :param rows: 预支单列表
+    :param rider_id: 骑手 ID
+    :param site_id: 站点 ID
+    :param month_start: 自然月起（含）
+    :param month_end: 自然月止（不含）
+    :return:
+    """
+    used = 0
+    for row in rows:
+        if getattr(row, 'rider_id', None) != rider_id:
+            continue
+        if getattr(row, 'site_id', None) != site_id:
+            continue
+        if getattr(row, 'status', None) not in QUOTA_CONSUMING_STATUSES:
+            continue
+        submit = getattr(row, 'submit_time', None)
+        if submit is None:
+            continue
+        submit = submit.replace(tzinfo=SHANGHAI_TZ) if submit.tzinfo is None else submit.astimezone(SHANGHAI_TZ)
+        if month_start <= submit < month_end:
+            used += 1
+    return used
+
+
+def attach_quota_fields(
+    payload: dict[str, Any],
+    quota: GetAdvanceMonthlyQuota | dict[str, Any],
+) -> dict[str, Any]:
+    """把次数额度写入列表/详情，兼容嵌套 quota 与扁平字段。"""
+    if isinstance(quota, dict):
+        limit = int(quota.get('monthly_advance_limit', quota.get('limit', 0)))
+        used = int(quota.get('used', 0))
+        month = quota.get('month')
+        month_text = str(month) if month else None
+    else:
+        limit = quota.monthly_advance_limit
+        used = quota.used
+        month_text = quota.month
+    view = monthly_quota_view(limit, used, month=month_text)
+    payload['quota'] = view
+    payload['monthly_advance_limit'] = view['monthly_advance_limit']
+    payload['monthly_advance_used'] = view['used']
+    payload['monthly_advance_remaining'] = view['remaining']
+    return payload
 
 
 class AdvanceService:
@@ -354,6 +485,7 @@ class AdvanceService:
         in_flight = await advance_dao.list_in_flight(db, rider.id)
         assert_no_in_flight(len(in_flight))
         site = await site_dao.get(db, rider.site_id)
+        await self._assert_monthly_quota(db, rider=rider, site=site)
         limit = resolve_advance_limit(
             getattr(rider, 'advance_limit', None),
             getattr(site, 'advance_limit', None) if site else None,
@@ -404,17 +536,112 @@ class AdvanceService:
         extras = await self._enrich(db, rows)
         return [GetAdvanceDetail.model_validate(extras[row.id]) for row in rows]
 
-    async def limit_for_rider(self, *, db: AsyncSession, rider: Any) -> dict[str, Decimal]:
-        """预支额度"""
+    async def limit_for_rider(self, *, db: AsyncSession, rider: Any) -> dict[str, Any]:
+        """预支金额上限 + 本月次数额度"""
         site = await site_dao.get(db, rider.site_id)
-        limit = resolve_advance_limit(
+        amount_limit = resolve_advance_limit(
             getattr(rider, 'advance_limit', None),
             getattr(site, 'advance_limit', None) if site else None,
         )
         in_flight = await advance_dao.list_in_flight(db, rider.id)
-        used = q2(sum((row.amount for row in in_flight), ZERO))
-        available = q2(max(limit - used, ZERO))
-        return {'limit': limit, 'used_pending_amount': used, 'available': available}
+        used_amount = q2(sum((row.amount for row in in_flight), ZERO))
+        available = q2(max(amount_limit - used_amount, ZERO))
+        quota = await self.monthly_quota_for_rider(db=db, rider=rider, site=site)
+        return {
+            'limit': amount_limit,
+            'used_pending_amount': used_amount,
+            'available': available,
+            'monthly_advance_limit': quota.monthly_advance_limit,
+            'used': quota.used,
+            'remaining': quota.remaining,
+            'month': quota.month,
+        }
+
+    async def monthly_quota_for_rider(
+        self,
+        *,
+        db: AsyncSession,
+        rider: Any,
+        site: RiderSalarySite | None = None,
+        now: datetime | None = None,
+    ) -> GetAdvanceMonthlyQuota:
+        """骑手在当前站点本自然月的次数额度"""
+        return await self.monthly_quota_for_pair(
+            db=db,
+            rider_id=rider.id,
+            site_id=rider.site_id,
+            site=site,
+            now=now,
+        )
+
+    async def monthly_quota_for_pair(
+        self,
+        *,
+        db: AsyncSession,
+        rider_id: int,
+        site_id: int,
+        site: RiderSalarySite | None = None,
+        now: datetime | None = None,
+    ) -> GetAdvanceMonthlyQuota:
+        """骑手 × 站点 × 当前自然月次数额度"""
+        if site is None:
+            site = await site_dao.get(db, site_id)
+        limit = resolve_monthly_advance_limit(
+            getattr(site, 'monthly_advance_limit', None) if site is not None else None
+        )
+        month_start, month_end = shanghai_calendar_month_bounds(now)
+        used = await advance_dao.count_monthly_consumed(
+            db,
+            rider_id=rider_id,
+            site_id=site_id,
+            month_start=month_start,
+            month_end=month_end,
+            statuses=tuple(QUOTA_CONSUMING_STATUSES),
+        )
+        remaining = max(limit - used, 0)
+        return GetAdvanceMonthlyQuota(
+            monthly_advance_limit=limit,
+            used=used,
+            remaining=remaining,
+            month=f'{month_start.year:04d}-{month_start.month:02d}',
+            rider_id=rider_id,
+            site_id=site_id,
+        )
+
+    async def quota_for_admin(
+        self,
+        *,
+        db: AsyncSession,
+        request: Request,
+        rider_id: int,
+        site_id: int | None = None,
+    ) -> GetAdvanceMonthlyQuota:
+        """管理端查询骑手本月预支次数"""
+        rider = await rider_dao.get(db, rider_id)
+        if not rider:
+            raise errors.NotFoundError(msg='骑手不存在')
+        target_site_id = site_id if site_id is not None else rider.site_id
+        visible = await get_visible_site_ids(request, db)
+        assert_site_visible(visible, target_site_id)
+        site = await site_dao.get(db, target_site_id) if site_id is not None else None
+        if site_id is not None and site is None:
+            raise errors.NotFoundError(msg='站点不存在')
+        return await self.monthly_quota_for_pair(
+            db=db,
+            rider_id=rider.id,
+            site_id=target_site_id,
+            site=site,
+        )
+
+    async def _assert_monthly_quota(
+        self,
+        db: AsyncSession,
+        *,
+        rider: Any,
+        site: RiderSalarySite | None,
+    ) -> None:
+        quota = await self.monthly_quota_for_rider(db=db, rider=rider, site=site)
+        assert_monthly_quota(quota.monthly_advance_limit, quota.used)
 
     async def _models_from_page_items(self, db: AsyncSession, items: list[Any]) -> list[RiderSalaryAdvance]:
         ids: list[int] = []
@@ -504,6 +731,7 @@ class AdvanceService:
         if user_ids:
             user_rows = await db.scalars(select(User).where(User.id.in_(user_ids), User.deleted == 0))
             users = {item.id: item for item in user_rows.all()}
+        quotas = await self._quotas_for_rows(db, rows, sites)
         result: dict[int, dict[str, Any]] = {}
         for row in rows:
             rider = riders.get(row.rider_id)
@@ -521,7 +749,43 @@ class AdvanceService:
                 'paid_by_name': _user_label(payer),
                 'timeline': [],
             })
+            quota = quotas.get((row.rider_id, row.site_id))
+            if quota is not None:
+                attach_quota_fields(payload, quota)
             result[row.id] = payload
+        return result
+
+    async def _quotas_for_rows(
+        self,
+        db: AsyncSession,
+        rows: list[RiderSalaryAdvance],
+        sites: dict[int, RiderSalarySite],
+    ) -> dict[tuple[int, int], GetAdvanceMonthlyQuota]:
+        pairs = {(row.rider_id, row.site_id) for row in rows}
+        month_start, month_end = shanghai_calendar_month_bounds()
+        counts = await advance_dao.count_monthly_consumed_grouped(
+            db,
+            rider_site_ids=pairs,
+            month_start=month_start,
+            month_end=month_end,
+            statuses=tuple(QUOTA_CONSUMING_STATUSES),
+        )
+        result: dict[tuple[int, int], GetAdvanceMonthlyQuota] = {}
+        for rider_id, site_id in pairs:
+            site = sites.get(site_id)
+            limit = resolve_monthly_advance_limit(
+                getattr(site, 'monthly_advance_limit', None) if site is not None else None
+            )
+            used = counts.get((rider_id, site_id), 0)
+            remaining = max(limit - used, 0)
+            result[rider_id, site_id] = GetAdvanceMonthlyQuota(
+                monthly_advance_limit=limit,
+                used=used,
+                remaining=remaining,
+                month=f'{month_start.year:04d}-{month_start.month:02d}',
+                rider_id=rider_id,
+                site_id=site_id,
+            )
         return result
 
 

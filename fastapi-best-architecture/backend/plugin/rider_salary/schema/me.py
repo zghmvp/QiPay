@@ -92,11 +92,15 @@ class GetMePlan(SchemaBase):
 
 
 class GetMeAdvanceLimit(SchemaBase):
-    """预支额度"""
+    """预支额度（金额上限 + 本月次数）"""
 
-    limit: Decimal = Field(description='上限')
-    used_pending_amount: Decimal = Field(description='在途占用')
-    available: Decimal = Field(description='可用额度')
+    limit: Decimal = Field(description='预支金额上限')
+    used_pending_amount: Decimal = Field(description='在途占用金额')
+    available: Decimal = Field(description='可用金额')
+    monthly_advance_limit: int = Field(description='每月可预支次数')
+    used: int = Field(description='本月已用次数')
+    remaining: int = Field(description='本月剩余次数')
+    month: str | None = Field(None, description='自然月 YYYY-MM')
 
 
 class GetMeCalendar(GetCalendarMonth):

@@ -261,6 +261,12 @@ values
 (94031, 'BASE_SALARY', '底薪', 'bonus', 'fixed', null, true, 'period', '[]', '[]', true, 'enable', 31, null, now(), null),
 (94032, 'GUARANTEE_TOPUP', '保底补足', 'bonus', 'formula', null, true, 'period', '[]', '[]', true, 'enable', 32, null, now(), null),
 (94033, 'COMMISSION', '提成', 'bonus', 'formula', null, true, 'period', '[]', '[]', true, 'enable', 33, null, now(), null);
+do $$
+begin
+  alter table rs_site add column monthly_advance_limit integer not null default 1;
+exception
+  when duplicate_column then null;
+end $$;
 select setval(pg_get_serial_sequence('sys_menu', 'id'), coalesce(max(id), 0) + 1, true) from sys_menu;
 select setval(pg_get_serial_sequence('sys_role', 'id'), coalesce(max(id), 0) + 1, true) from sys_role;
 select setval(pg_get_serial_sequence('sys_role_menu', 'id'), coalesce(max(id), 0) + 1, true) from sys_role_menu;

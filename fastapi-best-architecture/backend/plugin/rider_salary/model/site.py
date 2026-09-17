@@ -23,6 +23,11 @@ class RiderSalarySite(Base):
     settle_cycle: Mapped[str] = mapped_column(sa.String(20), default=CycleType.month.value, comment='结算周期类型')
     cycle_config: Mapped[dict | None] = mapped_column(sa.JSON(), default=None, comment='周期配置')
     advance_limit: Mapped[Decimal | None] = mapped_column(sa.Numeric(12, 2), default=None, comment='预支上限（站点级）')
+    monthly_advance_limit: Mapped[int] = mapped_column(
+        sa.Integer,
+        default=1,
+        comment='每月可预支次数（0=本站禁止预支）',
+    )
     dept_id: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, index=True, comment='关联部门 ID')
     status: Mapped[str] = mapped_column(sa.String(20), default=EnableStatus.enable.value, index=True, comment='状态')
     remark: Mapped[str | None] = mapped_column(UniversalText, default=None, comment='备注')
