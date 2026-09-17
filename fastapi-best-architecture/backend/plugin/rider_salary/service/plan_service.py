@@ -42,6 +42,7 @@ from backend.plugin.rider_salary.service.calc_service import CalcResult, trial_r
 from backend.plugin.rider_salary.utils.audit import audit_service
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.plan_guarantee import assert_accrued_guarantee_is_last_period_item
+from backend.plugin.rider_salary.utils.plan_threshold import assert_threshold_price_period_items_xor
 from backend.utils.timezone import timezone
 
 IMMUTABLE_MSG = '该方案版本已被使用，禁止编辑或删除，请停用后复制为新版本'
@@ -202,6 +203,7 @@ def build_trial_result(
         trial_hash=trial_hash,
         mode=mode.value,
         mode_label=mode.label,
+        matches_official_calculate=mode == TrialMode.binding_segments,
         summary=summary,
         per_order=list(per_order_map.values()),
         daily=daily_rows,
@@ -405,6 +407,7 @@ class PlanService:
         if item_errors:
             raise errors.RequestError(msg='；'.join(item_errors))
         assert_accrued_guarantee_is_last_period_item(items)
+        assert_threshold_price_period_items_xor(items)
         await plan_item_dao.logical_delete_by_version(db, pk)
         for item, condition_expr, formula_expr in compiled:
             await plan_item_dao.create(
@@ -494,6 +497,7 @@ class PlanService:
         if activate_errors:
             raise errors.RequestError(msg='；'.join(activate_errors))
         assert_accrued_guarantee_is_last_period_item(items)
+        assert_threshold_price_period_items_xor(items)
         current_hash = items_hash_of(orm_items_as_dicts(items))
         version.items_hash = current_hash
         if not version.trial_passed:
