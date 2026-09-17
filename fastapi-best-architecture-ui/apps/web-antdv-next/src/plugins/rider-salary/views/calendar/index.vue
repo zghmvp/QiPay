@@ -266,6 +266,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
       :date="selectedDate"
       :rider-id="riderId"
       :rider-name="riderName"
+      :site-id="siteId"
       @shift-date="onShiftDate"
     />
   </PageContainer>

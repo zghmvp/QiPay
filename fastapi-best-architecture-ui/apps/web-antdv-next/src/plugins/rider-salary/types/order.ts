@@ -44,6 +44,7 @@ export interface OrderQuery extends PageParams {
   date_to?: string;
   import_batch_id?: number;
   is_locked?: boolean;
+  missing_delivery?: boolean;
   order_no?: string;
   rider_id?: number;
   site_id?: number;

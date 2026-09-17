@@ -95,3 +95,8 @@ export interface RecalcJobDetail {
   status_label?: string;
   total_periods: number;
 }
+
+export interface LatestRecalcJobResult {
+  job: RecalcJobDetail | null;
+  site_id: number;
+}

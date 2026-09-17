@@ -31,6 +31,7 @@ const props = defineProps<{
   open: boolean;
   riderId?: number;
   riderName?: string;
+  siteId?: number;
 }>();
 
 const emit = defineEmits<{
@@ -136,9 +137,15 @@ function close() {
 
 function goAdjustment() {
   if (!props.riderId || !props.date) return;
+  const siteId = props.siteId;
   router.push({
     path: '/rider-salary/adjustment',
-    query: { date: props.date, rider_id: String(props.riderId) },
+    query: {
+      date_from: props.date,
+      date_to: props.date,
+      rider_id: String(props.riderId),
+      ...(siteId ? { site_id: String(siteId) } : {}),
+    },
   });
 }
 
@@ -402,7 +409,13 @@ function onKey(e: KeyboardEvent) {
     </a-spin>
     <template #footer>
       <div class="flex justify-end gap-2">
-        <VbenButton variant="outline" @click="goAdjustment">录入奖惩</VbenButton>
+        <VbenButton
+          variant="outline"
+          data-testid="calendar-go-adjustment"
+          @click="goAdjustment"
+        >
+          录入奖惩
+        </VbenButton>
         <VbenButton :disabled="!detail?.period?.id" @click="goPeriod">
           查看周期
         </VbenButton>

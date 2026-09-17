@@ -7,6 +7,7 @@ import { h } from 'vue';
 
 import { useAccess } from '@vben/access';
 
+import PeriodSelect from '../../components/PeriodSelect.vue';
 import RiderSelect from '../../components/RiderSelect.vue';
 import SiteSelect from '../../components/SiteSelect.vue';
 import {
@@ -23,10 +24,14 @@ export const querySchema: VbenFormSchema[] = [
     modelPropName: 'value',
   },
   {
-    component: 'InputNumber',
-    componentProps: { class: 'w-full', min: 1, placeholder: '周期 ID' },
+    component: h(PeriodSelect),
+    dependencies: {
+      componentProps: (values) => ({ siteId: values.site_id }),
+      triggerFields: ['site_id'],
+    },
     fieldName: 'period_id',
     label: '周期',
+    modelPropName: 'value',
   },
   {
     component: h(RiderSelect),

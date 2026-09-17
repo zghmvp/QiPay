@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { VbenFormProps } from '@vben/common-ui';
 
-import type { PeriodResult } from '../../types/period';
+import type { CalcPrecheckResult, PeriodResult, PeriodWithPayrolls } from '../../types/period';
 
 import type {
   OnActionClickParams,
@@ -105,6 +105,51 @@ const missingPayrollHint = computed(() =>
     ? '薪资单不存在或未落库。请打开对应周期的算薪页查看失败清单。'
     : '',
 );
+const lockFailText = ref('');
+
+function extractErrorMsg(error: unknown): string {
+  const err = error as {
+    message?: string;
+    msg?: string;
+    response?: { data?: { data?: { errors?: string[] }; msg?: string } };
+  };
+  const dataErrors = err.response?.data?.data?.errors;
+  if (Array.isArray(dataErrors) && dataErrors.length) {
+    return dataErrors.join('；');
+  }
+  return (
+    err.response?.data?.msg ||
+    err.msg ||
+    err.message ||
+    ''
+  );
+}
+
+function isHardFailCopy(text: string) {
+  return /无生效方案|已完成但送达时间为空|从未成功落库|锁账中止|未算出的有单骑手|缺送达/.test(
+    text,
+  );
+}
+
+function collectHardFailLines(
+  pre?: CalcPrecheckResult,
+  detail?: null | PeriodWithPayrolls,
+): string[] {
+  const lines: string[] = [];
+  for (const blocker of pre?.blockers ?? []) {
+    for (const msg of blocker.messages ?? []) {
+      if (isHardFailCopy(msg) || ['missing_delivery', 'no_plan_with_orders', 'never_calculated'].includes(blocker.code)) {
+        lines.push(msg);
+      }
+    }
+  }
+  for (const fail of detail?.last_calc_failures ?? []) {
+    for (const msg of fail.errors ?? []) {
+      if (isHardFailCopy(msg)) lines.push(msg);
+    }
+  }
+  return [...new Set(lines.filter(Boolean))];
+}
 
 function onRefresh() {
   gridApi.query();
@@ -115,21 +160,40 @@ function openDetail(row: PeriodResult) {
 }
 
 async function onLock(row: PeriodResult) {
-  const pre = await calcPrecheckApi(row.id);
-  const issues = (pre.blockers ?? []).flatMap((item) => item.messages);
-  if (issues.length) {
-    message.error(
-      `不能锁账：存在未算出的有单骑手。${issues.join('；')}`,
-    );
+  lockFailText.value = '';
+  const [pre, detail] = await Promise.all([
+    calcPrecheckApi(row.id),
+    getPeriodApi(row.id).catch(() => null),
+  ]);
+  const hardLines = collectHardFailLines(pre, detail);
+  const staleCount = pre.stale_count ?? detail?.stale_count ?? row.stale_count ?? 0;
+  if (hardLines.length) {
+    const staleTail = staleCount > 0 ? '。另有需重算草稿，请先重算。' : '';
+    lockFailText.value = `不能锁账：${hardLines.join('；')}${staleTail}`;
+    message.error(lockFailText.value);
     return;
   }
   const { reason } = await prompt({
     extraHint: `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。有完成单却未算出的骑手会被拒绝。`,
     title: '锁账原因',
   });
-  await lockPeriodApi(row.id, reason);
-  message.success('已锁账');
-  onRefresh();
+  try {
+    await lockPeriodApi(row.id, reason);
+    message.success('已锁账');
+    onRefresh();
+  } catch (error: unknown) {
+    if (isUserCancelled(error)) return;
+    const msg = extractErrorMsg(error);
+    const extraHard = collectHardFailLines(pre, detail);
+    if (extraHard.length && /请先重算/.test(msg) && !isHardFailCopy(msg)) {
+      lockFailText.value = `不能锁账：${extraHard.join('；')}`;
+    } else if (isHardFailCopy(msg)) {
+      lockFailText.value = msg;
+    } else {
+      lockFailText.value = msg || '锁账失败';
+    }
+    throw error;
+  }
 }
 
 async function onMarkPaid(row: PeriodResult) {
@@ -292,6 +356,14 @@ onMounted(() => {
       show-icon
       type="warning"
       :message="missingPayrollHint"
+    />
+    <a-alert
+      v-if="lockFailText"
+      class="mb-2"
+      show-icon
+      type="error"
+      data-testid="period-lock-error"
+      :message="lockFailText"
     />
     <Grid>
       <template #toolbar-actions>

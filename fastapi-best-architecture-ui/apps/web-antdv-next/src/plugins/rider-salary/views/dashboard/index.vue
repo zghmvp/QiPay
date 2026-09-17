@@ -10,6 +10,7 @@ import { VbenButton, confirm } from '@vben/common-ui';
 import { message } from 'antdv-next';
 
 import {
+  fetchLatestSiteRecalcJob,
   getDashboardSummaryApi,
   getRecalcJobApi,
   previewStaleBatchRecalcApi,
@@ -17,6 +18,7 @@ import {
 } from '../../api/dashboard';
 import SiteSelect from '../../components/SiteSelect.vue';
 import { currentMonth } from '../../utils/date';
+import { rememberRecalcJob } from '../../utils/last-recalc-job';
 import PageContainer from '../_shared/PageContainer.vue';
 import AttentionList from './components/AttentionList.vue';
 import StatCards from './components/StatCards.vue';
@@ -76,6 +78,7 @@ function stopBatchPoll() {
 async function refreshBatchJob(jobId: number) {
   const job = await getRecalcJobApi(jobId);
   batchJob.value = job;
+  if (siteId.value) rememberRecalcJob(siteId.value, job.id);
   if (job.status === 'done' || job.status === 'failed') {
     stopBatchPoll();
     if (batchFailed.value) {
@@ -144,7 +147,8 @@ const pageEmpty = computed(() => {
   return (
     cardsZero &&
     !attentionVisible.value &&
-    !insightVisible.value
+    !insightVisible.value &&
+    !batchJob.value
   );
 });
 
@@ -165,11 +169,31 @@ async function load() {
       month: month.value,
       site_id: siteId.value ?? undefined,
     });
+    await restoreLastJob();
   } catch {
     summary.value = undefined;
     failed.value = true;
   } finally {
     loading.value = false;
+  }
+}
+
+async function restoreLastJob() {
+  if (batchPollTimer) return;
+  if (!siteId.value) {
+    if (!batchPollTimer) batchJob.value = undefined;
+    return;
+  }
+  if (batchJob.value && batchJob.value.site_id !== siteId.value) {
+    batchJob.value = undefined;
+  }
+  if (!canCalculate.value) return;
+  const job = await fetchLatestSiteRecalcJob(siteId.value);
+  if (!job) return;
+  if (batchJob.value?.id === job.id) return;
+  batchJob.value = job;
+  if (job.status === 'queued' || job.status === 'running') {
+    startBatchPoll(job.id);
   }
 }
 
@@ -207,6 +231,7 @@ async function onBatchRecalcStale() {
     });
     message.info(res.message || '已提交批量重算');
     if (res.job_id) {
+      rememberRecalcJob(siteId.value, res.job_id);
       startBatchPoll(res.job_id);
     }
     await load();
@@ -307,15 +332,15 @@ load();
               :message="batchJob.message || '批量重算已结束'"
             />
             <div
-              v-if="batchFailed && batchFailedPeriodIds.length"
+              v-if="batchFailedPeriodIds.length || (batchJob.payload?.period_ids?.length ?? 0) > 0"
               class="mt-2 flex flex-wrap gap-2"
             >
               <a-button
-                v-for="pid in batchFailedPeriodIds"
+                v-for="pid in (batchFailedPeriodIds.length ? batchFailedPeriodIds : (batchJob.payload?.period_ids ?? []))"
                 :key="pid"
                 size="small"
                 data-testid="dashboard-batch-goto-calc"
-                @click="goCalcPage(pid)"
+                @click="goCalcPage(Number(pid))"
               >
                 去算薪页 #{{ pid }}
               </a-button>

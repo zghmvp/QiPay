@@ -131,7 +131,11 @@ function openPayroll(row: PayrollSummary) {
 
 function blockerAction(row: CalcPrecheckBlocker) {
   if (row.deeplink?.path) {
-    pushDeeplink(row.deeplink.path, row.deeplink.query);
+    const query = { ...(row.deeplink.query ?? {}) };
+    if (row.code === 'missing_delivery') {
+      query.missing_delivery = '1';
+    }
+    pushDeeplink(row.deeplink.path, query);
     return;
   }
   if (row.code === 'no_plan_with_orders') {
@@ -149,8 +153,15 @@ function blockerAction(row: CalcPrecheckBlocker) {
       site_id: p?.site_id,
       date_from: p?.start_date,
       date_to: p?.end_date,
+      ...(row.code === 'missing_delivery' ? { missing_delivery: '1' } : {}),
     }),
   });
+}
+
+function failureLooksLikeMissingDelivery(row: CalculateRiderFailure) {
+  return (row.errors ?? []).some(
+    (e) => e.includes('送达时间为空') || e.includes('缺送达'),
+  );
 }
 
 function failureAction(row: CalculateRiderFailure, kind: 'binding' | 'order') {
@@ -169,6 +180,7 @@ function failureAction(row: CalculateRiderFailure, kind: 'binding' | 'order') {
       site_id: p?.site_id,
       date_from: p?.start_date,
       date_to: p?.end_date,
+      ...(failureLooksLikeMissingDelivery(row) ? { missing_delivery: '1' } : {}),
     }),
   });
 }

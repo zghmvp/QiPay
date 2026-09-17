@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { VbenFormProps } from '@vben/common-ui';
 
+import type { RecalcJobDetail } from '../../types/dashboard';
 import type { OrderResult } from '../../types/order';
 
 import type {
@@ -8,9 +9,10 @@ import type {
   VxeTableGridOptions,
 } from '#/adapter/vxe-table';
 
-import { onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
+import { useAccess } from '@vben/access';
 import { useVbenDrawer, useVbenModal, VbenButton } from '@vben/common-ui';
 import { IconifyIcon, MaterialSymbolsAdd } from '@vben/icons';
 
@@ -18,13 +20,19 @@ import { message } from 'antdv-next';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 
+import { fetchLatestSiteRecalcJob } from '../../api/dashboard';
 import {
   deleteOrderApi,
   downloadImportTemplateApi,
   getOrderListApi,
 } from '../../api/order';
+import RecalcJobCard from '../../components/RecalcJobCard.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
 import { toDateString } from '../../utils/date';
+import {
+  readLastImportCalcTarget,
+  readLastRecalcJob,
+} from '../../utils/last-recalc-job';
 import PageContainer from '../_shared/PageContainer.vue';
 import BatchList from './components/BatchList.vue';
 import ImportWizard from './components/ImportWizard.vue';
@@ -37,7 +45,14 @@ function isUserCancelled(error: unknown) {
 }
 
 const route = useRoute();
+const router = useRouter();
+const { hasAccessByCodes } = useAccess();
 const { ReasonModal, prompt } = useReasonModal();
+const lastRecalcJob = ref<RecalcJobDetail>();
+const lastImportPeriodIds = ref<number[]>([]);
+const canViewRecalcJob = computed(() =>
+  hasAccessByCodes(['rs:period:calculate']),
+);
 
 function queryStr(key: string) {
   const raw = route.query[key];
@@ -63,6 +78,9 @@ const initialDate = queryStr('date');
 const initialDateFrom = queryStr('date_from');
 const initialDateTo = queryStr('date_to');
 const initialOrderNo = queryStr('order_no');
+const initialMissingDelivery =
+  route.query.missing_delivery === '1' ||
+  route.query.missing_delivery === 'true';
 
 const initialDateRange =
   initialDateFrom && initialDateTo
@@ -89,6 +107,9 @@ const formOptions: VbenFormProps = {
     if (item.fieldName === 'order_no' && initialOrderNo) {
       return { ...item, defaultValue: initialOrderNo };
     }
+    if (item.fieldName === 'missing_delivery' && initialMissingDelivery) {
+      return { ...item, defaultValue: true };
+    }
     return item;
   }),
   showCollapseButton: true,
@@ -102,23 +123,25 @@ const gridOptions: VxeTableGridOptions<OrderResult> = {
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
-        const { date_range, is_locked, status, ...rest } = formValues as Record<
-          string,
-          unknown
-        > & {
-          date_range?: [string, string];
-          is_locked?: boolean | string;
-          status?: string;
-        };
+        const { date_range, is_locked, status, missing_delivery, ...rest } =
+          formValues as Record<string, unknown> & {
+            date_range?: [string, string];
+            is_locked?: boolean | string;
+            missing_delivery?: boolean | string;
+            status?: string;
+          };
         let locked: boolean | undefined;
         if (is_locked === true || is_locked === 'true') locked = true;
         else if (is_locked === false || is_locked === 'false') locked = false;
         const attention = status === '__attention__';
+        const missing =
+          missing_delivery === true || missing_delivery === 'true';
         return await getOrderListApi({
           attention: attention || undefined,
           date_from: toDateString(date_range?.[0]),
           date_to: toDateString(date_range?.[1]),
           is_locked: locked,
+          missing_delivery: missing || undefined,
           page: page.currentPage,
           size: page.pageSize,
           status: attention ? undefined : status,
@@ -167,7 +190,23 @@ async function onImported(batchId?: null | number) {
   if (batchId) {
     await gridApi.formApi.setValues({ import_batch_id: batchId });
   }
+  await loadLastRecalcJob();
   onRefresh();
+}
+
+async function loadLastRecalcJob() {
+  const siteId = initialSiteId || readLastRecalcJob()?.siteId;
+  lastImportPeriodIds.value =
+    readLastImportCalcTarget(siteId)?.periodIds ?? [];
+  if (!siteId || !canViewRecalcJob.value) {
+    lastRecalcJob.value = undefined;
+    return;
+  }
+  lastRecalcJob.value = (await fetchLatestSiteRecalcJob(siteId)) ?? undefined;
+}
+
+function goStoredCalc(periodId: number) {
+  void router.push({ path: `/rider-salary/period/${periodId}/calculate` });
 }
 
 const [FormDrawer, formDrawerApi] = useVbenDrawer({
@@ -187,14 +226,48 @@ onMounted(() => {
   if (initialRiderId) values.rider_id = initialRiderId;
   if (initialDateRange) values.date_range = initialDateRange;
   if (initialOrderNo) values.order_no = initialOrderNo;
+  if (initialMissingDelivery) values.missing_delivery = true;
   if (Object.keys(values).length) {
     void gridApi.formApi.setValues(values);
   }
+  void loadLastRecalcJob();
 });
 </script>
 
 <template>
   <PageContainer>
+    <div
+      v-if="lastRecalcJob || lastImportPeriodIds.length"
+      class="mb-2"
+      data-testid="order-last-recalc"
+    >
+      <RecalcJobCard
+        v-if="lastRecalcJob"
+        testid-prefix="order-recalc-job"
+        :job="lastRecalcJob"
+      />
+      <a-alert
+        v-else
+        show-icon
+        type="warning"
+        data-testid="import-not-payroll"
+        message="导入完成 ≠ 已出账"
+        description="订单已入库，须到周期算薪页计算后才有薪资结果。"
+      >
+        <template #action>
+          <a-button
+            v-for="pid in lastImportPeriodIds"
+            :key="pid"
+            size="small"
+            type="link"
+            data-testid="import-goto-calculate"
+            @click="goStoredCalc(pid)"
+          >
+            去周期算薪页
+          </a-button>
+        </template>
+      </a-alert>
+    </div>
     <Grid>
       <template #toolbar-actions>
         <VbenButton
