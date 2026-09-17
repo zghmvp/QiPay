@@ -27,13 +27,8 @@ from backend.plugin.rider_salary.schema.advance import (
     GetAdvanceMonthlyQuota,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
-<<<<<<< HEAD
 from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
-from backend.plugin.rider_salary.utils.deps import get_visible_site_ids
-=======
-from backend.plugin.rider_salary.utils.audit import require_reason
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
->>>>>>> origin/cursor/advance-site-quota-e2c8
 from backend.plugin.rider_salary.utils.excel import write_workbook
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
