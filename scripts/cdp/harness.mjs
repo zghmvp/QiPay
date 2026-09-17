@@ -23,13 +23,17 @@
  *   ops-export-attention-parity / cdp-admin-payslip-layers /
  *   cdp-admin-deduction-remark / cdp-admin-calc-success-four-numbers /
  *   ops-rider-profile-to-payroll / ops-queued-calc-progress
- * 钩子对齐 #19：period-export-* / payroll-layers / payroll-reconciliation /
- *   payroll-deduction-remark / rider-goto-payroll / rider-binding-goto-calculate /
- *   period-calc-queued / period-calc-refresh。
+ * Cycle 3 具名：ops-calc-success-vs-existing / ops-export-adjustment-sheet /
+ *   trial-equals-calc / ops-plan-threshold-xor / ops-calc-rider-picker-not-truncated
+ * 钩子对齐 #19+#24：period-export-* / period-export-adj-* / payroll-layers /
+ *   period-calc-run-success / period-calc-payrolls /
+ *   period-calc-riders-unselected-all / period-calc-riders-truncated /
+ *   trial-matches-official-calculate。
  * exclude_attention 须拿掉明细行（#20）；金标 C03/C04/C05A/C17 不得 skip。
+ * Cycle 3：#23 后端 + #24 钩子不得 skip；C08/C05B/C11 金标；calc-riders 搜第 201 人。
  * trial-binding-segments 无数字 = FAIL（不得 WARN 过）。
  * 旧 import/stale spec 已改「完成」语义（夹具无方案骑手不得纯绿完成）。
- * 叠 PR #18+#19+#20：Cycle 1 CDP + Cycle 2 前端钩子 + Cycle 2 后端。
+ * 叠 PR #18+#19+#20+#21+#23+#24：Cycle 1/2 CDP + Cycle 3 前后端。
  * queued 阈值替身：CDP_QUEUED_RIDER_THRESHOLD（默认 2）或 Playwright 拦截 queued=true。
  * 侧栏泄漏保持已知红，本 harness 不改断言。
  *

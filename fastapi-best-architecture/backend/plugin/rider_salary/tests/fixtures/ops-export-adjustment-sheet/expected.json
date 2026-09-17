@@ -1,0 +1,30 @@
+{
+  "feature": "ops-export-adjustment-sheet",
+  "sheet_name": "奖惩记录",
+  "fixture_remarks": ["FIX_C3_ADJ_POSTED", "FIX_C3_ADJ_OPEN", "FIX_C3_ADJ_ATT"],
+  "expected": {
+    "posted_vs_open_must_split": true,
+    "posted_label": "已入账",
+    "open_label": "未入账",
+    "default_exclude_orders": false,
+    "default_exclude_adjustments": false,
+    "exclude_orders_still_exports_all_adjustments": true,
+    "attention_same_rider_day_mark": "该骑手该日存在需关注订单",
+    "optional_sync_exclude_default_off": true,
+    "sync_on_copy": "奖惩记录将少",
+    "sync_off_admit": "奖惩记录含与需关注同日同骑手",
+    "does_not_change_gross_net": true,
+    "not_payout_file": true,
+    "skip_if_missing": false,
+    "testid_adj_booked": "period-export-adj-booked",
+    "testid_adj_unbooked": "period-export-adj-unbooked",
+    "testid_adj_annotation": "period-export-adj-annotation",
+    "testid_adj_sync_toggle": "period-export-adj-sync-toggle",
+    "testid_adj_sync_drop": "period-export-adj-sync-drop-count",
+    "testid_adj_admit": "period-export-adj-admit",
+    "cycle2_testid_confirm": "period-export-confirm",
+    "cycle2_testid_attention_count": "period-export-attention-count",
+    "cycle2_testid_exclude_toggle": "period-export-exclude-toggle",
+    "query_sync_exclude": "exclude_attention_adjustments"
+  }
+}
