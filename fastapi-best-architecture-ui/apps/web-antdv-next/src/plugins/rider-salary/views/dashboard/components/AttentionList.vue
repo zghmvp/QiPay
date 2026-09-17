@@ -25,6 +25,8 @@ import {
   lockCountdownViewAllTarget,
   noPlanBindingTarget,
   noPlanViewAllTarget,
+  stalePeriodCalcTarget,
+  stalePeriodsViewAllTarget,
 } from '../scope-links';
 
 const props = defineProps<{
@@ -157,6 +159,9 @@ function viewAllLink(block: DashboardAttentionBlock) {
       (first ? String(first.month ?? '') : undefined);
     return noPlanViewAllTarget(siteId, month);
   }
+  if (block.key === 'stale_periods') {
+    return stalePeriodsViewAllTarget(props.siteId, props.month);
+  }
   return parseLink(block.link);
 }
 
@@ -172,10 +177,16 @@ function rowLink(
       orderNo || undefined,
     );
   }
-  if (block.key === 'due_periods' || block.key === 'stale_periods') {
+  if (block.key === 'due_periods') {
     const id = Number(record.period_id);
     if (Number.isFinite(id) && id > 0) {
       return { path: '/rider-salary/period', query: { id: String(id) } };
+    }
+  }
+  if (block.key === 'stale_periods') {
+    const id = Number(record.period_id);
+    if (Number.isFinite(id) && id > 0) {
+      return stalePeriodCalcTarget(id);
     }
   }
   if (block.key === 'no_plan_days') {
@@ -245,6 +256,7 @@ function blockTestId(key: string) {
   if (key === 'abnormal_orders') return 'ops-dashboard-abnormal-attention-landing';
   if (key === 'due_periods') return 'ops-dashboard-lock-overdue-visible';
   if (key === 'no_plan_days') return 'ops-dashboard-no-plan-to-binding';
+  if (key === 'stale_periods') return 'ops-dashboard-stale-to-calc';
   return `dashboard-attention-${key}`;
 }
 
@@ -252,11 +264,13 @@ function viewAllTestId(key: string) {
   if (key === 'abnormal_orders') return 'dashboard-abnormal-view-all';
   if (key === 'due_periods') return 'dashboard-lock-view-all';
   if (key === 'no_plan_days') return 'dashboard-no-plan-view-all';
+  if (key === 'stale_periods') return 'dashboard-stale-view-all';
   return undefined;
 }
 
 function rowTestId(key: string) {
   if (key === 'no_plan_days') return 'dashboard-no-plan-row';
+  if (key === 'stale_periods') return 'dashboard-stale-row';
   return undefined;
 }
 </script>
@@ -283,6 +297,7 @@ function rowTestId(key: string) {
           :on-row="
             (record: Record<string, unknown>) => ({
               class: 'cursor-pointer',
+              'data-period-id': record.period_id,
               'data-rider-id': record.rider_id,
               'data-testid': rowTestId(block.key),
               onClick: () => onRowClick(block, record),
