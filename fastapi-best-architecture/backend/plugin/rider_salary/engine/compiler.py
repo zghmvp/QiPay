@@ -400,7 +400,7 @@ def _compile_formula(formula_json: dict | None, stage: str | None, errors: list[
         if not expr:
             errors.append('请填写表达式')
             return '0'
-        expr = expr.replace('×', '*').replace('÷', '/')
+        expr = expr.replace('×', '*').replace('÷', '/').replace('−', '-').replace('—', '-').replace('–', '-')
         _walk_expr_errors(expr, stage, errors)
         return expr
     errors.append(f'不支持的公式类型「{kind}」')
