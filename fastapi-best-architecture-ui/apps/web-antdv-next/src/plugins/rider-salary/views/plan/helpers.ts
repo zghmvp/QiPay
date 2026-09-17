@@ -267,6 +267,31 @@ export function summarizeFormula(
   return String(json.表达式 || '表达式');
 }
 
+/** 方案项一句话说明：接口 summary / 备注优先，否则条件+公式摘要 */
+export function summarizeItem(item: {
+  condition_expr?: null | string;
+  condition_json?: null | Record<string, unknown>;
+  formula_expr?: null | string;
+  formula_json?: null | Record<string, unknown>;
+  remark?: null | string;
+  summary?: null | string;
+}): string {
+  const fromApi = item.summary?.trim();
+  if (fromApi) return fromApi;
+  const remark = item.remark?.trim();
+  if (remark) return remark;
+  const cond = summarizeCondition(item.condition_json, item.condition_expr);
+  const formula = summarizeFormula(item.formula_json, item.formula_expr);
+  const parts: string[] = [];
+  if (cond && cond !== '恒真（空条件）' && cond !== 'True') {
+    parts.push(`条件 ${cond}`);
+  }
+  if (formula && formula !== '—') {
+    parts.push(formula);
+  }
+  return parts.join('；') || '—';
+}
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return value.join('~');

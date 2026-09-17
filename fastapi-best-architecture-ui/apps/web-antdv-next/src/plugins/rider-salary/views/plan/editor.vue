@@ -300,9 +300,10 @@ watch(versionId, () => {
                   />
                 </div>
                 <div>
-                  <div class="mb-1 text-sm">备注</div>
+                  <div class="mb-1 text-sm">备注（作一句话说明优先展示）</div>
                   <a-input
                     :disabled="readonly"
+                    placeholder="选填；有备注则绑定/骑手端优先显示备注"
                     :value="selected.remark ?? ''"
                     @update:value="(v) => patchSelected({ remark: String(v ?? '') })"
                   />

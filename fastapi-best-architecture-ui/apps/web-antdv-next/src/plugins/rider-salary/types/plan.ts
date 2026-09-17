@@ -55,6 +55,8 @@ export interface PlanItemDetail {
   sort_order: number;
   stage: string;
   subject_id: number;
+  /** 一句话说明（后端派生；备注优先，否则条件+公式摘要） */
+  summary?: null | string;
 }
 
 export interface PlanItemParam {

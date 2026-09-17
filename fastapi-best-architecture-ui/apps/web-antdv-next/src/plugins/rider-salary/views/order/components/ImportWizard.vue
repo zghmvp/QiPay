@@ -195,6 +195,14 @@ const [Modal, modalApi] = useVbenModal({
           :row-key="(row: ImportErrorItem) => `${row.row}-${row.order_no}`"
         />
         <a-empty v-else-if="result && result.failed_rows === 0" class="mt-3" description="全部导入成功" />
+        <a-alert
+          v-if="result && autoRecalc && result.success_rows > 0"
+          class="mt-3"
+          show-icon
+          type="info"
+          message="已触发后台重算"
+          description="导入成功后的重算在服务端后台执行，当前无进度条（未启用独立任务队列）。完成后请到结算周期页查看是否仍有「需重算」。"
+        />
         <a-button
           v-if="result?.batch_id && result.failed_rows > 0"
           class="mt-3"
@@ -206,6 +214,9 @@ const [Modal, modalApi] = useVbenModal({
     </div>
     <div v-else class="py-6 text-center">
       <p>导入流程已完成。</p>
+      <p v-if="autoRecalc && result && result.success_rows > 0" class="text-muted-foreground mt-2 text-sm">
+        若勾选了自动重算，请稍后到结算周期页确认结果。
+      </p>
       <p v-if="result?.batch_id" class="text-muted-foreground mt-2 text-sm">
         点击下方按钮查看本批次订单
       </p>

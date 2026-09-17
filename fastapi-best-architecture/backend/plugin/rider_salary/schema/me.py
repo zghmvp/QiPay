@@ -63,10 +63,11 @@ class GetMeAdjustmentItem(SchemaBase):
 
 
 class MePlanItem(SchemaBase):
-    """方案项（无公式）"""
+    """方案项（无公式 JSON，含一句话说明）"""
 
     name: str = Field(description='项名称')
     subject_name: str = Field(description='科目')
+    summary: str = Field('', description='一句话说明')
 
 
 class GetMePlanBinding(SchemaBase):

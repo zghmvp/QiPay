@@ -1,11 +1,12 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Self
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.enums import CalcStage
 from backend.plugin.rider_salary.schema.plan import GetPlanBrief
+from backend.plugin.rider_salary.utils.item_summary import build_item_summary
 
 
 class PlanItemParam(SchemaBase):
@@ -38,6 +39,22 @@ class GetPlanItemDetail(SchemaBase):
     formula_expr: str | None = Field(None, description='编译后公式')
     enabled: bool = Field(description='是否启用')
     remark: str | None = Field(None, description='备注')
+    summary: str = Field('', description='一句话说明（备注优先，否则条件+公式摘要）')
+
+    @model_validator(mode='after')
+    def _fill_summary(self) -> Self:
+        object.__setattr__(
+            self,
+            'summary',
+            build_item_summary(
+                remark=self.remark,
+                condition_expr=self.condition_expr,
+                formula_expr=self.formula_expr,
+                condition_json=self.condition_json,
+                formula_json=self.formula_json,
+            ),
+        )
+        return self
 
 
 class GetPlanVersionDetail(SchemaBase):
