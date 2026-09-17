@@ -8,12 +8,17 @@ import type {
 } from '../../../types/rider';
 
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
+
+import { useAccess } from '@vben/access';
+import { VbenButton } from '@vben/common-ui';
 
 import { message } from 'antdv-next';
 import dayjs from 'dayjs';
 
 import { useVbenForm } from '#/adapter/form';
 
+import { getPeriodListApi } from '../../../api/period';
 import {
   getActivePlanVersionsApi,
   getPlanVersionApi,
@@ -37,6 +42,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   changed: [];
 }>();
+
+const router = useRouter();
+const { hasAccessByCodes } = useAccess();
+const canCalculate = computed(() =>
+  hasAccessByCodes(['rs:period:calculate']),
+);
 
 const loading = ref(false);
 const segmentLoading = ref(false);
@@ -148,9 +159,45 @@ async function submit() {
   if (!valid) return;
   const values = await formApi.getValues<PlanBindingForm>();
   await createRiderBindingApi(props.rider.id, values);
-  message.success('绑定成功');
+  message.success('绑定已保存，请到周期算薪页重算');
   formApi.resetForm();
   await reload();
+}
+
+async function goCalculatePage() {
+  try {
+    const res = await getPeriodListApi({
+      page: 1,
+      site_id: props.rider.site_id,
+      size: 50,
+    });
+    const items = res?.items ?? [];
+    const match =
+      items.find(
+        (row) =>
+          row.rider_id === props.rider.id &&
+          (row.status === 'open' || row.status === 'reopened'),
+      ) ||
+      items.find(
+        (row) =>
+          !row.rider_id && (row.status === 'open' || row.status === 'reopened'),
+      ) ||
+      items.find((row) => row.rider_id === props.rider.id) ||
+      items.find((row) => !row.rider_id);
+    if (match) {
+      router.push({ path: `/rider-salary/period/${match.id}/calculate` });
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  router.push({
+    path: '/rider-salary/period',
+    query: {
+      rider_id: String(props.rider.id),
+      site_id: String(props.rider.site_id),
+    },
+  });
 }
 
 async function removeBinding(row: PlanBindingResult) {
@@ -270,7 +317,17 @@ defineExpose({ reload });
     <div v-access:code="'rs:rider:binding'" class="rounded border p-3">
       <div class="mb-2 font-medium">新增绑定</div>
       <Form />
-      <a-button class="mt-2" type="primary" @click="submit">保存绑定</a-button>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <a-button type="primary" @click="submit">保存绑定</a-button>
+        <VbenButton
+          v-if="canCalculate"
+          variant="outline"
+          data-testid="rider-binding-goto-calculate"
+          @click="goCalculatePage"
+        >
+          去周期算薪页
+        </VbenButton>
+      </div>
     </div>
   </div>
 </template>
