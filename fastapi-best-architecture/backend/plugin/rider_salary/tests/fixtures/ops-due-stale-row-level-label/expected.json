@@ -1,0 +1,37 @@
+{
+  "feature": "ops-due-stale-row-level-label",
+  "expected": {
+    "skip_if_missing": false,
+    "same_range_unlabeled_is_fail": true,
+    "site_level_rider_id": 0,
+    "site_level_copy": "站点级",
+    "site_level_must_not_use_rider_name": true,
+    "rider_level_must_show_name_or_job": true,
+    "due_click_keeps_that_period_id": true,
+    "due_landing": "/rider-salary/period?id={period_id}",
+    "stale_click_keeps_that_period_id": true,
+    "stale_landing": "/rider-salary/period/{period_id}/calculate",
+    "other_period_id_is_fail": true,
+    "do_not_change_decision_29": true,
+    "do_not_hide_rider_level": true,
+    "do_not_change_due_overdue_predicate": true,
+    "do_not_make_due_calc_the_only_landing": true,
+    "do_not_rewrite_cycle13_lock_skip_m": true,
+    "do_not_change_cycle6_stale_to_calc": true,
+    "testid_block": "ops-due-stale-row-level-label",
+    "testid_due_row": "dashboard-due-row",
+    "testid_stale_row": "dashboard-stale-row",
+    "testid_level": "dashboard-row-level",
+    "testid_rider_name": "dashboard-row-rider-name",
+    "row_period_id_attr": "data-period-id",
+    "row_rider_id_attr": "data-rider-id",
+    "row_level_attr": "data-row-level",
+    "helper_due_landing": "isDueRowLanding",
+    "helper_stale_landing": "isStaleRowLanding",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

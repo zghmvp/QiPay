@@ -1,0 +1,29 @@
+{
+  "feature": "cdp-admin-day-drawer-not-daily-payslip",
+  "expected": {
+    "skip_if_missing": false,
+    "only_locks_day_grain_copy": true,
+    "formula_amount_label": "公式金额",
+    "net_label": "净额",
+    "period_item_not_daily_copy": ["周期项不落日", "对账看条"],
+    "missing_copy_is_fail": true,
+    "spread_period_into_daily_net_is_fail": true,
+    "invent_daily_four_numbers_is_fail": true,
+    "change_gross_net_or_gold_is_fail": true,
+    "assert_cycle13_chip_landing": false,
+    "do_not_assert_calendar_period_chip": true,
+    "do_not_assert_calendar_view_period_to_payroll": true,
+    "do_not_relock_cycle13_must2": true,
+    "cycle5_daily_net_note_stays_on_payslip_not_rewritten": true,
+    "testid_block": "cdp-admin-day-drawer-not-daily-payslip",
+    "testid_formula": "day-drawer-formula-amount",
+    "testid_net": "day-drawer-net",
+    "testid_note": "day-drawer-period-not-daily",
+    "helper_copy": "isDayDrawerNotDailyPayslip",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

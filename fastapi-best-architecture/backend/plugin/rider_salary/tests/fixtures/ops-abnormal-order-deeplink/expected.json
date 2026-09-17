@@ -1,0 +1,28 @@
+{
+  "feature": "ops-abnormal-order-deeplink",
+  "expected": {
+    "skip_if_missing": false,
+    "row_must_carry_id_or_order_no": true,
+    "row_must_open_this_order": true,
+    "view_all_stays_attention_1_site_month": true,
+    "view_all_status_abnormal_only_is_fail": true,
+    "month_window_without_this_order_is_fail": true,
+    "merge_missing_delivery_is_fail": true,
+    "rewrite_attention_predicate_is_fail": true,
+    "do_not_relock_cycle13_advance_deeplink": true,
+    "do_not_open_no_plan_or_resigned_deeplink": true,
+    "testid_block": "ops-abnormal-order-deeplink",
+    "testid_row": "dashboard-abnormal-row",
+    "testid_view_all": "dashboard-abnormal-view-all",
+    "testid_landing": ["order-detail-open", "order-row-active"],
+    "row_id_attr": "data-order-id",
+    "row_no_attr": "data-order-no",
+    "helper_row_landing": "isAbnormalRowLanding",
+    "helper_view_all": "isAbnormalViewAll",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "feature": "ops-import-skip-errors-not-all-success",
+  "expected": {
+    "skip_if_missing": false,
+    "must_drive_wizard": true,
+    "must_check_skip_errors": true,
+    "fixture": "skip-errors-half-success.csv",
+    "fixture_has_one_valid_and_one_missing_job": true,
+    "result_and_complete_must_show_success_and_failed": true,
+    "failed_rows_ge_1": true,
+    "all_success_copy_is_fail": "全部导入成功",
+    "complete_only_flow_done_is_fail": "导入流程已完成",
+    "error_report_reachable_on_complete": true,
+    "cycle1_import_not_payroll_still_required": true,
+    "result_copy": "导入完成 ≠ 已出账",
+    "writing_still_422_is_fail": true,
+    "api_import_csv_green_is_fail": true,
+    "rewrite_gap_predicate_is_fail": true,
+    "raise_whole_batch_422_is_fail": true,
+    "do_not_relock_cycle13_wizard_file": true,
+    "testid_block": "ops-import-skip-errors-not-all-success",
+    "testid_skip": "import-skip-errors",
+    "testid_success": "import-success-rows",
+    "testid_failed": "import-failed-rows",
+    "testid_report": "import-error-report",
+    "old_result_hooks_still_required": ["import-not-payroll"],
+    "helper_half_success": "assertHalfSuccessVisible",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

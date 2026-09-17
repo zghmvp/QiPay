@@ -1,0 +1,36 @@
+{
+  "feature": "ops-import-gap-wizard-that-day",
+  "expected": {
+    "skip_if_missing": false,
+    "must_drive_dashboard_gap_row": true,
+    "must_open_existing_wizard": true,
+    "prefill_site_id": true,
+    "prefill_date_from_eq_date_to_eq_that_day": true,
+    "order_list_only_is_fail": true,
+    "empty_calendar_is_fail": true,
+    "missing_date_is_fail": true,
+    "cross_site_is_fail": true,
+    "api_import_csv_green_is_fail": true,
+    "rewrite_gap_predicate_is_fail": true,
+    "q14_3_order_list_filter_not_enough": true,
+    "do_not_require_wrong_site_lighthouse_200": true,
+    "do_not_open_import_center": true,
+    "do_not_relock_cycle13_wizard_file": true,
+    "view_all_stays_hash9_order_window": true,
+    "testid_block": "ops-import-gap-wizard-that-day",
+    "testid_row": "dashboard-import-gap-row",
+    "testid_wizard": "import-wizard",
+    "testid_site": "import-wizard-site",
+    "testid_date_from": "import-wizard-date-from",
+    "testid_date_to": "import-wizard-date-to",
+    "row_date_attr": "data-gap-date",
+    "row_site_attr": "data-gap-site-id",
+    "helper_wizard_prefill": "isImportGapWizardPrefill",
+    "helper_order_list_only": "isOrderListOnlyLanding",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}
