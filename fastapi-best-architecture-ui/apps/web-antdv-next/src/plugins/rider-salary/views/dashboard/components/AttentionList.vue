@@ -23,6 +23,8 @@ import {
 import {
   abnormalAttentionTarget,
   lockCountdownViewAllTarget,
+  noPlanBindingTarget,
+  noPlanViewAllTarget,
 } from '../scope-links';
 
 const props = defineProps<{
@@ -145,6 +147,16 @@ function viewAllLink(block: DashboardAttentionBlock) {
   if (block.key === 'due_periods') {
     return lockCountdownViewAllTarget(props.siteId);
   }
+  if (block.key === 'no_plan_days') {
+    const first = block.items[0];
+    const siteId =
+      props.siteId ??
+      (first ? Number(first.site_id) : undefined);
+    const month =
+      props.month ||
+      (first ? String(first.month ?? '') : undefined);
+    return noPlanViewAllTarget(siteId, month);
+  }
   return parseLink(block.link);
 }
 
@@ -166,6 +178,16 @@ function rowLink(
       return { path: '/rider-salary/period', query: { id: String(id) } };
     }
   }
+  if (block.key === 'no_plan_days') {
+    const riderId = Number(record.rider_id);
+    if (Number.isFinite(riderId) && riderId > 0) {
+      return noPlanBindingTarget(
+        riderId,
+        props.siteId ?? Number(record.site_id) ?? undefined,
+        props.month || String(record.month ?? '') || undefined,
+      );
+    }
+  }
   if (typeof record.link === 'string' && record.link) {
     return parseLink(record.link);
   }
@@ -177,17 +199,6 @@ function rowLink(
       if (Number.isFinite(siteId) && siteId > 0) query.site_id = String(siteId);
       if (date) query.date = date;
       return { path: '/rider-salary/order', query };
-    }
-    case 'no_plan_days': {
-      const riderId = Number(record.rider_id);
-      const siteId = Number(record.site_id);
-      const month = String(record.month ?? '');
-      const query: Record<string, string> = { tab: 'binding' };
-      if (Number.isFinite(riderId) && riderId > 0)
-        query.rider_id = String(riderId);
-      if (Number.isFinite(siteId) && siteId > 0) query.site_id = String(siteId);
-      if (month) query.month = month;
-      return { path: '/rider-salary/rider', query };
     }
     case 'pending_advances':
       return { path: '/rider-salary/advance', query: { status: 'pending' } };
@@ -233,12 +244,19 @@ function onRecalculate(event: Event, record: Record<string, unknown>) {
 function blockTestId(key: string) {
   if (key === 'abnormal_orders') return 'ops-dashboard-abnormal-attention-landing';
   if (key === 'due_periods') return 'ops-dashboard-lock-overdue-visible';
+  if (key === 'no_plan_days') return 'ops-dashboard-no-plan-to-binding';
   return `dashboard-attention-${key}`;
 }
 
 function viewAllTestId(key: string) {
   if (key === 'abnormal_orders') return 'dashboard-abnormal-view-all';
   if (key === 'due_periods') return 'dashboard-lock-view-all';
+  if (key === 'no_plan_days') return 'dashboard-no-plan-view-all';
+  return undefined;
+}
+
+function rowTestId(key: string) {
+  if (key === 'no_plan_days') return 'dashboard-no-plan-row';
   return undefined;
 }
 </script>
@@ -265,6 +283,8 @@ function viewAllTestId(key: string) {
           :on-row="
             (record: Record<string, unknown>) => ({
               class: 'cursor-pointer',
+              'data-rider-id': record.rider_id,
+              'data-testid': rowTestId(block.key),
               onClick: () => onRowClick(block, record),
             })
           "
