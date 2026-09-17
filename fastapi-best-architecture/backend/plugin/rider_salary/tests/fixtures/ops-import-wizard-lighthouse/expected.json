@@ -1,0 +1,27 @@
+{
+  "feature": "ops-import-wizard-lighthouse",
+  "expected": {
+    "skip_if_missing": false,
+    "must_drive_wizard": true,
+    "lighthouse_xlsx": "lighthouse-orders-2026-09-15.xlsx",
+    "api_import_csv_green_is_fail": true,
+    "file_required_422_is_fail": true,
+    "post_path": "/api/v1/rider-salary/orders/import",
+    "multipart_file_required": true,
+    "http_2xx_to_result_step": true,
+    "result_copy": "导入完成 ≠ 已出账",
+    "primary_cta": "去周期算薪页",
+    "old_result_hooks_still_required": ["import-not-payroll", "import-goto-calculate"],
+    "testid_wizard": "ops-import-wizard-lighthouse",
+    "testid_file": "import-wizard-file",
+    "testid_result": "import-not-payroll",
+    "testid_cta": "import-goto-calculate",
+    "no_fba_upload_swap": true,
+    "no_new_page": true,
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}

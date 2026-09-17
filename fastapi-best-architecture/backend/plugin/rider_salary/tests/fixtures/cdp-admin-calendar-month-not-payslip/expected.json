@@ -1,0 +1,28 @@
+{
+  "feature": "cdp-admin-calendar-month-not-payslip",
+  "expected": {
+    "skip_if_missing": false,
+    "month_total_copy": "本月合计",
+    "cross_period_copy": "跨 N 个周期",
+    "card_titles_remain": ["应发", "实发"],
+    "forbid_period_payslip_copy": ["本周期", "本期工资条", "本期应发"],
+    "chip_and_view_period_to_payslip": true,
+    "payslip_url": "/payroll/:id 或 /payroll?rider_id=&period_id=",
+    "period_drawer_id_query_is_fail": true,
+    "drawer_url": "/rider-salary/period?id={id}",
+    "do_not_change_gross_net": true,
+    "do_not_invent_month_payslip": true,
+    "do_not_copy_cycle2_reconciliation_to_bar": true,
+    "testid_block": "cdp-admin-calendar-month-not-payslip",
+    "testid_month_total": "calendar-month-total",
+    "testid_period_count": "calendar-month-period-count",
+    "testid_chip": "calendar-period-chip",
+    "testid_view_period": "calendar-view-period",
+    "helper_payslip_target": "calendarPeriodPayslipTarget",
+    "locked_gold_unchanged": {
+      "C03_gross": "8200.00",
+      "C04_gross": "7800.00",
+      "C05A_gross": "3500.00"
+    }
+  }
+}
