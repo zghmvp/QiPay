@@ -51,6 +51,7 @@ from backend.plugin.rider_salary.service.calc_service import (
     collect_never_calculated_finding,
     load_calc_input_for_precheck,
     lock_hard_fail_message,
+    missing_delivery_order_query,
 )
 from backend.plugin.rider_salary.service.payroll_service import payroll_service
 from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
@@ -172,6 +173,21 @@ def stale_lock_message(job_nos: list[str]) -> str:
     return f'存在需重算的薪资结果：工号 {"、".join(job_nos)}，请先重算'
 
 
+def compose_lock_block_message(*, hard_fail_errors: list[str], stale_job_nos: list[str]) -> str | None:
+    """
+    锁账拦截文案：硬失败（无方案有单 / 缺送达 / 从未落库）优先于 stale「请先重算」。
+    禁止只用 stale 句结束；禁止「仍要锁」。无完成单的无方案日不产生硬失败。
+    """
+    if hard_fail_errors:
+        msg = lock_hard_fail_message(hard_fail_errors)
+        if stale_job_nos:
+            msg = f'{msg}。{stale_lock_message(stale_job_nos)}'
+        return msg
+    if stale_job_nos:
+        return stale_lock_message(stale_job_nos)
+    return None
+
+
 def site_level_lock_excluded_rider_ids(overlapping_periods: list[Any]) -> set[int]:
     """站点级锁账/解锁时，跳过已被骑手级周期覆盖的骑手"""
     excluded: set[int] = set()
@@ -249,12 +265,12 @@ def _blocker_deeplink(code: str, *, rider_id: int, period: RiderSalarySettlePeri
     if code == 'missing_delivery':
         return CalcPrecheckDeeplink(
             path='/rider-salary/order',
-            query={
-                'rider_id': str(rider_id),
-                'site_id': str(period.site_id),
-                'date_from': period.start_date.isoformat(),
-                'date_to': period.end_date.isoformat(),
-            },
+            query=missing_delivery_order_query(
+                rider_id=rider_id,
+                site_id=period.site_id,
+                date_from=period.start_date,
+                date_to=period.end_date,
+            ),
         )
     return None
 
@@ -899,8 +915,7 @@ class PeriodService:
         :return:
         """
         period, site, _rider = await self._load_visible(db, request, pk)
-        await self._assert_no_stale_drafts(db, period)
-        await self._assert_lock_hard_fails(db, period)
+        await self._assert_lock_ready(db, period)
         before = snapshot(period, _PERIOD_FIELDS)
         self.transition(period, PeriodStatus.locked.value, request, reason)
         await self._set_locked_flags(db, period, locked=True)
@@ -1067,7 +1082,15 @@ class PeriodService:
             before=before,
         )
 
-    async def _assert_no_stale_drafts(self, db: AsyncSession, period: RiderSalarySettlePeriod) -> None:
+    async def _assert_lock_ready(self, db: AsyncSession, period: RiderSalarySettlePeriod) -> None:
+        """硬失败优先于 stale；无完成单的无方案日不挡锁。无「仍要锁」。"""
+        hard_errors = await self._collect_lock_hard_fail_errors(db, period)
+        stale_job_nos = await self._collect_stale_draft_job_nos(db, period)
+        msg = compose_lock_block_message(hard_fail_errors=hard_errors, stale_job_nos=stale_job_nos)
+        if msg:
+            raise errors.RequestError(msg=msg, data={'errors': hard_errors} if hard_errors else None)
+
+    async def _collect_stale_draft_job_nos(self, db: AsyncSession, period: RiderSalarySettlePeriod) -> list[str]:
         rows = list(
             (
                 await db.scalars(
@@ -1081,7 +1104,7 @@ class PeriodService:
             ).all()
         )
         if not rows:
-            return
+            return []
         rider_ids = [row.rider_id for row in rows]
         rider_map = await self._rider_map(db, rider_ids)
         job_nos: list[str] = []
@@ -1092,13 +1115,13 @@ class PeriodService:
             if job_no not in seen:
                 seen.add(job_no)
                 job_nos.append(job_no)
-        raise errors.RequestError(msg=stale_lock_message(job_nos))
+        return job_nos
 
-    async def _assert_lock_hard_fails(self, db: AsyncSession, period: RiderSalarySettlePeriod) -> None:
-        """锁账硬拦：有完成单无方案 / 缺送达 / 有单从未成功落库。"""
+    async def _collect_lock_hard_fail_errors(self, db: AsyncSession, period: RiderSalarySettlePeriod) -> list[str]:
+        """锁账硬拦扫描：有完成单无方案 / 缺送达 / 有单从未成功落库。"""
         targets = await _riders_for_period(db, period, None)
         if not targets:
-            return
+            return []
         success_ids = set(
             (
                 await db.scalars(
@@ -1135,8 +1158,7 @@ class PeriodService:
             )
             if extra is not None:
                 errors_list.extend(extra[1])
-        if errors_list:
-            raise errors.RequestError(msg=lock_hard_fail_message(errors_list), data={'errors': errors_list})
+        return errors_list
 
     async def _set_locked_flags(self, db: AsyncSession, period: RiderSalarySettlePeriod, *, locked: bool) -> None:
         order_stmt = (
