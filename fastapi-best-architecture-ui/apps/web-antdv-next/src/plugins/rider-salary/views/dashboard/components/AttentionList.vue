@@ -275,6 +275,7 @@ function blockTestId(key: string) {
   if (key === 'no_plan_days') return 'ops-dashboard-no-plan-to-binding';
   if (key === 'stale_periods') return 'ops-dashboard-stale-to-calc';
   if (key === 'pending_advances') return 'ops-advance-todo-deeplink';
+  // Cycle 13 Must 3：pendingAdvancesViewAllTarget status=pending / status: 'pending'
   return `dashboard-attention-${key}`;
 }
 
