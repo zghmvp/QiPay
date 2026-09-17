@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import ConfigDict, Field, computed_field, field_validator
 
 from backend.common.schema import SchemaBase
-from backend.plugin.rider_salary.enums import CycleType, PeriodStatus
+from backend.plugin.rider_salary.enums import CycleType, PeriodStatus, RecalcJobStatus
 from backend.plugin.rider_salary.schema.payroll import GetPayrollSummary
 
 
@@ -147,6 +147,20 @@ class GetPeriodWithPayrolls(GetPeriodDetail):
         default_factory=list,
         description='最近一次算薪失败清单',
     )
+    last_calc_status: str | None = Field(None, description='最近一次算薪态 queued/running/done/failed')
+    last_calc_status_message: str | None = Field(None, description='最近一次算薪态说明')
+    attention_order_count: int = Field(0, description='周期内需关注订单数（与工作台 attention 同谓词）')
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def last_calc_status_label(self) -> str | None:
+        """算薪态中文：排队中 / 计算中 / 完成 / 失败"""
+        if not self.last_calc_status:
+            return None
+        try:
+            return RecalcJobStatus(self.last_calc_status).label
+        except ValueError:
+            return self.last_calc_status
 
 
 class GetPeriodListItem(GetPeriodDetail):
@@ -190,6 +204,10 @@ class CalculatePeriodResult(SchemaBase):
     warnings: list[str] = Field(default_factory=list, description='非阻断提示（如转入后台）')
     failed: list[CalculateRiderFailure] = Field(default_factory=list, description='失败骑手清单')
     queued: bool = Field(False, description='是否转入后台')
+    calc_status: str | None = Field(None, description='算薪态 queued/running/done/failed')
+    calc_status_label: str | None = Field(None, description='算薪态中文')
+    sync_limit: int = Field(200, description='同步算薪骑手上限，超出转入后台')
+    target_rider_count: int = Field(0, description='本次目标骑手数')
 
 
 class CalcPrecheckBlocker(SchemaBase):
@@ -220,6 +238,11 @@ class CalcPrecheckResult(SchemaBase):
     warnings: list[CalcPrecheckWarning] = Field(default_factory=list, description='非阻断警告')
     eligible_rider_count: int = Field(description='默认将计算的骑手数')
     stale_count: int = Field(0, description='需重算薪资单数')
+    calc_status: str | None = Field(None, description='最近一次算薪态 queued/running/done/failed')
+    calc_status_label: str | None = Field(None, description='算薪态中文')
+    calc_status_message: str | None = Field(None, description='算薪态说明')
+    sync_limit: int = Field(200, description='同步算薪骑手上限，超出转入后台；CDP 可压低配置')
+    attention_order_count: int = Field(0, description='周期内需关注订单数')
 
 
 class ReversePeriodResult(SchemaBase):

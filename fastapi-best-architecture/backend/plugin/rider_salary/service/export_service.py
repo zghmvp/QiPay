@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.plugin.rider_salary.crud.payroll import payroll_dao
 from backend.plugin.rider_salary.crud.settle_period import SITE_LEVEL_RIDER_ID
-from backend.plugin.rider_salary.enums import CalcStage, DetailSource, PayrollKind, PayrollStatus
+from backend.plugin.rider_salary.enums import CalcStage, DetailSource, OrderStatus, PayrollKind, PayrollStatus
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
 from backend.plugin.rider_salary.model.payroll_detail import RiderSalaryPayrollDetail
@@ -23,6 +23,13 @@ from backend.plugin.rider_salary.service.period_service import period_service
 from backend.plugin.rider_salary.utils.audit import resolve_operator_name
 from backend.plugin.rider_salary.utils.excel import write_workbook
 from backend.plugin.rider_salary.utils.money import q2
+from backend.plugin.rider_salary.utils.order_attention import (
+    attention_confession,
+    attention_duration_minutes,
+    attention_reason,
+    keep_export_detail_row,
+    list_period_attention_orders,
+)
 from backend.utils.timezone import timezone
 
 SUMMARY_HEADERS = [
@@ -74,6 +81,8 @@ SHEET_SUMMARY = '薪资汇总'
 SHEET_DETAIL = '薪资明细'
 SHEET_ADJUSTMENT = '奖惩记录'
 SHEET_NET = '净额对照'
+SHEET_ATTENTION = '需关注说明'
+ATTENTION_HEADERS = ['工号', '姓名', '订单号', '状态', '时长(分钟)', '需关注原因', '说明']
 
 ZERO = Decimal('0.00')
 
@@ -142,14 +151,16 @@ class ExportService:
         db: AsyncSession,
         request: Request,
         pk: int,
-    ) -> tuple[bytes, str]:
+        exclude_attention: bool = False,
+    ) -> tuple[bytes, str, int, bool]:
         """
         导出周期薪资 xlsx
 
         :param db: 数据库会话
         :param request: 请求对象
         :param pk: 周期 ID
-        :return: 文件字节, 文件名
+        :param exclude_attention: 是否从文件行排除需关注订单（不改 gross/net）
+        :return: 文件字节, 文件名, 需关注条数, 是否已排除
         """
         period, site, _rider = await period_service._load_visible(db, request, pk)
         payrolls = list(await payroll_dao.select_models_order(db, 'id', 'asc', period_id=period.id, deleted=0))
@@ -157,6 +168,10 @@ class ExportService:
         site_name = site.name if site is not None else str(period.site_id)
         period_text = f'{period.start_date}~{period.end_date}'
         details = await self._list_details(db, [row.id for row in payrolls])
+        attention_orders = await list_period_attention_orders(db, period)
+        attention_ids = {int(row.id) for row in attention_orders}
+        attention_count = len(attention_orders)
+        riders.update(await period_service._rider_map(db, [row.rider_id for row in attention_orders]))
         plan_names, subject_names, order_nos = await self._lookup_maps(db, details)
         details_by_payroll: dict[int, list[RiderSalaryPayrollDetail]] = {}
         for detail in details:
@@ -215,16 +230,31 @@ class ExportService:
                     summarize_trace(detail.calc_trace),
                 ]
                 for detail in details_by_payroll.get(payroll.id, [])
+                if keep_export_detail_row(
+                    exclude_attention=exclude_attention,
+                    order_id=detail.order_id,
+                    attention_ids=attention_ids,
+                )
             )
         adj_rows = await self._adjustment_rows(db, period, riders)
         net_rows = self._net_rows(net_acc, riders, ordered_rider_ids)
-        content = write_workbook([
+        sheets: list[tuple[str, list[str], list[list]]] = [
             (SHEET_SUMMARY, SUMMARY_HEADERS, summary_rows),
             (SHEET_DETAIL, DETAIL_HEADERS, detail_rows),
             (SHEET_ADJUSTMENT, ADJUSTMENT_HEADERS, adj_rows),
             (SHEET_NET, NET_HEADERS, net_rows),
-        ])
+        ]
+        notice_rows = self._attention_notice_rows(
+            orders=attention_orders,
+            riders=riders,
+            excluded=exclude_attention,
+        )
+        if notice_rows:
+            sheets.append((SHEET_ATTENTION, ATTENTION_HEADERS, notice_rows))
+        content = write_workbook(sheets)
         filename = f'薪资导出_{site_name}_{period.start_date}_{period.end_date}.xlsx'
+        confession = attention_confession(count=attention_count, excluded=exclude_attention)
+        audit_extra = f'，{confession}' if confession else ''
         await audit_service.record(
             db,
             request,
@@ -235,10 +265,42 @@ class ExportService:
             target_label=f'{site_name} {period_text}',
             description=(
                 f'{resolve_operator_name(request)} 于 {timezone.to_str(timezone.now())} '
-                f'对 周期{site_name} {period_text} 执行了导出'
+                f'对 周期{site_name} {period_text} 执行了导出{audit_extra}'
             ),
         )
-        return content, filename
+        return content, filename, attention_count, exclude_attention
+
+    @staticmethod
+    def _attention_notice_rows(
+        *,
+        orders: list[RiderSalaryOrder],
+        riders: dict[int, RiderSalaryRider],
+        excluded: bool,
+    ) -> list[list]:
+        count = len(orders)
+        confession = attention_confession(count=count, excluded=excluded)
+        if not confession:
+            return []
+        if excluded:
+            return [['', '', '', '', '', '', confession]]
+        rows: list[list] = []
+        for order in orders:
+            rider = riders.get(order.rider_id)
+            reason = attention_reason(
+                status=order.status,
+                order_time=order.order_time,
+                deliver_time=order.deliver_time,
+            )
+            rows.append([
+                rider.job_no if rider is not None else str(order.rider_id),
+                rider.name if rider is not None else '',
+                order.order_no,
+                _label(OrderStatus, order.status),
+                attention_duration_minutes(order),
+                reason or '',
+                confession,
+            ])
+        return rows
 
     @staticmethod
     async def _list_details(db: AsyncSession, payroll_ids: list[int]) -> list[RiderSalaryPayrollDetail]:
