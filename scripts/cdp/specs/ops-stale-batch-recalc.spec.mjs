@@ -50,14 +50,38 @@ export async function run({ page, helpers, config }) {
   }
 
   await btn.click();
-  const dialog = page.locator('.ant-modal, [role="dialog"]').last();
-  await dialog.waitFor({ state: 'visible', timeout: 15000 });
-  const text = await dialog.innerText();
-  if (!text.includes('批量重算') && !text.includes('站点')) {
-    throw new Error(`确认框文案不符合预期：${text}`);
+
+  // Vben confirm → reka AlertDialog（role=alertdialog / data-slot），非 Ant Modal
+  const dialog = page.getByRole('alertdialog').or(
+    page.locator('[data-slot="alert-dialog-content"]'),
+  );
+  try {
+    await dialog.first().waitFor({ state: 'visible', timeout: 15000 });
+  } catch (err) {
+    throw new Error(
+      '等待 Vben 确认框超时（alertdialog / [data-slot=alert-dialog-content]）。' +
+        '若仍在等 .ant-modal / [role=dialog]：产品为 Vben confirm，不是 Ant Modal。' +
+        ` 原始错误：${err.message}`,
+    );
   }
-  const cancel = dialog.getByRole('button', { name: /取消|关闭/ }).first();
-  if ((await cancel.count()) > 0) await cancel.click();
+
+  const text = await dialog.first().innerText();
+  const hasBatch = text.includes('批量重算');
+  const hasSiteOrPeriod =
+    text.includes('站点') || text.includes('周期') || text.includes('骑手');
+  if (!hasBatch || !hasSiteOrPeriod) {
+    throw new Error(
+      `确认框文案不符合预期（须含「批量重算」且含站点/周期/骑手语义）：${text}`,
+    );
+  }
+
+  await dialog.first().getByRole('button', { name: /^取消$/ }).click();
+  await dialog.first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
   await helpers.shot(page, 'cdp-ops-stale-batch-recalc-confirm');
-  helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());
+
+  const bodyAfter = await page.locator('body').innerText();
+  if (bodyAfter.includes('已提交批量重算')) {
+    throw new Error('点击取消后出现提交成功态——疑似误点确认');
+  }
+  helpers.assertNoPaymentTaxCopy(bodyAfter);
 }
