@@ -51,16 +51,30 @@ const versionId = computed(
   () => drawerApi.getData<{ versionId?: number }>()?.versionId,
 );
 
+function pickCount(...vals: unknown[]): number | undefined {
+  for (const raw of vals) {
+    if (raw === null || raw === undefined || raw === '') continue;
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
 const orderCompare = computed(() => {
   const summary = result.value?.summary;
   if (!summary) return null;
-  const valid = Number(summary.valid_order_count ?? summary.order_count ?? 0);
-  const plan = Number(
-    summary.plan_order_count ?? summary.valid_order_count ?? summary.order_count ?? 0,
+  const valid = pickCount(
+    summary.period_valid_order_count,
+    summary.valid_order_count,
+    summary.order_count,
+  );
+  const plan = pickCount(
+    summary.plan_order_count,
+    summary.plan_period_order_count,
   );
   const segments = summary.segment_order_counts ?? [];
   return {
-    differs: valid !== plan || segments.length > 1,
+    differs: plan !== undefined && valid !== undefined && (valid !== plan || segments.length > 1),
     plan,
     segments,
     valid,
@@ -71,6 +85,23 @@ const cards = computed(() => {
   const summary = result.value?.summary;
   if (!summary) return [];
   return [
+    {
+      label: '周期有效单量',
+      testId: 'trial-period-valid-order-count-card',
+      value: pickCount(
+        summary.period_valid_order_count,
+        summary.valid_order_count,
+        summary.order_count,
+      ),
+    },
+    {
+      label: '方案期内单量',
+      testId: 'trial-plan-order-count-card',
+      value: pickCount(
+        summary.plan_order_count,
+        summary.plan_period_order_count,
+      ),
+    },
     { label: '单量', value: summary.order_count },
     { label: '逐单', money: summary.per_order_total },
     { label: '按日', money: summary.daily_total },
@@ -219,7 +250,7 @@ const periodColumns = [
                   class="text-xl font-semibold tabular-nums"
                   data-testid="trial-valid-order-count"
                 >
-                  {{ orderCompare.valid }}
+                  {{ orderCompare.valid ?? '—' }}
                 </div>
                 <div class="text-muted-foreground mt-1 text-xs">
                   整个试算区间 completed 单量
@@ -231,7 +262,7 @@ const periodColumns = [
                   class="text-xl font-semibold tabular-nums"
                   data-testid="trial-plan-order-count"
                 >
-                  {{ orderCompare.plan }}
+                  {{ orderCompare.plan ?? '—' }}
                 </div>
                 <div class="text-muted-foreground mt-1 text-xs">
                   各绑定生效段内 completed 单量合计（无方案日不计）
@@ -266,11 +297,16 @@ const periodColumns = [
             </div>
           </a-card>
           <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
-            <a-card v-for="card in cards" :key="card.label" size="small">
+            <a-card
+              v-for="card in cards"
+              :key="card.label"
+              size="small"
+              :data-testid="card.testId"
+            >
               <div class="text-muted-foreground text-xs">{{ card.label }}</div>
               <div class="text-lg font-medium">
                 <MoneyText v-if="card.money !== undefined" :value="card.money" />
-                <span v-else>{{ card.value }}</span>
+                <span v-else>{{ card.value ?? '—' }}</span>
               </div>
             </a-card>
           </div>

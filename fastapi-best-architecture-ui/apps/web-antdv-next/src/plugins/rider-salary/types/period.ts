@@ -154,6 +154,24 @@ export interface CalcPrecheckResult {
   warnings: CalcPrecheckWarning[];
 }
 
+export interface LockPreviewResult {
+  adjustment_count?: number;
+  lock_adjustment_count?: number;
+  lock_order_count?: number;
+  lock_payroll_count?: number;
+  lock_rider_count?: number;
+  order_count?: number;
+  payroll_count?: number;
+  rider_level_skip_count?: number;
+  skip_rider_count?: number;
+  skipped_rider_count?: number;
+  skipped_rider_level_count?: number;
+  will_lock_adjustment_count?: number;
+  will_lock_order_count?: number;
+  will_lock_payroll_count?: number;
+  will_lock_rider_count?: number;
+}
+
 export interface ReversePeriodResult {
   reversal_count: number;
   reversal_net_total: MoneyValue;

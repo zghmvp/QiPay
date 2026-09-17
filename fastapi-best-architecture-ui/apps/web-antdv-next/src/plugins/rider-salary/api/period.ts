@@ -6,6 +6,7 @@ import type {
   CalculatePeriodResult,
   GeneratePeriodParam,
   GeneratePeriodResult,
+  LockPreviewResult,
   PeriodQuery,
   PeriodResult,
   PeriodWithPayrolls,
@@ -55,6 +56,10 @@ export async function calculatePeriodApi(
     `${BASE}/${pk}/calculate`,
     data ?? {},
   );
+}
+
+export async function previewLockPeriodApi(pk: number) {
+  return requestClient.get<LockPreviewResult>(`${BASE}/${pk}/lock-preview`);
 }
 
 export async function lockPeriodApi(pk: number, reason: string) {

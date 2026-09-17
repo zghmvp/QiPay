@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { CalendarMonthSummary } from '../../../types/calendar';
 
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 
 import MoneyText from '../../../components/MoneyText.vue';
@@ -9,20 +10,33 @@ import {
   enumLabel,
   PERIOD_STATUS_OPTIONS,
 } from '../../../constants/enums';
+import { resolveRiderPeriodPayslip } from '../payslip';
 
 const props = defineProps<{
+  riderId?: number;
   summary?: CalendarMonthSummary;
 }>();
 
 const router = useRouter();
 
-function openPeriod(id: number) {
-  router.push({ path: '/rider-salary/period', query: { id: String(id) } });
+const periodCount = computed(() => props.summary?.periods?.length ?? 0);
+
+async function openPayslip(periodId: number) {
+  if (!props.riderId || !periodId) return;
+  router.push(await resolveRiderPeriodPayslip(props.riderId, periodId));
 }
 </script>
 
 <template>
   <div v-if="summary" class="flex flex-col gap-3">
+    <div
+      class="flex flex-wrap items-center gap-2 text-sm"
+      data-testid="calendar-month-not-payslip"
+    >
+      <span class="font-medium" data-testid="calendar-month-total">本月合计</span>
+      <span class="text-muted-foreground">·</span>
+      <span data-testid="calendar-period-span">跨 {{ periodCount }} 个周期</span>
+    </div>
     <div class="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
       <a-card size="small">
         <div class="text-muted-foreground text-xs">本月累计单量</div>
@@ -77,7 +91,8 @@ function openPeriod(id: number) {
         :key="chip.id"
         class="cursor-pointer"
         :color="enumColor(PERIOD_STATUS_OPTIONS, chip.status)"
-        @click="openPeriod(chip.id)"
+        data-testid="calendar-period-chip"
+        @click="openPayslip(chip.id)"
       >
         {{ chip.range }}
         {{ enumLabel(PERIOD_STATUS_OPTIONS, chip.status) }}

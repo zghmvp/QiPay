@@ -11,6 +11,7 @@ const reason = ref('');
 const password = ref('');
 const title = ref('请填写操作原因');
 const extraHint = ref('');
+const extraHintTestId = ref<string>();
 const needPassword = ref(false);
 const passwordRequired = ref(false);
 const reasonRequired = ref(true);
@@ -60,6 +61,7 @@ const [Modal, modalApi] = useVbenModal({
     password.value = '';
     title.value = data?.title || '请填写操作原因';
     extraHint.value = data?.extraHint || '';
+    extraHintTestId.value = data?.extraHintTestId;
     needPassword.value = Boolean(data?.password);
     passwordRequired.value = Boolean(data?.passwordRequired);
     reasonRequired.value = data?.reasonRequired !== false;
@@ -70,7 +72,13 @@ const [Modal, modalApi] = useVbenModal({
 <template>
   <Modal :title="title">
     <div class="flex flex-col gap-3">
-      <a-alert v-if="extraHint" type="info" show-icon :message="extraHint" />
+      <a-alert
+        v-if="extraHint"
+        type="info"
+        show-icon
+        :data-testid="extraHintTestId"
+        :message="extraHint"
+      />
       <a-textarea
         v-model:value="reason"
         :placeholder="reasonRequired ? '请填写操作原因' : '操作原因（可选）'"

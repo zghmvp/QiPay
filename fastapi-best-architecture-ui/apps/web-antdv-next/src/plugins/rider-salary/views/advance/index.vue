@@ -8,7 +8,7 @@ import type {
   VxeTableGridOptions,
 } from '#/adapter/vxe-table';
 
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { confirm, useVbenDrawer, VbenButton } from '@vben/common-ui';
@@ -61,13 +61,11 @@ const initialId = queryNum('id');
 const initialMonth = queryStr('month');
 const initialDateRange = initialMonth ? monthRange(initialMonth) : undefined;
 const tab = ref(
-  initialId
-    ? 'all'
-    : !initialStatus
-      ? 'pending'
-      : ADVANCE_TABS.has(initialStatus)
-        ? initialStatus
-        : 'all',
+  initialStatus && ADVANCE_TABS.has(initialStatus)
+    ? initialStatus
+    : initialId
+      ? 'all'
+      : 'pending',
 );
 
 const formOptions: VbenFormProps = {
@@ -131,6 +129,10 @@ const gridOptions: VxeTableGridOptions<AdvanceResult> = {
 
 const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 
+const [DetailDrawer, detailApi] = useVbenDrawer({
+  connectedComponent: AdvanceDrawer,
+});
+
 onMounted(async () => {
   const values: Record<string, unknown> = {};
   if (initialStatus && !ADVANCE_TABS.has(initialStatus)) {
@@ -141,6 +143,10 @@ onMounted(async () => {
   if (initialDateRange) values.date_range = initialDateRange;
   if (Object.keys(values).length) {
     await gridApi.formApi.setValues(values);
+  }
+  if (initialId) {
+    await nextTick();
+    detailApi.setData({ id: initialId }).open();
   }
 });
 
@@ -223,9 +229,6 @@ async function onActionClick({
   }
 }
 
-const [DetailDrawer, detailApi] = useVbenDrawer({
-  connectedComponent: AdvanceDrawer,
-});
 </script>
 
 <template>

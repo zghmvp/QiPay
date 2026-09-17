@@ -4,7 +4,7 @@ import type { UploadChangeParam, UploadFile } from 'antdv-next';
 import type { RecalcJobDetail } from '../../../types/dashboard';
 import type { ImportErrorItem, ImportResult } from '../../../types/order';
 
-import { computed, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { useVbenModal } from '@vben/common-ui';
@@ -36,6 +36,9 @@ const siteId = ref<number>();
 const skipErrors = ref(false);
 const autoRecalc = ref(false);
 const fileList = ref<UploadFile[]>([]);
+/** 提交只走这个 File，不依赖 Upload fileList 的 originFileObj。 */
+const heldFile = ref<File>();
+const uploadHost = ref<HTMLElement>();
 const submitting = ref(false);
 const result = ref<ImportResult>();
 const recalcJob = ref<RecalcJobDetail>();
@@ -160,10 +163,23 @@ function startPoll(jobId: number) {
   }, 1500);
 }
 
-function currentFile(): File | undefined {
-  const item = fileList.value[0];
-  const raw = item?.originFileObj ?? (item as unknown as File | undefined);
-  return raw instanceof File ? raw : undefined;
+function captureFile(file?: File) {
+  if (file instanceof File) heldFile.value = file;
+}
+
+function onNativeFileChange(event: Event) {
+  const input = event.target as HTMLInputElement | null;
+  if (input?.type !== 'file') return;
+  const file = input.files?.[0];
+  captureFile(file);
+}
+
+function bindNativeFileInput() {
+  uploadHost.value?.addEventListener('change', onNativeFileChange, true);
+}
+
+function unbindNativeFileInput() {
+  uploadHost.value?.removeEventListener('change', onNativeFileChange, true);
 }
 
 function beforeUpload(file: File) {
@@ -176,6 +192,7 @@ function beforeUpload(file: File) {
     message.error('文件过大，单次最多 10MB，请拆分后上传');
     return false;
   }
+  captureFile(file);
   return false;
 }
 
@@ -183,10 +200,16 @@ function onFileChange(info: UploadChangeParam) {
   const last = info.fileList.slice(-1);
   const file = last[0]?.originFileObj;
   if (file && file.size > MAX_SIZE) {
+    heldFile.value = undefined;
     fileList.value = [];
     return;
   }
-  fileList.value = last;
+  captureFile(file instanceof File ? file : undefined);
+  fileList.value = last.map((item) =>
+    heldFile.value && !item.originFileObj
+      ? { ...item, originFileObj: heldFile.value }
+      : item,
+  );
 }
 
 async function doImport() {
@@ -194,7 +217,7 @@ async function doImport() {
     message.warning('请选择站点');
     return false;
   }
-  const file = currentFile();
+  const file = heldFile.value;
   if (!file) {
     message.warning('请上传导入文件');
     return false;
@@ -278,6 +301,7 @@ const [Modal, modalApi] = useVbenModal({
   },
   onOpenChange(isOpen) {
     if (!isOpen) {
+      unbindNativeFileInput();
       stopPoll();
       return;
     }
@@ -286,14 +310,19 @@ const [Modal, modalApi] = useVbenModal({
     skipErrors.value = false;
     autoRecalc.value = false;
     fileList.value = [];
+    heldFile.value = undefined;
     result.value = undefined;
     recalcJob.value = undefined;
     calcPeriodIds.value = [];
     modalApi.setState({ confirmText: '开始导入' });
+    void nextTick(bindNativeFileInput);
   },
 });
 
-onUnmounted(stopPoll);
+onUnmounted(() => {
+  unbindNativeFileInput();
+  stopPoll();
+});
 </script>
 
 <template>
@@ -320,19 +349,21 @@ onUnmounted(stopPoll);
         type="info"
         message="默认整批事务：任一行失败则全部回滚。勾选「跳过错误行」后成功行仍会入库。"
       />
-      <a-upload-dragger
-        v-model:file-list="fileList"
-        :accept="ACCEPT"
-        :before-upload="beforeUpload"
-        :max-count="1"
-        @change="onFileChange"
-      >
-        <p class="flex justify-center py-2">
-          <IconifyIcon class="size-10 opacity-60" icon="lucide:upload" />
-        </p>
-        <p class="ant-upload-text">点击或拖拽文件到此区域</p>
-        <p class="ant-upload-hint">支持 xlsx / xls / csv，不超过 10MB</p>
-      </a-upload-dragger>
+      <div ref="uploadHost">
+        <a-upload-dragger
+          v-model:file-list="fileList"
+          :accept="ACCEPT"
+          :before-upload="beforeUpload"
+          :max-count="1"
+          @change="onFileChange"
+        >
+          <p class="flex justify-center py-2">
+            <IconifyIcon class="size-10 opacity-60" icon="lucide:upload" />
+          </p>
+          <p class="ant-upload-text">点击或拖拽文件到此区域</p>
+          <p class="ant-upload-hint">支持 xlsx / xls / csv，不超过 10MB</p>
+        </a-upload-dragger>
+      </div>
     </div>
     <div v-else-if="step === 1" class="flex flex-col gap-3">
       <a-spin :spinning="submitting" tip="处理中，请勿关闭页面">
