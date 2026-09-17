@@ -16,6 +16,12 @@
  *   CDP_LOCK_HARD_FAIL_PERIOD_ID=<FIX_C17_LOCK 骑手级周期，可选>
  *   （勿把正式 Must #5 改成 CDP_SITE_OWNER=admin）
  *
+ * Cycle 1 具名：ops-calendar-adjust-date-window / ops-import-not-payroll /
+ *   ops-order-missing-delivery-filter / ops-lock-reason-matches-calc /
+ *   ops-payroll-list-period-picker / cdp-admin-subject-filter-name
+ * 旧 import/stale spec 已改「完成」语义（夹具无方案骑手不得纯绿完成）。
+ * 叠 PR #14+#16：GET /recalc-jobs/latest 须 200+{site_id,job}，不得当缺失 skip。
+ *
  * 不传 spec-name 时列出可用场景。
  */
 import fs from 'node:fs';

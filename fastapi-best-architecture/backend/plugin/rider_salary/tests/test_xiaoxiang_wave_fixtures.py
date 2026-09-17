@@ -26,6 +26,9 @@ def test_recalc_job_status_labels_match_fixture() -> None:
     assert [s.label for s in RecalcJobStatus] == expected_labels
     assert IMPORT_EXPECTED['expected']['no_celery'] is True
     assert IMPORT_EXPECTED['expected']['failed_retryable'] is True
+    assert IMPORT_EXPECTED['expected']['forbid_green_complete_when_no_plan_rider'] is True
+    assert IMPORT_EXPECTED['expected']['partial_fail_copy'] == '部分失败'
+    assert IMPORT_EXPECTED['expected']['goto_calc_sees_job_no'] == 'FIX_C17_R1'
 
 
 def test_recalc_job_source_labels_chinese() -> None:
@@ -38,6 +41,9 @@ def test_stale_batch_fixture_contract() -> None:
     assert exp['permission'] == 'rs:period:calculate'
     assert exp['button_text'] == '本站本月批量重算'
     assert '站点' in exp['confirm_contains']
+    assert exp['forbid_green_complete_when_no_plan_rider'] is True
+    assert exp['forbid_allow_empty_stale_pass'] is True
+    assert exp['no_plan_job_no'] == 'FIX_C17_R1'
 
 
 def test_calendar_deeplink_fixture_contract() -> None:

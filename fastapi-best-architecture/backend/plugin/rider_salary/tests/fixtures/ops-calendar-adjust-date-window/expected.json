@@ -1,0 +1,13 @@
+{
+  "feature": "ops-calendar-adjust-date-window",
+  "month": "2026-09",
+  "day": "2026-09-10",
+  "rider_job_no": "FIX_C17_R1",
+  "expected": {
+    "cta": "录入奖惩",
+    "query_must": ["date_from", "date_to", "rider_id"],
+    "query_forbid_only": "date",
+    "date_from_equals_date_to": true,
+    "payroll_manual_subject_keeps_date_window": true
+  }
+}

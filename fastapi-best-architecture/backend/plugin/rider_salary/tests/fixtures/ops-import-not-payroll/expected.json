@@ -1,0 +1,23 @@
+{
+  "feature": "ops-import-not-payroll",
+  "expected": {
+    "auto_recalc_default_off": true,
+    "result_copy": "导入完成 ≠ 已出账",
+    "primary_cta": "去周期算薪页",
+    "after_close_find_latest_site_job": true,
+    "ui_after_close": ["order-last-recalc", "dashboard-batch-job"],
+    "frontend_calls_latest_api": true,
+    "localstorage_only_on_api_failure": true,
+    "latest_job": {
+      "path": "/api/v1/rider-salary/recalc-jobs/latest",
+      "query": ["site_id"],
+      "http": 200,
+      "job_nullable": true,
+      "shape": ["site_id", "job"],
+      "must_not_skip_as_missing": true
+    },
+    "no_celery": true,
+    "no_task_center": true,
+    "auto_on_hard_fail_not_green_complete": true
+  }
+}

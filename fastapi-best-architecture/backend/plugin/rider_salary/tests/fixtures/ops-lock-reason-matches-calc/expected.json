@@ -1,0 +1,16 @@
+{
+  "feature": "ops-lock-reason-matches-calc",
+  "period": "site_month",
+  "hard_fail_job_no": "FIX_C17_R1",
+  "isolated_zero_stale_spec": "ops-lock-preflight-hard-fail",
+  "expected": {
+    "hard_fail_outranks_stale": true,
+    "hard_fail_before_stale_in_msg": true,
+    "msg_starts_with": "锁账中止",
+    "hard_fail_codes": ["no_plan_with_orders", "missing_delivery", "never_calculated"],
+    "forbid_stale_sentence_alone": true,
+    "forbid_still_lock": true,
+    "no_completed_no_plan_day_does_not_block": true,
+    "copy_same_as_calc": true
+  }
+}
