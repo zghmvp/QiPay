@@ -68,6 +68,26 @@ export async function run({ page, helpers, config }) {
 
   const c05 = await requireGoldVersion(config.apiUrl, token, 'FIX_C05');
   const rider05 = await requireRiderByJobNo(config.apiUrl, token, siteId, GOLD_C05_JOB);
+  // LIVE 夹具清污：软删 C05 骑手上污染奖惩（否则 3500+手工奖 ≠ 金标）
+  {
+    const qs = new URLSearchParams({
+      site_id: String(siteId),
+      rider_id: String(rider05.id),
+      page: '1',
+      size: '100',
+    });
+    const listed = await apiFetch(
+      config.apiUrl,
+      token,
+      'GET',
+      `/api/v1/rider-salary/adjustments?${qs}`,
+    );
+    for (const adj of listed.json?.data?.items || []) {
+      await apiFetch(config.apiUrl, token, 'DELETE', `/api/v1/rider-salary/adjustments/${adj.id}`, {
+        reason: 'Cycle5 LIVE 清金标污染（非改 3500）',
+      });
+    }
+  }
   const t05 = await trialVersion(config.apiUrl, token, c05.version.id, {
     riderId: rider05.id,
     start,
@@ -218,10 +238,15 @@ export async function run({ page, helpers, config }) {
   }
 
   await page.goto(`${config.adminUrl}/rider-salary/plan/editor/${legal.id}`, {
-    waitUntil: 'networkidle',
+    waitUntil: 'domcontentloaded',
     timeout: 60000,
   });
   helpers.assertNoPaymentTaxCopy(await page.locator('body').innerText());
+  // 编辑器按阶段卡片列出；钩子挂在周期阶段拼装器上
+  const periodItem = page.getByText('保底补足', { exact: true }).first();
+  await periodItem.waitFor({ state: 'visible', timeout: 20000 });
+  await periodItem.click();
+  await page.waitForTimeout(500);
   await requireHooks(page, PR30_MANUAL_HOOKS, '#30 手工双计钩子缺失，不得 skip');
   const banner = await page.getByTestId('ops-plan-manual-not-double').innerText();
   if (banner.trim() !== MANUAL_NOT_DOUBLE_COPY) {

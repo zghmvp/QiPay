@@ -42,12 +42,19 @@ export async function run({ page, helpers, config }) {
 
   await page.goto(
     `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
+  );
+  await requireTestId(
+    page,
+    'ops-dashboard-no-plan-to-binding',
+    '工作台未见无方案日块（#30），不得 skip',
   );
   const body = await page.locator('body').innerText();
   if (!body.includes('无方案日')) throw new Error('工作台未见「无方案日」，不得 skip');
   helpers.assertNoPaymentTaxCopy(body);
 
+  // a-collapse 默认折叠；行/查看全部在 panel 体内
+  await page.getByTestId('ops-dashboard-no-plan-to-binding').first().click();
   await requireHooks(page, PR30_BINDING_HOOKS, '#30 无方案日绑定钩子缺失，不得 skip');
   const row = page.getByTestId('dashboard-no-plan-row').filter({
     hasText: new RegExp(item.job_no || item.name || '.'),
@@ -73,8 +80,10 @@ export async function run({ page, helpers, config }) {
 
   await page.goto(
     `${config.adminUrl}/rider-salary/dashboard?site_id=${siteId}&month=${month}`,
-    { waitUntil: 'networkidle', timeout: 60000 },
+    { waitUntil: 'domcontentloaded', timeout: 60000 },
   );
+  await requireTestId(page, 'ops-dashboard-no-plan-to-binding', '返回工作台未见无方案日块');
+  await page.getByTestId('ops-dashboard-no-plan-to-binding').first().click();
   await requireTestId(page, 'dashboard-no-plan-view-all', '#30 dashboard-no-plan-view-all 缺失，不得 skip');
   await page.getByTestId('dashboard-no-plan-view-all').click();
   await page.waitForTimeout(800);

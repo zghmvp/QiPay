@@ -742,7 +742,7 @@ onMounted(() => {
             <a-table
               size="small"
               :columns="dailyColumns"
-              :custom-row="
+              :on-row="
                 (row: PayrollDailyResult) => ({
                   'data-empty': isEmptyPayrollDay(row, allDetails) ? '1' : '0',
                   'data-testid': isEmptyPayrollDay(row, allDetails)
