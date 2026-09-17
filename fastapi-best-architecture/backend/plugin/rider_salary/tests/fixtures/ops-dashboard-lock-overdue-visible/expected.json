@@ -1,0 +1,29 @@
+{
+  "feature": "ops-dashboard-lock-overdue-visible",
+  "expected": {
+    "skip_if_missing": false,
+    "title": "锁账倒计时",
+    "statuses": ["open", "reopened"],
+    "include_end_within_today_plus_3": true,
+    "include_overdue_unlocked": true,
+    "exclude_far_plus_10_days": true,
+    "sort_end_date_asc": true,
+    "remaining_copy": "剩余 N 天",
+    "overdue_copy": "已过期未锁 N 天",
+    "row_carries_period_id": true,
+    "view_all_lock_due": "lock_due=1",
+    "view_all_must_not_open_status_first_page_without_month": true,
+    "do_not_change_lock_hard_block": true,
+    "forbid_still_lock": true,
+    "no_new_lock_center_page": true,
+    "testid_block": "ops-dashboard-lock-overdue-visible",
+    "testid_title": "dashboard-lock-title",
+    "testid_overdue": "dashboard-lock-overdue",
+    "testid_remaining": "dashboard-lock-remaining",
+    "testid_view_all": "dashboard-lock-view-all",
+    "testid_period_scope": "period-lock-due-scope",
+    "block_key": "due_periods",
+    "view_all": "查看全部",
+    "period_path": "/rider-salary/period"
+  }
+}

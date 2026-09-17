@@ -24,6 +24,7 @@ import AttentionList from './components/AttentionList.vue';
 import StatCards from './components/StatCards.vue';
 import TopRiders from './components/TopRiders.vue';
 import TrendChart from './components/TrendChart.vue';
+import { orderImportTarget } from './scope-links';
 
 const route = useRoute();
 const router = useRouter();
@@ -292,7 +293,8 @@ load();
         >
           <VbenButton
             class="mt-2"
-            @click="router.push('/rider-salary/order')"
+            data-testid="dashboard-empty-import"
+            @click="router.push(orderImportTarget(siteId, month))"
           >
             去导入订单
           </VbenButton>
@@ -304,7 +306,11 @@ load();
           >
             <a-spin />
           </div>
-          <StatCards :cards="summary.cards" />
+          <StatCards
+            :cards="summary.cards"
+            :month="month"
+            :site-id="siteId"
+          />
           <div
             v-if="batchJob"
             class="mb-2"
@@ -349,6 +355,8 @@ load();
           <AttentionList
             v-if="attentionVisible"
             :blocks="summary.attention ?? []"
+            :month="month"
+            :site-id="siteId"
             data-testid="dashboard-attention"
           />
           <a-collapse
@@ -363,6 +371,8 @@ load();
                 <TopRiders
                   v-if="topVisible"
                   :bottom="summary.top_riders?.bottom ?? []"
+                  :month="month"
+                  :site-id="siteId"
                   :top="summary.top_riders?.top ?? []"
                 />
               </div>

@@ -1,0 +1,26 @@
+{
+  "feature": "ops-dashboard-abnormal-attention-landing",
+  "attention_union": ["abnormal", "refunded", "duration_gt_60_completed"],
+  "expected": {
+    "skip_if_missing": false,
+    "same_predicate_as_todo_count": true,
+    "landing_must_not_status_abnormal_only": true,
+    "url_consumed_by_order_list": true,
+    "query_attention": "attention=1",
+    "carry_dashboard_site_month_window": true,
+    "order_window_query": ["site_id", "date_from", "date_to"],
+    "list_request_attention_true": true,
+    "status_filter_value": "__attention__",
+    "must_not_pass_status_abnormal": true,
+    "missing_delivery_not_in_filter": true,
+    "ignore_param_all_or_abnormal_only_is_fail": true,
+    "do_not_reopen_cycle2_export_predicate": true,
+    "testid_block": "ops-dashboard-abnormal-attention-landing",
+    "testid_view_all": "dashboard-abnormal-view-all",
+    "testid_order_active": "order-attention-active",
+    "block_key": "abnormal_orders",
+    "block_title": "异常订单",
+    "view_all": "查看全部",
+    "order_path": "/rider-salary/order"
+  }
+}

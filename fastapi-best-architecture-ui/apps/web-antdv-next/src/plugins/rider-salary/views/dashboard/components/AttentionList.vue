@@ -5,6 +5,7 @@ import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { useAccess } from '@vben/access';
+
 import MoneyText from '../../../components/MoneyText.vue';
 import StatusTag from '../../../components/StatusTag.vue';
 import {
@@ -12,19 +13,50 @@ import {
   PERIOD_STATUS_OPTIONS,
 } from '../../../constants/enums';
 import { toDateTimeString } from '../../../utils/date';
+import {
+  daysLeftOf,
+  dueCountdownText,
+  isDueCountdownItem,
+  isOverdueUnlocked,
+  LOCK_COUNTDOWN_TITLE,
+} from '../due-countdown';
+import {
+  abnormalAttentionTarget,
+  lockCountdownViewAllTarget,
+} from '../scope-links';
 
 const props = defineProps<{
   blocks: DashboardAttentionBlock[];
+  month?: string;
+  siteId?: null | number;
 }>();
 
 const router = useRouter();
 const { hasAccessByCodes } = useAccess();
-const visible = computed(() =>
-  props.blocks.filter((block) => block.count > 0),
-);
 
 const canCalculate = computed(() =>
   hasAccessByCodes(['rs:period:calculate']),
+);
+
+function dueItems(block: DashboardAttentionBlock) {
+  return (block.items ?? []).filter((record) =>
+    isDueCountdownItem(daysLeftOf(record)),
+  );
+}
+
+const visible = computed(() =>
+  props.blocks
+    .map((block) => {
+      if (block.key !== 'due_periods') return block;
+      const items = dueItems(block);
+      return {
+        ...block,
+        count: items.length,
+        items,
+        title: LOCK_COUNTDOWN_TITLE,
+      };
+    })
+    .filter((block) => block.count > 0),
 );
 
 function columns(key: string) {
@@ -46,7 +78,7 @@ function columns(key: string) {
         { dataIndex: 'range', key: 'range', title: '周期' },
         { dataIndex: 'status', key: 'status', title: '状态', width: 90 },
         { dataIndex: 'end_date', key: 'end_date', title: '结束日', width: 120 },
-        { dataIndex: 'days_left', key: 'days_left', title: '剩余天数', width: 110 },
+        { dataIndex: 'days_left', key: 'days_left', title: '倒计时', width: 140 },
       ];
     case 'import_gaps':
       return [
@@ -106,68 +138,90 @@ function parseLink(link: string) {
   }
 }
 
-function rowLink(block: DashboardAttentionBlock, record: Record<string, unknown>) {
-  if (typeof record.link === 'string' && record.link) return record.link;
-  switch (block.key) {
-    case 'abnormal_orders':
-      return block.link;
-    case 'due_periods':
-    case 'stale_periods': {
-      const id = Number(record.period_id);
-      return Number.isFinite(id) && id > 0
-        ? `/rider-salary/period?id=${id}`
-        : block.link;
+function viewAllLink(block: DashboardAttentionBlock) {
+  if (block.key === 'abnormal_orders') {
+    return abnormalAttentionTarget(props.siteId, props.month);
+  }
+  if (block.key === 'due_periods') {
+    return lockCountdownViewAllTarget(props.siteId);
+  }
+  return parseLink(block.link);
+}
+
+function rowLink(
+  block: DashboardAttentionBlock,
+  record: Record<string, unknown>,
+) {
+  if (block.key === 'abnormal_orders') {
+    const orderNo = String(record.order_no ?? '');
+    return abnormalAttentionTarget(
+      props.siteId ?? Number(record.site_id) ?? undefined,
+      props.month,
+      orderNo || undefined,
+    );
+  }
+  if (block.key === 'due_periods' || block.key === 'stale_periods') {
+    const id = Number(record.period_id);
+    if (Number.isFinite(id) && id > 0) {
+      return { path: '/rider-salary/period', query: { id: String(id) } };
     }
+  }
+  if (typeof record.link === 'string' && record.link) {
+    return parseLink(record.link);
+  }
+  switch (block.key) {
     case 'import_gaps': {
       const siteId = Number(record.site_id);
       const date = String(record.date ?? '');
-      const params = new URLSearchParams();
-      if (Number.isFinite(siteId) && siteId > 0)
-        params.set('site_id', String(siteId));
-      if (date) params.set('date', date);
-      const qs = params.toString();
-      return qs ? `/rider-salary/order?${qs}` : block.link;
+      const query: Record<string, string> = {};
+      if (Number.isFinite(siteId) && siteId > 0) query.site_id = String(siteId);
+      if (date) query.date = date;
+      return { path: '/rider-salary/order', query };
     }
     case 'no_plan_days': {
       const riderId = Number(record.rider_id);
       const siteId = Number(record.site_id);
       const month = String(record.month ?? '');
-      const params = new URLSearchParams({ tab: 'binding' });
+      const query: Record<string, string> = { tab: 'binding' };
       if (Number.isFinite(riderId) && riderId > 0)
-        params.set('rider_id', String(riderId));
-      if (Number.isFinite(siteId) && siteId > 0)
-        params.set('site_id', String(siteId));
-      if (month) params.set('month', month);
-      return Number.isFinite(riderId) && riderId > 0
-        ? `/rider-salary/rider?${params}`
-        : block.link;
+        query.rider_id = String(riderId);
+      if (Number.isFinite(siteId) && siteId > 0) query.site_id = String(siteId);
+      if (month) query.month = month;
+      return { path: '/rider-salary/rider', query };
     }
     case 'pending_advances':
-      return '/rider-salary/advance?status=pending';
+      return { path: '/rider-salary/advance', query: { status: 'pending' } };
     case 'resigned_with_orders': {
       const riderId = Number(record.rider_id);
       return Number.isFinite(riderId) && riderId > 0
-        ? `/rider-salary/rider?rider_id=${riderId}`
-        : block.link;
+        ? {
+            path: '/rider-salary/rider',
+            query: { rider_id: String(riderId) },
+          }
+        : parseLink(block.link);
     }
     default:
-      return block.link;
+      return parseLink(block.link);
   }
 }
 
-function go(link: string) {
-  const { path, query } = parseLink(link);
-  void router.push({ path, query });
+function go(target: { path: string; query: Record<string, string> } | string) {
+  if (typeof target === 'string') {
+    const parsed = parseLink(target);
+    void router.push(parsed);
+    return;
+  }
+  void router.push(target);
 }
 
-function onRowClick(block: DashboardAttentionBlock, record: Record<string, unknown>) {
+function onRowClick(
+  block: DashboardAttentionBlock,
+  record: Record<string, unknown>,
+) {
   go(rowLink(block, record));
 }
 
-function onRecalculate(
-  event: Event,
-  record: Record<string, unknown>,
-) {
+function onRecalculate(event: Event, record: Record<string, unknown>) {
   event.stopPropagation();
   const periodId = Number(record.period_id);
   if (!Number.isFinite(periodId) || periodId <= 0) return;
@@ -176,13 +230,16 @@ function onRecalculate(
   });
 }
 
-function daysLeftText(value: unknown) {
-  if (value === null || value === undefined || value === '') return '—';
-  const n = Number(value);
-  if (!Number.isFinite(n)) return String(value);
-  if (n < 0) return `逾期 ${Math.abs(n)} 天`;
-  if (n === 0) return '今日到期';
-  return `${n} 天`;
+function blockTestId(key: string) {
+  if (key === 'abnormal_orders') return 'ops-dashboard-abnormal-attention-landing';
+  if (key === 'due_periods') return 'ops-dashboard-lock-overdue-visible';
+  return `dashboard-attention-${key}`;
+}
+
+function viewAllTestId(key: string) {
+  if (key === 'abnormal_orders') return 'dashboard-abnormal-view-all';
+  if (key === 'due_periods') return 'dashboard-lock-view-all';
+  return undefined;
 }
 </script>
 
@@ -190,9 +247,17 @@ function daysLeftText(value: unknown) {
   <div v-if="visible.length" class="flex flex-col gap-2">
     <div class="text-base font-medium">待处理事项</div>
     <a-collapse>
-      <a-collapse-panel v-for="block in visible" :key="block.key">
+      <a-collapse-panel
+        v-for="block in visible"
+        :key="block.key"
+        :data-testid="blockTestId(block.key)"
+      >
         <template #header>
-          <span>{{ block.title }}</span>
+          <span
+            :data-testid="
+              block.key === 'due_periods' ? 'dashboard-lock-title' : undefined
+            "
+          >{{ block.title }}</span>
           <a-badge :count="block.count" class="ml-2" />
         </template>
         <a-table
@@ -235,8 +300,16 @@ function daysLeftText(value: unknown) {
             <span v-else-if="column.key === 'submit_time'">
               {{ toDateTimeString(record.submit_time as string) || '—' }}
             </span>
-            <span v-else-if="column.key === 'days_left'">
-              {{ daysLeftText(record.days_left) }}
+            <span
+              v-else-if="column.key === 'days_left'"
+              :data-overdue="isOverdueUnlocked(daysLeftOf(record)) ? '1' : '0'"
+              :data-testid="
+                isOverdueUnlocked(daysLeftOf(record))
+                  ? 'dashboard-lock-overdue'
+                  : 'dashboard-lock-remaining'
+              "
+            >
+              {{ dueCountdownText(daysLeftOf(record)) }}
             </span>
             <span
               v-else-if="column.key === 'action' && block.key === 'stale_periods'"
@@ -256,7 +329,13 @@ function daysLeftText(value: unknown) {
           </template>
         </a-table>
         <div class="mt-2 text-right">
-          <a-button type="link" @click="go(block.link)">查看全部</a-button>
+          <a-button
+            type="link"
+            :data-testid="viewAllTestId(block.key)"
+            @click="go(viewAllLink(block))"
+          >
+            查看全部
+          </a-button>
         </div>
       </a-collapse-panel>
     </a-collapse>
