@@ -75,7 +75,8 @@ export async function run({ page, helpers, config }) {
     );
   }
 
-  await dialog.first().getByRole('button', { name: /^取消$/ }).click();
+  // Vben Alert 按钮 accessible name 常为「取 消」（字间空白）；勿用 /^取消$/
+  await dialog.first().getByRole('button', { name: /^取\s*消$/ }).click();
   await dialog.first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
   await helpers.shot(page, 'cdp-ops-stale-batch-recalc-confirm');
 
