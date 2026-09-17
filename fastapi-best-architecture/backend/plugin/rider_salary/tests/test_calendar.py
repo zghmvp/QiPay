@@ -1,6 +1,7 @@
 from datetime import date
 
 from backend.plugin.rider_salary.enums import BindingType, DayStatus
+from backend.plugin.rider_salary.schema.calendar import CalendarDayTotals
 from backend.plugin.rider_salary.service.calendar_service import clip_plan_bands, resolve_day_status, summarize_subjects
 from backend.plugin.rider_salary.service.rider_service import Segment, resolve_effective_plans_from_bindings
 from backend.plugin.rider_salary.tests.test_master_data import _binding
@@ -52,6 +53,22 @@ def test_day_status_four_states() -> None:
         resolve_day_status(has_plan=False, order_count=0, valid_order_count=0, imported=False)
         == DayStatus.not_imported.value
     )
+
+
+def test_day_totals_stay_daily_not_period_payslip() -> None:
+    fields = CalendarDayTotals.model_fields
+    assert set(fields) == {
+        'order_count',
+        'formula_amount',
+        'manual_bonus',
+        'manual_penalty',
+        'net',
+    }
+    assert fields['formula_amount'].description == '公式金额'
+    assert fields['net'].description == '当日净额'
+    assert 'gross' not in fields
+    assert 'payable' not in fields
+    assert 'advance_deduction' not in fields
 
 
 def test_subjects_summary_truncate() -> None:
