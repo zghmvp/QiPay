@@ -22,13 +22,11 @@ def test_lock_countdown_includes_open_and_reopened() -> None:
 
 def test_order_attention_condition_builds() -> None:
     cond = order_attention_condition()
-    compiled = str(cond.compile(compile_kwargs={'literal_binds': False}))
+    compiled = str(cond.compile(compile_kwargs={'literal_binds': True}))
     lower = compiled.lower()
     assert 'deliver_time' in lower
     assert 'extract' in lower
     assert 'status' in lower
-    # 绑定参数含 abnormal / refunded
-    params = cond.compile().params
-    flat = str(params.values()).lower()
-    assert OrderStatus.abnormal.value in flat
-    assert OrderStatus.refunded.value in flat
+    assert OrderStatus.abnormal.value in lower
+    assert OrderStatus.refunded.value in lower
+    assert OrderStatus.completed.value in lower

@@ -41,6 +41,7 @@ from backend.plugin.rider_salary.schema.trial import (
 from backend.plugin.rider_salary.service.calc_service import CalcResult, trial_rider_range
 from backend.plugin.rider_salary.utils.audit import audit_service
 from backend.plugin.rider_salary.utils.money import q2
+from backend.plugin.rider_salary.utils.plan_guarantee import assert_accrued_guarantee_is_last_period_item
 from backend.utils.timezone import timezone
 
 IMMUTABLE_MSG = '该方案版本已被使用，禁止编辑或删除，请停用后复制为新版本'
@@ -403,6 +404,7 @@ class PlanService:
             compiled.append((item, result.condition_expr, result.formula_expr))
         if item_errors:
             raise errors.RequestError(msg='；'.join(item_errors))
+        assert_accrued_guarantee_is_last_period_item(items)
         await plan_item_dao.logical_delete_by_version(db, pk)
         for item, condition_expr, formula_expr in compiled:
             await plan_item_dao.create(
@@ -491,6 +493,7 @@ class PlanService:
                 activate_errors.extend([f'方案项「{item.name}」{msg}' for msg in result.errors])
         if activate_errors:
             raise errors.RequestError(msg='；'.join(activate_errors))
+        assert_accrued_guarantee_is_last_period_item(items)
         current_hash = items_hash_of(orm_items_as_dicts(items))
         version.items_hash = current_hash
         if not version.trial_passed:
