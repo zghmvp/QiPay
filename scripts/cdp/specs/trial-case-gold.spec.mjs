@@ -2,15 +2,20 @@
 import { apiFetch, FIX_JOB_NO } from '../cycle1-lib.mjs';
 import {
   GOLD_C03_GROSS,
+  GOLD_C03_PLAN_CODE,
+  GOLD_C03_PLAN_NAME,
   GOLD_C04_GROSS,
   GOLD_C05A_GROSS,
   GOLD_C17_PERIOD_AMOUNT,
   GOLD_C17_PLAN_AMOUNT,
   GOLD_C03_JOB,
   GOLD_C05_JOB,
+  GOLD_TRIAL_END,
+  GOLD_TRIAL_START,
   clickStartTrial,
   fillTrialTargets,
   moneyEquals,
+  openSelectedPlanTrial,
   readTrialGross,
   requireGoldVersion,
   requireRiderByJobNo,
@@ -48,13 +53,13 @@ export async function run({ page, helpers, config }) {
   const admin = await helpers.swaggerLogin(config.username, config.password);
   await helpers.injectAdmin(page, admin.access_token, admin.user?.uuid ?? null);
   const token = admin.access_token;
-  const { siteId, siteCode, month } = siteMonth();
-  const start = `${month}-01`;
-  const end = `${month}-30`;
+  const { siteId, siteCode } = siteMonth();
+  const start = GOLD_TRIAL_START;
+  const end = GOLD_TRIAL_END;
 
   const riderC03 = await requireRiderByJobNo(config.apiUrl, token, siteId, GOLD_C03_JOB);
   const riderC05 = await requireRiderByJobNo(config.apiUrl, token, siteId, GOLD_C05_JOB);
-  const c03 = await requireGoldVersion(config.apiUrl, token, 'FIX_C03');
+  const c03 = await requireGoldVersion(config.apiUrl, token, GOLD_C03_PLAN_CODE);
   const c04 = await requireGoldVersion(config.apiUrl, token, 'FIX_C04');
   const c05 = await requireGoldVersion(config.apiUrl, token, 'FIX_C05');
 
@@ -89,11 +94,9 @@ export async function run({ page, helpers, config }) {
     waitUntil: 'networkidle',
     timeout: 60000,
   });
-  const row = page.locator('.vxe-body--row, tr').filter({ hasText: 'FIX_C03' }).first();
-  const trialBtn = (await row.count())
-    ? row.getByRole('button', { name: /^试算$/ }).first()
-    : page.getByRole('button', { name: /^试算$/ }).first();
-  await trialBtn.click();
+  // 方案页是左侧卡片 + 右侧版本表（非 VXE 行）。id desc 默认 FIX_C05；禁止回落第一个试算。
+  await page.getByText(GOLD_C03_PLAN_NAME).first().waitFor({ state: 'visible', timeout: 30000 });
+  await openSelectedPlanTrial(page, { code: GOLD_C03_PLAN_CODE, name: GOLD_C03_PLAN_NAME });
   await page.getByTestId('trial-mode').waitFor({ state: 'visible', timeout: 30000 });
   await page.getByTestId('trial-mode').getByText('整版试算').first().click();
   await fillTrialTargets(page, {
@@ -103,9 +106,6 @@ export async function run({ page, helpers, config }) {
     end,
   });
   await clickStartTrial(page);
-  // 试算结果异步渲染
-  await page.getByText(/应发/).first().waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
-  await page.waitForTimeout(800);
   const gross = await readTrialGross(page);
   assertGross('C03 UI', gross, GOLD_C03_GROSS);
   await waitTrialNumbers(page).catch(() => {

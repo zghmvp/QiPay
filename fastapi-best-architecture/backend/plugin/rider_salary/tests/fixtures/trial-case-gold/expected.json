@@ -10,6 +10,11 @@
     "gold_is_backend": true,
     "skip_if_missing": false,
     "no_numbers_is_fail": true,
-    "forbid_warn_pass": true
+    "forbid_warn_pass": true,
+    "ui_selects_plan_card": true,
+    "ui_plan_code": "FIX_C03",
+    "ui_plan_name": "金标C03全量落档",
+    "ui_date_range": ["2026-09-01", "2026-09-30"],
+    "forbid_first_trial_fallback": true
   }
 }

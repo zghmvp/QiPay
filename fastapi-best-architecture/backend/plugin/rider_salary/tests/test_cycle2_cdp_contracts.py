@@ -50,6 +50,23 @@ def test_cycle2_named_cdp_fixture_hooks() -> None:
     assert gold['expected']['no_numbers_is_fail'] is True
     assert gold['expected']['C17_period_valid_amount'] == '2310.00'
     assert gold['expected']['C17_plan_period_amount'] == '100.00'
+    assert gold['expected']['ui_selects_plan_card'] is True
+    assert gold['expected']['ui_plan_code'] == 'FIX_C03'
+    assert gold['expected']['ui_plan_name'] == '金标C03全量落档'
+    assert gold['expected']['ui_date_range'] == ['2026-09-01', '2026-09-30']
+    assert gold['expected']['forbid_first_trial_fallback'] is True
+
+    repo = Path(__file__).resolve()
+    while repo != repo.parent and not (repo / 'scripts' / 'cdp').is_dir():
+        repo = repo.parent
+    spec = (repo / 'scripts' / 'cdp' / 'specs' / 'trial-case-gold.spec.mjs').read_text(encoding='utf-8')
+    lib = (repo / 'scripts' / 'cdp' / 'cycle2-lib.mjs').read_text(encoding='utf-8')
+    assert 'openSelectedPlanTrial' in spec
+    assert 'GOLD_C03_PLAN_CODE' in spec
+    assert 'vxe-body--row' not in spec
+    assert "getByRole('button', { name: /^试算$/ }).first()" not in spec
+    assert '禁止回落页面第一个' in lib
+    assert "GOLD_TRIAL_START = '2026-09-01'" in lib
 
     trial = _load('trial-binding-segments')
     assert trial['expected']['cdp_no_numbers_is_fail'] is True

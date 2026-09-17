@@ -15,6 +15,8 @@
  *   cdp-admin-payslip-layers / cdp-admin-deduction-remark /
  *   cdp-admin-calc-success-four-numbers / ops-rider-profile-to-payroll /
  *   ops-queued-calc-progress
+ * trial-case-gold UI：点 FIX_C03 方案卡再点该表试算；禁止页面第一个试算（FIX_C05=3500）。
+ * 日期须 2026-09-01～2026-09-30（面板默认上月）。
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -25,6 +27,11 @@ import { apiFetch, authHeaders, siteMonth } from './cycle1-lib.mjs';
 
 export const GOLD_C03_JOB = 'FIX_C03_R1';
 export const GOLD_C05_JOB = 'FIX_C05_R1';
+export const GOLD_C03_PLAN_CODE = 'FIX_C03';
+export const GOLD_C03_PLAN_NAME = '金标C03全量落档';
+/** 金标订单灌在 9 月；试算面板默认 lastNaturalMonth=上月，UI 必须显式改到这两天 */
+export const GOLD_TRIAL_START = '2026-09-01';
+export const GOLD_TRIAL_END = '2026-09-30';
 export const GOLD_C03_GROSS = 8200;
 export const GOLD_C04_GROSS = 7800;
 export const GOLD_C05A_GROSS = 3500;
@@ -445,17 +452,120 @@ export function xlsxContainsOrderNo(buf, orderNo) {
   return xlsxText(buf).includes(orderNo);
 }
 
-export async function openTrialDrawer(page) {
-  const trialBtn = page.getByRole('button', { name: /^试算$/ }).first();
-  await trialBtn.waitFor({ state: 'visible', timeout: 20000 });
+function escapeRe(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function trialDrawer(page) {
+  const byMode = page.getByTestId('trial-mode');
+  return page
+    .locator('[data-state="open"], .ant-drawer-open, [role="dialog"]')
+    .filter({ has: byMode })
+    .first();
+}
+
+/**
+ * 点左侧方案卡（code 精确匹配，避免 FIX_C03 命中 FIX_C03_R1）。
+ * 找不到 → FAIL，禁止回落页面第一个「试算」（id desc 默认 FIX_C05=3500）。
+ */
+export async function selectPlanCard(page, { code, name } = {}) {
+  if (!code && !name) {
+    throw new Error('selectPlanCard 须给 code 或名称，禁止点第一个方案/试算');
+  }
+  let card = page.locator('button[type="button"]');
+  if (code) {
+    const codeRe = new RegExp(`^${escapeRe(code)}$`);
+    card = card.filter({ has: page.locator('span').filter({ hasText: codeRe }) });
+  }
+  if (name) {
+    card = card.filter({ hasText: name });
+  }
+  const count = await card.count();
+  if (count === 0) {
+    throw new Error(
+      `未找到方案卡 ${name || ''} ${code || ''}。禁止回落页面第一个「试算」（id desc 默认 FIX_C05=3500）。请先灌种。`,
+    );
+  }
+  await card.first().click();
+  if (name) {
+    await page
+      .getByText(new RegExp(`${escapeRe(name)}\\s*的版本`))
+      .first()
+      .waitFor({ state: 'visible', timeout: 20000 });
+  }
+}
+
+/**
+ * 先选方案卡，再点该方案版本表里的「试算」。不得用页面第一个试算。
+ */
+export async function openSelectedPlanTrial(page, { code, name } = {}) {
+  await selectPlanCard(page, { code, name });
+  const heading = page.locator('.font-medium').filter({ hasText: /的版本/ }).first();
+  await heading.waitFor({ state: 'visible', timeout: 20000 });
+  const headingText = (await heading.innerText()) || '';
+  if (name && !headingText.includes(name)) {
+    throw new Error(
+      `右侧版本表标题须含「${name}」，实际=${headingText}。禁止试算未选中方案。`,
+    );
+  }
+  const table = page.locator('.ant-table').filter({ has: page.getByRole('button', { name: /^试算$/ }) }).first();
+  const trialBtn = table.getByRole('button', { name: /^试算$/ }).first();
+  if ((await trialBtn.count()) === 0) {
+    throw new Error(
+      `${code || name} 版本表无「试算」。禁止回落页面第一个试算（那是 FIX_C05=3500）。`,
+    );
+  }
   await trialBtn.click();
   const mode = page.getByTestId('trial-mode');
   await mode.waitFor({ state: 'visible', timeout: 30000 });
   return mode;
 }
 
+export async function openTrialDrawer(page, opts = {}) {
+  const code = opts.planCode || opts.code;
+  const name = opts.planName || opts.name;
+  if (!code && !name) {
+    throw new Error(
+      'openTrialDrawer 须指定 planCode/planName。页面第一个试算是 id desc 最新方案（种子后 FIX_C05，应发 3500），禁止回落。',
+    );
+  }
+  return openSelectedPlanTrial(page, { code, name });
+}
+
+async function fillTrialRange(page, start, end) {
+  const root = (await trialDrawer(page).count()) ? trialDrawer(page) : page;
+  const inputs = root.locator('.ant-picker-input input, .ant-picker input');
+  if ((await inputs.count()) < 2) {
+    throw new Error('试算日期选择器缺失');
+  }
+  async function setInput(idx, value) {
+    const input = inputs.nth(idx);
+    await input.click({ force: true });
+    await input.fill('');
+    await page.keyboard.press('Control+A').catch(() => {});
+    await page.keyboard.type(String(value), { delay: 15 });
+    await page.keyboard.press('Enter');
+    const got = await input.inputValue();
+    if (!String(got).includes(value)) {
+      await input.fill(value);
+      await input.blur().catch(() => {});
+    }
+  }
+  await setInput(0, start);
+  await setInput(1, end);
+  await page.keyboard.press('Escape').catch(() => {});
+  const startVal = await inputs.nth(0).inputValue();
+  const endVal = await inputs.nth(1).inputValue();
+  if (!String(startVal).includes(start) || !String(endVal).includes(end)) {
+    throw new Error(
+      `试算日期须为 ${start}～${end}，实际=${startVal}～${endVal}（默认上月会落到空月，C03 不是 8200）`,
+    );
+  }
+}
+
 export async function fillTrialTargets(page, { siteCode, jobNo, start, end }) {
-  const selects = page.locator('.ant-select');
+  const root = (await trialDrawer(page).count()) ? trialDrawer(page) : page;
+  const selects = root.locator('.ant-select');
   if ((await selects.count()) > 0) {
     await selects.nth(0).click();
     await page.waitForTimeout(200);
@@ -463,7 +573,7 @@ export async function fillTrialTargets(page, { siteCode, jobNo, start, end }) {
     await page.waitForTimeout(400);
     const siteOpt = page
       .locator('.ant-select-dropdown:visible .ant-select-item-option')
-      .filter({ hasText: new RegExp(siteCode) })
+      .filter({ hasText: new RegExp(escapeRe(siteCode)) })
       .first();
     await siteOpt.waitFor({ state: 'visible', timeout: 15000 });
     await siteOpt.click({ force: true });
@@ -475,17 +585,13 @@ export async function fillTrialTargets(page, { siteCode, jobNo, start, end }) {
     await page.waitForTimeout(400);
     const riderOpt = page
       .locator('.ant-select-dropdown:visible .ant-select-item-option')
-      .filter({ hasText: new RegExp(jobNo) })
+      .filter({ hasText: new RegExp(escapeRe(jobNo)) })
       .first();
     await riderOpt.waitFor({ state: 'visible', timeout: 15000 });
     await riderOpt.click({ force: true });
   }
-  const startInput = page.locator('.ant-picker input').first();
-  const endInput = page.locator('.ant-picker input').nth(1);
-  if ((await startInput.count()) > 0 && start) {
-    await startInput.fill(start);
-    await endInput.fill(end);
-    await page.keyboard.press('Enter').catch(() => {});
+  if (start && end) {
+    await fillTrialRange(page, start, end);
   }
 }
 
@@ -517,12 +623,23 @@ export async function waitTrialNumbers(page) {
 export async function readTrialGross(page) {
   const result = page.getByTestId('trial-result');
   await result.waitFor({ state: 'visible', timeout: 60000 });
-  // 等应发金额出现（卡片标题「应发」旁会出数字）
-  await page.waitForFunction(() => {
-    const el = document.querySelector('[data-testid="trial-result"]');
-    return el && /应发[\s\S]{0,40}\d/.test(el.innerText || '');
-  }, null, { timeout: 60000 }).catch(() => {});
-  const text = await result.innerText();
+  const grossCard = result
+    .locator('.ant-card')
+    .filter({ has: page.locator('.text-xs, .text-muted-foreground').filter({ hasText: /^应发$/ }) })
+    .first();
+  await grossCard.waitFor({ state: 'visible', timeout: 60000 }).catch(() => {});
+  const scoped = (await grossCard.count()) > 0 ? grossCard : result;
+  await page
+    .waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="trial-result"]');
+        return el && /应发[\s\S]{0,40}\d/.test(el.innerText || '');
+      },
+      null,
+      { timeout: 60000 },
+    )
+    .catch(() => {});
+  const text = await scoped.innerText();
   const m = String(text).match(/应发[^\d\-]*(-?\d[\d,]*(?:\.\d+)?)/);
   const amount = m ? parseMoney(m[1]) : parseMoney(text);
   if (!Number.isFinite(amount)) {
