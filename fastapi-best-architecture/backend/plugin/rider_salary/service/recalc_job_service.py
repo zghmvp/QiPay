@@ -34,6 +34,14 @@ def _job_detail(row: RiderSalaryRecalcJob) -> GetRecalcJobDetail:
     return GetRecalcJobDetail.model_validate(row)
 
 
+def finish_recalc_job_state(*, done_periods: int, failed_rows: list[dict[str, Any]]) -> tuple[str, str]:
+    """重算任务收场状态与中文说明。failed>0 不得写成成功「完成」。"""
+    n = len(failed_rows)
+    if n > 0:
+        return RecalcJobStatus.failed.value, f'部分失败：已重算 {done_periods} 个周期，失败 {n} 人'
+    return RecalcJobStatus.done.value, f'完成：已重算 {done_periods} 个周期'
+
+
 class RecalcJobService:
     """重算任务"""
 
@@ -252,14 +260,24 @@ async def run_recalc_job(*, job_id: int) -> None:
                 job.total_periods = len(period_ids)
 
             done = 0
+            all_failed: list[dict[str, Any]] = []
+            failed_period_ids: list[int] = []
             for pid in period_ids:
-                await calculate_period(db, period_id=pid, rider_ids=rider_ids, operator=None)
+                _results, failed_rows = await calculate_period(db, period_id=pid, rider_ids=rider_ids, operator=None)
+                all_failed.extend({**row, 'period_id': pid} for row in failed_rows)
+                if failed_rows:
+                    failed_period_ids.append(pid)
                 done += 1
                 job.done_periods = done
                 await db.flush()
 
-            job.status = RecalcJobStatus.done.value
-            job.message = f'完成：已重算 {done} 个周期'
+            payload = dict(job.payload or {})
+            payload['failed'] = all_failed
+            payload['failed_rider_count'] = len(all_failed)
+            payload['failed_period_ids'] = failed_period_ids
+            payload['period_ids'] = period_ids
+            job.payload = payload
+            job.status, job.message = finish_recalc_job_state(done_periods=done, failed_rows=all_failed)
             job.finished_time = timezone.now()
     except Exception as exc:
         log.exception('重算任务失败 job_id=%s', job_id)

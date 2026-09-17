@@ -44,10 +44,13 @@ from backend.plugin.rider_salary.schema.period import (
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
 from backend.plugin.rider_salary.service.calc_service import (
+    _is_completed,
     _riders_for_period,
     calculate_period,
     collect_hard_fail_findings,
+    collect_never_calculated_finding,
     load_calc_input_for_precheck,
+    lock_hard_fail_message,
 )
 from backend.plugin.rider_salary.service.payroll_service import payroll_service
 from backend.plugin.rider_salary.utils.audit import require_reason, resolve_operator_name
@@ -228,6 +231,18 @@ async def _calculate_period_background(*, period_id: int, rider_ids: list[int] |
         await calculate_period(db, period_id=period_id, rider_ids=rider_ids, operator=None)
 
 
+def import_gap_deeplink(site_id: int, gap_days: list[date]) -> CalcPrecheckDeeplink:
+    """导入缺口落到带日期窗的订单列表，禁止空日历。"""
+    return CalcPrecheckDeeplink(
+        path='/rider-salary/order',
+        query={
+            'site_id': str(site_id),
+            'date_from': gap_days[0].isoformat(),
+            'date_to': gap_days[-1].isoformat(),
+        },
+    )
+
+
 def _blocker_deeplink(code: str, *, rider_id: int, period: RiderSalarySettlePeriod) -> CalcPrecheckDeeplink | None:
     if code == 'no_plan_with_orders':
         return CalcPrecheckDeeplink(path=f'/rider-salary/rider/{rider_id}', query={'tab': 'binding'})
@@ -342,15 +357,11 @@ async def _collect_precheck_warnings(
     if gap_days:
         sample = '、'.join(d.isoformat() for d in gap_days[:5])
         more = f' 等共 {len(gap_days)} 天' if len(gap_days) > 5 else f'（共 {len(gap_days)} 天）'
-        month = period.start_date.isoformat()[:7]
         warnings.append(
             CalcPrecheckWarning(
                 code='import_gap',
                 messages=[f'周期内存在导入缺口日：{sample}{more}'],
-                deeplink=CalcPrecheckDeeplink(
-                    path='/rider-salary/calendar',
-                    query={'site_id': str(period.site_id), 'month': month},
-                ),
+                deeplink=import_gap_deeplink(period.site_id, gap_days),
             )
         )
     return warnings
@@ -490,6 +501,7 @@ class PeriodService:
         rider_id: int | None,
         status: str | None,
         month: str | None,
+        stale: bool | None = None,
     ) -> dict[str, Any]:
         """
         分页周期列表
@@ -500,6 +512,7 @@ class PeriodService:
         :param rider_id: 骑手 ID
         :param status: 状态
         :param month: 年月 YYYY-MM
+        :param stale: 仅需重算周期
         :return:
         """
         visible = await get_visible_site_ids(request, db)
@@ -517,6 +530,7 @@ class PeriodService:
             month_start=month_start,
             month_end=month_end,
             site_ids=visible,
+            stale=stale,
         )
         page = await paging_data(db, stmt)
         items = page.get('items') or []
@@ -564,6 +578,9 @@ class PeriodService:
         payload.update(stats)
         result = GetPeriodWithPayrolls.model_validate(payload)
         result.payrolls = items
+        result.last_calc_failures = [
+            CalculateRiderFailure.model_validate(row) for row in (period.last_calc_failures or [])
+        ]
         return result
 
     async def calc_precheck(
@@ -883,6 +900,7 @@ class PeriodService:
         """
         period, site, _rider = await self._load_visible(db, request, pk)
         await self._assert_no_stale_drafts(db, period)
+        await self._assert_lock_hard_fails(db, period)
         before = snapshot(period, _PERIOD_FIELDS)
         self.transition(period, PeriodStatus.locked.value, request, reason)
         await self._set_locked_flags(db, period, locked=True)
@@ -1075,6 +1093,50 @@ class PeriodService:
                 seen.add(job_no)
                 job_nos.append(job_no)
         raise errors.RequestError(msg=stale_lock_message(job_nos))
+
+    async def _assert_lock_hard_fails(self, db: AsyncSession, period: RiderSalarySettlePeriod) -> None:
+        """锁账硬拦：有完成单无方案 / 缺送达 / 有单从未成功落库。"""
+        targets = await _riders_for_period(db, period, None)
+        if not targets:
+            return
+        success_ids = set(
+            (
+                await db.scalars(
+                    select(RiderSalaryPayroll.rider_id).where(
+                        RiderSalaryPayroll.period_id == period.id,
+                        RiderSalaryPayroll.deleted == 0,
+                        RiderSalaryPayroll.kind != PayrollKind.reversal.value,
+                    )
+                )
+            ).all()
+        )
+        errors_list: list[str] = []
+        for rider_id in targets:
+            rider_row = await db.scalar(
+                select(RiderSalaryRider).where(RiderSalaryRider.id == rider_id, RiderSalaryRider.deleted == 0)
+            )
+            if rider_row is None:
+                continue
+            calc_input = await load_calc_input_for_precheck(db, rider=rider_row, period=period)
+            findings = collect_hard_fail_findings(calc_input)
+            for _code, messages in findings:
+                errors_list.extend(messages)
+            completed = [
+                row
+                for row in calc_input.orders
+                if _is_completed(row)
+                and not (calc_input.leave_date is not None and row.biz_date > calc_input.leave_date)
+            ]
+            extra = collect_never_calculated_finding(
+                job_no=rider_row.job_no,
+                completed_orders=completed,
+                has_success_payroll=rider_id in success_ids,
+                already_hard_failed=bool(findings),
+            )
+            if extra is not None:
+                errors_list.extend(extra[1])
+        if errors_list:
+            raise errors.RequestError(msg=lock_hard_fail_message(errors_list), data={'errors': errors_list})
 
     async def _set_locked_flags(self, db: AsyncSession, period: RiderSalarySettlePeriod, *, locked: bool) -> None:
         order_stmt = (

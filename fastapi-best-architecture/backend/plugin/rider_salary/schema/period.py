@@ -116,6 +116,14 @@ class GetPeriodPayrollItem(GetPayrollSummary):
     rider_name: str | None = Field(None, description='姓名')
 
 
+class CalculateRiderFailure(SchemaBase):
+    """单骑手算薪失败"""
+
+    rider_id: int = Field(description='骑手 ID')
+    job_no: str | None = Field(None, description='工号')
+    errors: list[str] = Field(default_factory=list, description='错误列表')
+
+
 class GetPeriodWithPayrolls(GetPeriodDetail):
     """周期详情 + 全部薪资单"""
 
@@ -126,6 +134,10 @@ class GetPeriodWithPayrolls(GetPeriodDetail):
     gross_total: Decimal = Field(Decimal('0.00'), description='应发合计')
     net_total: Decimal = Field(Decimal('0.00'), description='实发合计')
     kind_counts: dict[str, int] = Field(default_factory=dict, description='单据类型分布')
+    last_calc_failures: list[CalculateRiderFailure] = Field(
+        default_factory=list,
+        description='最近一次算薪失败清单',
+    )
 
 
 class GetPeriodListItem(GetPeriodDetail):
@@ -160,14 +172,6 @@ class GeneratePeriodResult(SchemaBase):
     items: list[GetGeneratedPeriodItem] = Field(description='生成清单')
     created_count: int = Field(description='新生成数量')
     skipped_count: int = Field(description='已存在跳过数量')
-
-
-class CalculateRiderFailure(SchemaBase):
-    """单骑手算薪失败"""
-
-    rider_id: int = Field(description='骑手 ID')
-    job_no: str | None = Field(None, description='工号')
-    errors: list[str] = Field(default_factory=list, description='错误列表')
 
 
 class CalculatePeriodResult(SchemaBase):

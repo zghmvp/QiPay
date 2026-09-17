@@ -96,6 +96,36 @@ def resolve_day_status(*, has_plan: bool, order_count: int, valid_order_count: i
     return DayStatus.not_imported.value
 
 
+def count_live_no_plan_days(
+    segments: Sequence[Segment],
+    completed_by_day: dict[date, int],
+    start: date,
+    end: date,
+) -> int:
+    """
+    与日历同一谓词：有完成单且 live 无生效方案的天数。
+
+    不读 rs_payroll_daily。无完成单的无方案日不计。
+    """
+    plan_by_day = _plan_by_day(segments, start, end)
+    count = 0
+    for day, n in completed_by_day.items():
+        if n <= 0 or day < start or day > end:
+            continue
+        has_plan = plan_by_day.get(day) is not None
+        if (
+            resolve_day_status(
+                has_plan=has_plan,
+                order_count=n,
+                valid_order_count=n,
+                imported=True,
+            )
+            == DayStatus.no_plan.value
+        ):
+            count += 1
+    return count
+
+
 def merge_day_with_live_plan(
     *,
     live_plan_vid: int | None,

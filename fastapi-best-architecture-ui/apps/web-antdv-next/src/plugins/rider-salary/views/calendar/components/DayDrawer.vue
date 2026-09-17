@@ -8,6 +8,7 @@ import type {
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useAccess } from '@vben/access';
 import { VbenButton } from '@vben/common-ui';
 
 import dayjs from 'dayjs';
@@ -40,8 +41,17 @@ const emit = defineEmits<{
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
 const router = useRouter();
+const { hasAccessByCodes } = useAccess();
 const loading = ref(false);
 const detail = ref<CalendarDayDetail>();
+const canGoCalculate = computed(() => {
+  const status = detail.value?.period?.status;
+  return (
+    Boolean(detail.value?.period?.id) &&
+    (status === 'open' || status === 'reopened') &&
+    hasAccessByCodes(['rs:period:calculate'])
+  );
+});
 
 const title = computed(() => {
   if (!props.date) return '日详情';
@@ -136,6 +146,13 @@ function goPeriod() {
   const id = detail.value?.period?.id;
   if (!id) return;
   router.push({ path: '/rider-salary/period', query: { id: String(id) } });
+}
+
+function goCalculate() {
+  const id = detail.value?.period?.id;
+  if (!id) return;
+  emit('update:open', false);
+  router.push({ path: `/rider-salary/period/${id}/calculate` });
 }
 
 function goPlan() {
@@ -388,6 +405,14 @@ function onKey(e: KeyboardEvent) {
         <VbenButton variant="outline" @click="goAdjustment">录入奖惩</VbenButton>
         <VbenButton :disabled="!detail?.period?.id" @click="goPeriod">
           查看周期
+        </VbenButton>
+        <VbenButton
+          v-if="canGoCalculate"
+          type="primary"
+          data-testid="calendar-go-calculate"
+          @click="goCalculate"
+        >
+          去算薪
         </VbenButton>
       </div>
     </template>

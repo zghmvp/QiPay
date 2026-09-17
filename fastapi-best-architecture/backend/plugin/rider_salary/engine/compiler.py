@@ -7,6 +7,7 @@ from typing import Any
 
 from backend.plugin.rider_salary.engine.fields import (
     ALL_FIELD_NAMES,
+    RETIRED_FIELDS,
     TYPE_BOOL,
     TYPE_ENUM,
     TYPE_NUMBER,
@@ -14,6 +15,7 @@ from backend.plugin.rider_salary.engine.fields import (
     FieldSpec,
     field_available,
     get_field,
+    retired_field_message,
 )
 from backend.plugin.rider_salary.engine.functions import WHITELIST_FUNCTION_NAMES, to_minutes
 from backend.plugin.rider_salary.engine.ladder import MODE_FULL, MODE_PROGRESSIVE, PRICING_FIXED, PRICING_UNIT
@@ -129,6 +131,9 @@ def _is_empty_condition(node: Any) -> bool:
 
 
 def _check_field(name: str, stage: str | None, errors: list[str]) -> FieldSpec | None:
+    if name in RETIRED_FIELDS:
+        errors.append(retired_field_message(name))
+        return None
     spec = get_field(name)
     if spec is None:
         errors.append(f'字段「{name}」未注册')
@@ -340,7 +345,9 @@ def _walk_expr_errors(expr: str, stage: str | None, errors: list[str]) -> None: 
                 continue
             if node.id in {'True', 'False', 'None'}:
                 continue
-            if node.id not in ALL_FIELD_NAMES:
+            if node.id in RETIRED_FIELDS:
+                errors.append(retired_field_message(node.id))
+            elif node.id not in ALL_FIELD_NAMES:
                 errors.append(f'表达式包含未注册字段「{node.id}」')
             elif stage is not None and not field_available(node.id, stage):
                 errors.append(f'字段「{node.id}」在该阶段不可用')

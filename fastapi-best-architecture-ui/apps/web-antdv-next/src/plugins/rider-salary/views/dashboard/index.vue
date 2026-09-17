@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import type { DashboardSummary } from '../../types/dashboard';
+import type { DashboardSummary, RecalcJobDetail } from '../../types/dashboard';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useAccess } from '@vben/access';
@@ -11,6 +11,7 @@ import { message } from 'antdv-next';
 
 import {
   getDashboardSummaryApi,
+  getRecalcJobApi,
   previewStaleBatchRecalcApi,
   submitStaleBatchRecalcApi,
 } from '../../api/dashboard';
@@ -44,6 +45,60 @@ const loading = ref(false);
 const failed = ref(false);
 const summary = ref<DashboardSummary>();
 const batchRecalcing = ref(false);
+const batchJob = ref<RecalcJobDetail>();
+let batchPollTimer: null | ReturnType<typeof setInterval> = null;
+
+const batchFailed = computed(() => {
+  const job = batchJob.value;
+  if (!job) return false;
+  return (
+    job.status === 'failed' ||
+    (job.failed_rider_count ?? job.payload?.failed_rider_count ?? 0) > 0
+  );
+});
+
+const batchFailedPeriodIds = computed(() => {
+  const payload = batchJob.value?.payload;
+  const ids = payload?.failed_period_ids ?? [];
+  const extra = (payload?.failed ?? [])
+    .map((row) => Number(row.period_id))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return [...new Set([...ids.map(Number), ...extra].filter((n) => n > 0))];
+});
+
+function stopBatchPoll() {
+  if (batchPollTimer) {
+    clearInterval(batchPollTimer);
+    batchPollTimer = null;
+  }
+}
+
+async function refreshBatchJob(jobId: number) {
+  const job = await getRecalcJobApi(jobId);
+  batchJob.value = job;
+  if (job.status === 'done' || job.status === 'failed') {
+    stopBatchPoll();
+    if (batchFailed.value) {
+      message.error(job.message || '批量重算部分失败，请到算薪页查看失败清单');
+    } else {
+      message.info(job.message || '批量重算已结束');
+    }
+    await load();
+  }
+  return job;
+}
+
+function startBatchPoll(jobId: number) {
+  stopBatchPoll();
+  void refreshBatchJob(jobId);
+  batchPollTimer = setInterval(() => {
+    void refreshBatchJob(jobId).catch(() => stopBatchPoll());
+  }, 1500);
+}
+
+function goCalcPage(periodId: number) {
+  void router.push({ path: `/rider-salary/period/${periodId}/calculate` });
+}
 
 const canCalculate = computed(() =>
   hasAccessByCodes(['rs:period:calculate']),
@@ -150,12 +205,17 @@ async function onBatchRecalcStale() {
       month: month.value,
       site_id: siteId.value,
     });
-    message.success(res.message || '已提交批量重算');
+    message.info(res.message || '已提交批量重算');
+    if (res.job_id) {
+      startBatchPoll(res.job_id);
+    }
     await load();
   } finally {
     batchRecalcing.value = false;
   }
 }
+
+onUnmounted(stopBatchPoll);
 
 watch([siteId, month], () => {
   syncQuery();
@@ -220,11 +280,51 @@ load();
             <a-spin />
           </div>
           <StatCards :cards="summary.cards" />
+          <div
+            v-if="batchJob"
+            class="mb-2"
+            data-testid="dashboard-batch-job"
+          >
+            <a-alert
+              v-if="batchJob.status === 'queued' || batchJob.status === 'running'"
+              show-icon
+              type="info"
+              :message="`批量重算：${batchJob.status_label || batchJob.status}`"
+              :description="batchJob.message || '完成后请核对算薪页，勿当作已出账'"
+            />
+            <a-alert
+              v-else-if="batchFailed"
+              show-icon
+              type="error"
+              data-testid="dashboard-batch-failed"
+              :message="batchJob.message?.includes('部分失败') ? '批量重算部分失败' : '批量重算失败'"
+              :description="batchJob.message || '请到算薪页查看失败清单'"
+            />
+            <a-alert
+              v-else
+              show-icon
+              type="info"
+              :message="batchJob.message || '批量重算已结束'"
+            />
+            <div
+              v-if="batchFailed && batchFailedPeriodIds.length"
+              class="mt-2 flex flex-wrap gap-2"
+            >
+              <a-button
+                v-for="pid in batchFailedPeriodIds"
+                :key="pid"
+                size="small"
+                data-testid="dashboard-batch-goto-calc"
+                @click="goCalcPage(pid)"
+              >
+                去算薪页 #{{ pid }}
+              </a-button>
+            </div>
+          </div>
           <AttentionList
             v-if="attentionVisible"
             :blocks="summary.attention ?? []"
             data-testid="dashboard-attention"
-            @refreshed="load"
           />
           <a-collapse
             v-if="insightVisible"

@@ -398,7 +398,8 @@ class PlanService:
         for index, item in enumerate(items):
             result = validate_item(item.stage, item.condition_json, item.formula_json)
             if not result.ok:
-                item_errors.extend([f'第 {index + 1} 项 {msg}' for msg in result.errors])
+                label = item.name or f'第 {index + 1} 项'
+                item_errors.extend([f'方案项「{label}」{msg}' for msg in result.errors])
             compiled.append((item, result.condition_expr, result.formula_expr))
         if item_errors:
             raise errors.RequestError(msg='；'.join(item_errors))
@@ -483,6 +484,13 @@ class PlanService:
         items = await plan_item_dao.list_by_version(db, pk)
         if len(items) < 1:
             raise errors.RequestError(msg='启用前至少需要 1 条方案项')
+        activate_errors: list[str] = []
+        for item in items:
+            result = validate_item(item.stage, item.condition_json, item.formula_json)
+            if not result.ok:
+                activate_errors.extend([f'方案项「{item.name}」{msg}' for msg in result.errors])
+        if activate_errors:
+            raise errors.RequestError(msg='；'.join(activate_errors))
         current_hash = items_hash_of(orm_items_as_dicts(items))
         version.items_hash = current_hash
         if not version.trial_passed:

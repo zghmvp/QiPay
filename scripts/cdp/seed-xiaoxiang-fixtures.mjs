@@ -1,5 +1,6 @@
 /**
- * 小象波 CDP 夹具灌种（幂等）：FIX_C17_R1 无方案有单日 + site_owner_d2 + ≥2 stale。
+ * 小象波 CDP 夹具灌种（幂等）：FIX_C17_R1 无方案有单日 + site_owner_d2 + ≥2 stale
+ * + FIX_C17_LOCK 骑手级开放周期（零 stale，供 ops-lock-preflight-hard-fail）。
  *
  * 仅调用管理端/插件 API（admin token）；不改 FBA 框架、不 wipe 灯塔订单。
  * 正式验收禁止把 Must #5 改成超管登录。
@@ -29,11 +30,14 @@ const ADMIN_PASS = process.env.CDP_PASS || '123456';
 const SITE_CODE = process.env.CDP_SITE_CODE || 'SZ0050';
 const MONTH = process.env.CDP_MONTH || '2026-09';
 const JOB_NO = 'FIX_C17_R1';
+const LOCK_JOB_NO = 'FIX_C17_LOCK';
 const OWNER_USER = process.env.CDP_SITE_OWNER || 'site_owner_d2';
 const OWNER_PASS = process.env.CDP_SITE_OWNER_PASS || 'Rider@123456';
 const OWNER_ROLE_ID = Number(process.env.CDP_SITE_OWNER_ROLE_ID || '92002');
 const STALE_REMARK = 'FIX_STALE_SEED';
 const ORDER_PREFIX = 'FIX_C17_';
+const LOCK_ORDER_PREFIX = 'FIX_C17_LOCK_';
+const LOCK_ORDER_DAY = '2026-09-20';
 
 async function swaggerLogin(username, password) {
   const res = await fetch(
@@ -323,7 +327,9 @@ async function listRidersWithPayroll(token, siteId) {
     site_id: String(siteId),
   });
   const page = await api(token, 'GET', `/api/v1/rider-salary/riders?${qs}`);
-  return (page?.data?.items || []).filter((r) => r.job_no !== JOB_NO);
+  return (page?.data?.items || []).filter(
+    (r) => r.job_no !== JOB_NO && r.job_no !== LOCK_JOB_NO,
+  );
 }
 
 async function ensureStalePayrolls(token, siteId) {
@@ -367,7 +373,124 @@ async function ensureStalePayrolls(token, siteId) {
   }
 }
 
-async function writeEnvHint(siteId, riderId) {
+async function clearRiderBindings(token, riderId) {
+  const list = await api(token, 'GET', `/api/v1/rider-salary/riders/${riderId}/bindings`);
+  for (const row of list?.data || []) {
+    await api(token, 'DELETE', `/api/v1/rider-salary/riders/${riderId}/bindings/${row.id}`);
+  }
+}
+
+/**
+ * 独立骑手级周期：有完成单无方案、零 payroll / 零 stale。
+ * 与站点月周期 1 分开，避免 stale-batch 污染；不在 CDP spec 里 generate。
+ */
+async function ensureLockHardFailRider(token, siteId) {
+  let rider = await findRiderByJobNo(token, siteId, LOCK_JOB_NO);
+  if (!rider) {
+    await api(token, 'POST', '/api/v1/rider-salary/riders', {
+      job_no: LOCK_JOB_NO,
+      name: '锁账硬拦夹具骑手',
+      phone: null,
+      site_id: siteId,
+      employ_type: 'part_time',
+      hire_date: '2026-09-01',
+      leave_date: null,
+      status: 'on_job',
+      advance_limit: null,
+      settle_cycle_override: 'month',
+      cycle_config_override: null,
+      remark: 'FIX_C17_LOCK 无 stale 硬失败周期夹具',
+    });
+    rider = await findRiderByJobNo(token, siteId, LOCK_JOB_NO);
+    if (!rider) throw new Error('创建 FIX_C17_LOCK 后仍查不到骑手');
+    console.log('created rider', LOCK_JOB_NO, 'id=', rider.id);
+  } else {
+    console.log('reuse rider', LOCK_JOB_NO, 'id=', rider.id);
+    if (rider.settle_cycle_override !== 'month') {
+      await api(token, 'PUT', `/api/v1/rider-salary/riders/${rider.id}`, {
+        settle_cycle_override: 'month',
+      });
+      console.log('set settle_cycle_override=month for', LOCK_JOB_NO);
+    }
+  }
+  await clearRiderBindings(token, rider.id);
+  return rider;
+}
+
+async function ensureLockHardFailOrders(token, siteId, riderId) {
+  let created = 0;
+  for (let i = 1; i <= 3; i += 1) {
+    const orderNo = `${LOCK_ORDER_PREFIX}${LOCK_ORDER_DAY.replaceAll('-', '')}_${String(i).padStart(2, '0')}`;
+    try {
+      await api(token, 'POST', '/api/v1/rider-salary/orders', {
+        order_no: orderNo,
+        site_id: siteId,
+        rider_id: riderId,
+        distance_km: '3.00',
+        weight_jin: '4.00',
+        order_time: `${LOCK_ORDER_DAY}T10:${String(i).padStart(2, '0')}:00+08:00`,
+        deliver_time: `${LOCK_ORDER_DAY}T11:${String(i).padStart(2, '0')}:00+08:00`,
+        status: 'completed',
+        amount: '20.00',
+        remark: 'FIX_C17_LOCK 无方案有单夹具',
+      });
+      created += 1;
+    } catch (err) {
+      const msg = String(err.message || err);
+      if (/已存在|重复|conflict|409/i.test(msg)) {
+        continue;
+      }
+      throw err;
+    }
+  }
+  console.log(`lock-hard-fail orders: created=${created} day=${LOCK_ORDER_DAY}`);
+}
+
+async function ensureLockHardFailPeriod(token, siteId, riderId) {
+  const generated = await api(token, 'POST', '/api/v1/rider-salary/periods/generate', {
+    site_id: siteId,
+    month: MONTH,
+  });
+  console.log(
+    'generate periods:',
+    `created=${generated?.data?.created_count ?? '?'}`,
+    `skipped=${generated?.data?.skipped_count ?? '?'}`,
+  );
+
+  const qs = new URLSearchParams({
+    page: '1',
+    size: '50',
+    site_id: String(siteId),
+    rider_id: String(riderId),
+    month: MONTH,
+  });
+  const page = await api(token, 'GET', `/api/v1/rider-salary/periods?${qs}`);
+  const items = page?.data?.items || [];
+  const period = items.find(
+    (row) =>
+      Number(row.rider_id) === Number(riderId) &&
+      (row.status === 'open' || row.status === 'reopened'),
+  );
+  if (!period?.id) {
+    throw new Error('生成后仍找不到 FIX_C17_LOCK 骑手级开放周期');
+  }
+  if (Number(period.stale_count || 0) > 0) {
+    throw new Error(
+      `FIX_C17_LOCK 周期 ${period.id} 已有 stale draft，夹具被污染（禁止 UPDATE stale=false）`,
+    );
+  }
+  console.log(
+    'lock-hard-fail period',
+    period.id,
+    'rider_id=',
+    period.rider_id,
+    'stale_count=',
+    period.stale_count ?? 0,
+  );
+  return period;
+}
+
+async function writeEnvHint(siteId, riderId, lockPeriodId, lockRiderId) {
   const outDir =
     process.env.CDP_MEDIA_DIR ||
     path.join(
@@ -384,6 +507,9 @@ async function writeEnvHint(siteId, riderId) {
     `CDP_MONTH=${MONTH}`,
     `CDP_SITE_OWNER=${OWNER_USER}`,
     `CDP_SITE_OWNER_PASS=${OWNER_PASS}`,
+    `CDP_LOCK_HARD_FAIL_JOB_NO=${LOCK_JOB_NO}`,
+    `CDP_LOCK_HARD_FAIL_PERIOD_ID=${lockPeriodId ?? ''}`,
+    `CDP_LOCK_HARD_FAIL_RIDER_ID=${lockRiderId ?? ''}`,
     '',
   ].join('\n');
   fs.writeFileSync(file, text, 'utf8');
@@ -408,7 +534,10 @@ async function main() {
   await ensureNoPlanOrders(token, site.id, rider.id);
   await ensureSiteOwner(token, site.id);
   await ensureStalePayrolls(token, site.id);
-  await writeEnvHint(site.id, rider.id);
+  const lockRider = await ensureLockHardFailRider(token, site.id);
+  await ensureLockHardFailOrders(token, site.id, lockRider.id);
+  const lockPeriod = await ensureLockHardFailPeriod(token, site.id, lockRider.id);
+  await writeEnvHint(site.id, rider.id, lockPeriod.id, lockRider.id);
 
   console.log('\n=== CDP env (copy) ===');
   console.log(`export CDP_SITE_ID=${site.id}`);
@@ -416,12 +545,18 @@ async function main() {
   console.log(`export CDP_MONTH=${MONTH}`);
   console.log(`export CDP_SITE_OWNER=${OWNER_USER}`);
   console.log(`export CDP_SITE_OWNER_PASS=${OWNER_PASS}`);
+  console.log(`export CDP_LOCK_HARD_FAIL_JOB_NO=${LOCK_JOB_NO}`);
+  console.log(`export CDP_LOCK_HARD_FAIL_PERIOD_ID=${lockPeriod.id}`);
+  console.log(`export CDP_LOCK_HARD_FAIL_RIDER_ID=${lockRider.id}`);
   console.log('\nDone. Re-run:');
   console.log(
     `  CDP_URL=http://127.0.0.1:9222 CDP_PASS=${ADMIN_PASS} CDP_SITE_ID=${site.id} CDP_RIDER_ID=${rider.id} CDP_MONTH=${MONTH} node scripts/cdp/harness.mjs ops-calendar-no-plan-deeplink`,
   );
   console.log(
     `  CDP_URL=http://127.0.0.1:9222 CDP_SITE_ID=${site.id} CDP_MONTH=${MONTH} node scripts/cdp/harness.mjs ops-stale-batch-recalc`,
+  );
+  console.log(
+    `  CDP_URL=http://127.0.0.1:9222 CDP_PASS=${ADMIN_PASS} CDP_SITE_ID=${site.id} CDP_MONTH=${MONTH} CDP_LOCK_HARD_FAIL_PERIOD_ID=${lockPeriod.id} node scripts/cdp/harness.mjs ops-lock-preflight-hard-fail`,
   );
 }
 

@@ -258,6 +258,59 @@ def collect_hard_fail_findings(data: CalcInput) -> list[tuple[str, list[str]]]:
     return findings
 
 
+def serialize_calc_failures(failed_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """将 calculate_period 失败行写成可落库 JSON。"""
+    return [
+        {
+            'rider_id': int(row['rider_id']),
+            'job_no': row.get('job_no'),
+            'errors': list(row.get('errors') or []),
+        }
+        for row in failed_rows
+    ]
+
+
+def persist_last_calc_failures(period: RiderSalarySettlePeriod, failed_rows: list[dict[str, Any]]) -> None:
+    """把最近一次算薪 failed[] 写到周期，供 F5 / 回跳读取。"""
+    period.last_calc_failures = serialize_calc_failures(failed_rows)
+
+
+def never_calculated_message(job_no: str, parts: list[str]) -> str:
+    """锁账：有完成单但从未成功落库。"""
+    return f'工号 {job_no} 有完成单但本周期从未成功落库：{"、".join(parts)}'
+
+
+def lock_hard_fail_message(errors: list[str]) -> str:
+    """锁账硬拦总文案"""
+    head = '锁账中止：存在未算出的有单骑手，请先到算薪页处理'
+    if not errors:
+        return head
+    return f'{head}。{"；".join(errors)}'
+
+
+def collect_never_calculated_finding(
+    *,
+    job_no: str,
+    completed_orders: list[Any],
+    has_success_payroll: bool,
+    already_hard_failed: bool,
+) -> tuple[str, list[str]] | None:
+    """
+    有完成单且本周期无成功 payroll、又未被硬失败扫描覆盖时，单独列出。
+
+    无完成单不返回（与 strict 一致，不单独挡锁）。
+    """
+    if already_hard_failed or has_success_payroll or not completed_orders:
+        return None
+    parts: list[str] = []
+    for order in completed_orders[:8]:
+        order_no = getattr(order, 'order_no', None) or getattr(order, 'id', None) or '未知'
+        day = getattr(order, 'biz_date', None)
+        day_s = day.isoformat() if day is not None else '未知日期'
+        parts.append(f'{day_s}（{order_no}）')
+    return ('never_calculated', [never_calculated_message(job_no, parts)])
+
+
 async def load_calc_input_for_precheck(
     db: AsyncSession,
     *,
@@ -1071,6 +1124,8 @@ async def calculate_period(
                 'job_no': job_no,
                 'errors': [exc.msg or str(exc)],
             })
+    persist_last_calc_failures(period, failed)
+    await db.flush()
     return results, failed
 
 

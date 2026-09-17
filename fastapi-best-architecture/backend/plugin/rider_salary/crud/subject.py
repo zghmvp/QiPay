@@ -4,6 +4,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
+from backend.plugin.rider_salary.enums import EnableStatus
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
 from backend.plugin.rider_salary.model.plan_item import RiderSalaryPlanItem
 from backend.plugin.rider_salary.model.subject import RiderSalarySubject
@@ -54,12 +55,12 @@ class CRUDSubject(CRUDPlus[RiderSalarySubject]):
 
     async def get_all(self, db: AsyncSession) -> Sequence[RiderSalarySubject]:
         """
-        获取全部科目（下拉）
+        获取启用科目（新建方案/奖惩下拉，不含已下线天气科目）
 
         :param db: 数据库会话
         :return:
         """
-        return await self.select_models_order(db, 'sort_order', 'asc', deleted=0)
+        return await self.select_models_order(db, 'sort_order', 'asc', deleted=0, status=EnableStatus.enable.value)
 
     async def count_refs(self, db: AsyncSession, subject_id: int) -> tuple[int, int]:
         """

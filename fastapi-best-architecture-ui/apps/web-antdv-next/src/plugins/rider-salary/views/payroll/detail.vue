@@ -156,19 +156,30 @@ function goAdvance(advanceId?: null | number) {
   });
 }
 
+function queryPeriodId(): number | undefined {
+  const raw = route.query.period_id;
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  const id = Number(v);
+  return Number.isFinite(id) && id > 0 ? id : undefined;
+}
+
 function goPeriod(stale?: boolean) {
-  const d = detail.value;
-  if (!d) return;
-  if (stale) {
+  const pid = detail.value?.period_id || queryPeriodId();
+  if (stale || !detail.value) {
+    if (pid) {
+      router.push({ path: `/rider-salary/period/${pid}/calculate` });
+      return;
+    }
     router.push({
-      path: `/rider-salary/period/${d.period_id}/calculate`,
+      path: '/rider-salary/period',
+      query: { from: 'payroll-missing' },
     });
     return;
   }
   router.push({
     path: '/rider-salary/period',
     query: q({
-      id: d.period_id,
+      id: pid,
     }),
   });
 }
@@ -262,7 +273,7 @@ async function load() {
       '加载失败';
     loadError.value =
       msg.includes('不存在') || msg.includes('404')
-        ? '该薪资单不存在：可能尚未计算成功，或计算失败未落库。请到结算周期查看失败面板后重算。'
+        ? '该薪资单不存在：可能尚未计算成功，或计算失败未落库。请去算薪页看失败清单。'
         : msg;
   } finally {
     loading.value = false;
@@ -328,7 +339,13 @@ onMounted(() => {
         :message="loadError"
       >
         <template #action>
-          <VbenButton size="small" @click="goPeriod()">去周期</VbenButton>
+          <VbenButton
+            size="small"
+            data-testid="payroll-go-calc-failures"
+            @click="goPeriod(true)"
+          >
+            去算薪页看失败清单
+          </VbenButton>
         </template>
       </a-alert>
 

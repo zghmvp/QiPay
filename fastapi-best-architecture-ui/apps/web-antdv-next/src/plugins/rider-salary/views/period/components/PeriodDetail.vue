@@ -2,10 +2,11 @@
 import type { PayrollSummary } from '../../../types/payroll';
 import type { PeriodWithPayrolls } from '../../../types/period';
 
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { useVbenDrawer } from '@vben/common-ui';
+import { useAccess } from '@vben/access';
+import { useVbenDrawer, VbenButton } from '@vben/common-ui';
 
 import { getPeriodApi } from '../../../api/period';
 import MoneyText from '../../../components/MoneyText.vue';
@@ -19,8 +20,23 @@ import {
 import { toDateTimeString } from '../../../utils/date';
 
 const router = useRouter();
+const { hasAccessByCodes } = useAccess();
 const loading = ref(false);
 const detail = ref<PeriodWithPayrolls>();
+const canGoCalculate = computed(() => {
+  const status = detail.value?.status;
+  return (
+    (status === 'open' || status === 'reopened') &&
+    hasAccessByCodes(['rs:period:calculate'])
+  );
+});
+
+function goCalculate() {
+  const id = detail.value?.id;
+  if (!id) return;
+  drawerApi.close();
+  void router.push({ path: `/rider-salary/period/${id}/calculate` });
+}
 
 const columns = [
   { dataIndex: 'job_no', title: '工号', width: 100 },
@@ -138,6 +154,15 @@ const [Drawer, drawerApi] = useVbenDrawer({
             </template>
           </template>
         </a-table>
+        <div v-if="canGoCalculate" class="mt-4 text-right">
+          <VbenButton
+            type="primary"
+            data-testid="period-detail-go-calculate"
+            @click="goCalculate"
+          >
+            去算薪
+          </VbenButton>
+        </div>
       </template>
       <a-empty v-else-if="!loading" description="未找到周期" />
     </a-spin>

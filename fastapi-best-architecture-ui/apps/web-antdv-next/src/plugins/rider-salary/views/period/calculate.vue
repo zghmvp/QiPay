@@ -222,6 +222,16 @@ async function loadPage() {
     ]);
     period.value = periodRes;
     precheck.value = precheckRes;
+    const persisted = periodRes.last_calc_failures ?? [];
+    if (persisted.length) {
+      sessionFailed.value = persisted;
+      lastResult.value = {
+        calculated: lastResult.value?.calculated ?? 0,
+        failed: persisted,
+        queued: lastResult.value?.queued ?? false,
+        warnings: lastResult.value?.warnings ?? [],
+      };
+    }
     await loadRiders(
       periodRes.site_id,
       periodRes.rider_id ? periodRes.rider_id : undefined,
@@ -573,7 +583,10 @@ onMounted(() => {
             class="mb-2"
           />
         </template>
-        <a-empty v-else description="尚未开算；点「开始算薪」后在此展示本次结果" />
+        <a-empty
+          v-else
+          description="尚未开算；点「开始算薪」后在此展示本次结果。上次失败会在刷新后保留。"
+        />
       </a-card>
 
       <!-- ③ 已有薪资 -->

@@ -68,11 +68,23 @@ export interface BatchRecalcStaleResult {
 
 export interface RecalcJobDetail {
   done_periods: number;
+  failed_rider_count?: number;
   finished_time?: null | string;
   id: number;
   message?: null | string;
   month?: null | string;
   operator_id: number;
+  payload?: null | {
+    failed?: Array<{
+      errors?: string[];
+      job_no?: null | string;
+      period_id?: number;
+      rider_id?: number;
+    }>;
+    failed_period_ids?: number[];
+    failed_rider_count?: number;
+    period_ids?: number[];
+  };
   rider_count: number;
   site_id: number;
   source: string;
