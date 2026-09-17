@@ -13,10 +13,12 @@ values
 (91007, '订单明细', 'RiderSalaryOrder', '/rider-salary/order', 7, 'lucide:clipboard-list', 1, '/plugins/rider-salary/views/order/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91008, '奖惩录入', 'RiderSalaryAdjustment', '/rider-salary/adjustment', 8, 'lucide:plus-minus', 1, '/plugins/rider-salary/views/adjustment/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91010, '结算周期', 'RiderSalaryPeriod', '/rider-salary/period', 10, 'lucide:calendar-range', 1, '/plugins/rider-salary/views/period/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91011, '薪资日历', 'RiderSalaryCalendar', '/rider-salary/calendar', 11, 'lucide:calendar', 1, '/plugins/rider-salary/views/calendar/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 12, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 91000, now(), null),
+(91016, '薪资结果', 'RiderSalaryPayroll', '/rider-salary/payroll', 11, 'lucide:wallet', 1, '/plugins/rider-salary/views/payroll/index', null, 1, 1, 1, '', null, 91000, now(), null),
+(91011, '薪资日历', 'RiderSalaryCalendar', '/rider-salary/calendar', 12, 'lucide:calendar', 1, '/plugins/rider-salary/views/calendar/index', null, 1, 1, 1, '', null, 91000, now(), null),
+(91012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 13, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 14, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 91000, now(), null);
+(91015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 91000, now(), null),
+(91017, '薪资明细', 'RiderSalaryPayrollDetail', '/rider-salary/payroll/:id', 16, 'lucide:file-text', 1, '/plugins/rider-salary/views/payroll/detail', null, 1, 0, 1, '', null, 91000, now(), null);
 
 insert into sys_menu (id, title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
 values
@@ -55,7 +57,7 @@ values
 (91134, '标记发薪', 'RiderSalaryPeriodMarkPaid', null, 0, null, 2, null, 'rs:period:mark-paid', 1, 0, 1, '', null, 91010, now(), null),
 (91135, '反冲补发', 'RiderSalaryPeriodReverse', null, 0, null, 2, null, 'rs:period:reverse', 1, 0, 1, '', null, 91010, now(), null),
 (91136, '导出周期', 'RiderSalaryPeriodExport', null, 0, null, 2, null, 'rs:period:export', 1, 0, 1, '', null, 91010, now(), null),
-(91137, '查看薪资单', 'RiderSalaryPayrollView', null, 0, null, 2, null, 'rs:payroll:view', 1, 0, 1, '', null, 91010, now(), null),
+(91137, '查看薪资单', 'RiderSalaryPayrollView', null, 0, null, 2, null, 'rs:payroll:view', 1, 0, 1, '', null, 91016, now(), null),
 (91138, '查看日历', 'RiderSalaryCalendarView', null, 0, null, 2, null, 'rs:calendar:view', 1, 0, 1, '', null, 91011, now(), null),
 (91139, '查看工作台', 'RiderSalaryDashboardView', null, 0, null, 2, null, 'rs:dashboard:view', 1, 0, 1, '', null, 91001, now(), null),
 (91140, '通过预支', 'RiderSalaryAdvanceApprove', null, 0, null, 2, null, 'rs:advance:approve', 1, 0, 1, '', null, 91012, now(), null),
@@ -85,6 +87,7 @@ values
 (93008, 92001, 91007),
 (93009, 92001, 91008),
 (93011, 92001, 91010),
+(93157, 92001, 91016),
 (93012, 92001, 91011),
 (93013, 92001, 91012),
 (93015, 92001, 91014),
@@ -147,6 +150,8 @@ values
 (93076, 92003, 91008),
 (93079, 92002, 91010),
 (93080, 92003, 91010),
+(93158, 92002, 91016),
+(93159, 92003, 91016),
 (93081, 92002, 91011),
 (93082, 92003, 91011),
 (93083, 92002, 91012),
@@ -212,7 +217,10 @@ values
 (93153, 92003, 91149),
 (93154, 92001, 91015),
 (93155, 92002, 91015),
-(93156, 92003, 91015);
+(93156, 92003, 91015),
+(93160, 92001, 91017),
+(93161, 92002, 91017),
+(93162, 92003, 91017);
 
 insert into rs_subject (id, code, name, direction, fee_mode, fixed_amount, include_in_gross, entry_granularity, scope_sites, scope_employ_types, is_builtin, status, sort_order, remark, created_time, updated_time)
 values

@@ -207,6 +207,7 @@ class AdvanceService:
         status: str | None,
         date_from: date | None,
         date_to: date | None,
+        pk: int | None = None,
     ) -> dict[str, Any]:
         """分页列表"""
         visible = await get_visible_site_ids(request, db)
@@ -219,6 +220,7 @@ class AdvanceService:
             date_from=date_from,
             date_to=date_to,
             site_ids=visible if site_id is None else None,
+            pk=pk,
         )
         page = await paging_data(db, stmt)
         items = page.get('items') or []

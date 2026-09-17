@@ -260,7 +260,8 @@ def test_fix_c17_field_contrast_ladder() -> None:
 
 def test_fixture_expected_json_loads() -> None:
     assert EXPECTED['fixture'] == 'FIX_C17'
-    assert EXPECTED['expected']['field_contrast_FIX_C17']['period_valid_field_amount'] != EXPECTED['expected'][
-        'field_contrast_FIX_C17'
-    ]['plan_period_field_on_segment_b_amount']
+    assert (
+        EXPECTED['expected']['field_contrast_FIX_C17']['period_valid_field_amount']
+        != EXPECTED['expected']['field_contrast_FIX_C17']['plan_period_field_on_segment_b_amount']
+    )
     assert EXPECTED['expected']['order_counts_diverge'] is False
