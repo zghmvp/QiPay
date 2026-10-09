@@ -130,6 +130,7 @@ def test_extra_database_column_is_ignored() -> None:
     assert missing == []
 
 
+@pytest.mark.integration
 def test_fba_has_every_plugin_model_column() -> None:
     """开发库 fba 的 public 表必须含有插件模型的每一列。"""
     orm_columns = plugin_orm_columns()

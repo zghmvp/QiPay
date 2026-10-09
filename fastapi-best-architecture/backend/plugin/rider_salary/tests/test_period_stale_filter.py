@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import anyio
+import pytest
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects import postgresql
@@ -72,6 +73,7 @@ def test_stale_select_uses_draft_exists() -> None:
     anyio.run(_run)
 
 
+@pytest.mark.integration
 def test_thirty_periods_filter_to_three_stale_across_pages() -> None:
     """30 个可见周期里 3 个有需重算草稿，筛选后总数为 3，翻页不丢不重。"""
     anyio.run(_thirty_periods)
