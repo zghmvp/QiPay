@@ -1,6 +1,6 @@
 """对比插件 ORM metadata 与当前 PostgreSQL，模型有列而库里没有时失败。
 
-只读连接开发库 ``fba``（``127.0.0.1:5432``，用户 ``root``）。不建库、不改表。
+只读连接 ``settings.DATABASE_SCHEMA`` 指向的库（本机是 ``fba``；``127.0.0.1:5432``，用户 ``root``）。不建库、不改表。
 ``create_all`` 不会给已有表补列，漏写 patch 时由本测试指出表名和列名。
 """
 
@@ -13,12 +13,12 @@ import pytest
 import backend.plugin.rider_salary.model as rider_salary_model
 
 from backend.common.model import MappedBase
+from backend.core.conf import settings
 
 _DB_HOST = '127.0.0.1'
 _DB_PORT = 5432
 _DB_USER = 'root'
 _DB_PASSWORD = 'postgres'
-_DB_NAME = 'fba'
 _PUBLIC_SCHEMA = 'public'
 _MODEL_MODULE_PREFIX = 'backend.plugin.rider_salary.model.'
 
@@ -132,7 +132,8 @@ def test_extra_database_column_is_ignored() -> None:
 
 @pytest.mark.integration
 def test_fba_has_every_plugin_model_column() -> None:
-    """开发库 fba 的 public 表必须含有插件模型的每一列。"""
+    """配置库 public 表必须含有插件模型的每一列。本机配置库是 fba。"""
+    db_name = settings.DATABASE_SCHEMA
     orm_columns = plugin_orm_columns()
     assert orm_columns, '没有收集到骑手薪资插件的模型表'
     try:
@@ -141,19 +142,19 @@ def test_fba_has_every_plugin_model_column() -> None:
             port=_DB_PORT,
             user=_DB_USER,
             password=_DB_PASSWORD,
-            dbname=_DB_NAME,
+            dbname=db_name,
             connect_timeout=5,
             options='-c default_transaction_read_only=on',
         )
     except psycopg.Error as exc:
-        pytest.fail(f'无法只读连接数据库 {_DB_NAME}：{exc}')
+        pytest.fail(f'无法只读连接数据库 {db_name}：{exc}')
     with conn:
         current = conn.execute('select current_database()').fetchone()
         readonly = conn.execute('show default_transaction_read_only').fetchone()
         db_columns, absent_tables = fetch_public_columns(conn, set(orm_columns))
         conn.rollback()
     assert current is not None
-    assert current[0] == _DB_NAME
+    assert current[0] == db_name
     assert readonly is not None
     assert readonly[0] == 'on'
     missing = find_missing_columns(orm_columns, db_columns)

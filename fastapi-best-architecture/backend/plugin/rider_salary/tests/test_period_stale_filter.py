@@ -15,6 +15,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
+from backend.core.conf import settings
 from backend.database.db import get_database_url
 from backend.plugin.rider_salary.crud.settle_period import settle_period_dao
 from backend.plugin.rider_salary.enums import CycleType, PayrollKind, PayrollStatus, PeriodStatus
@@ -111,8 +112,10 @@ async def _thirty_periods() -> None:
     try:
         async with engine.begin() as conn:
             current_db = await conn.scalar(text('select current_database()'))
-            if current_db != 'fba':
-                raise RuntimeError(f'拒绝在非 fba 库建临时 schema，当前库是 {current_db}')
+            if current_db != settings.DATABASE_SCHEMA:
+                raise RuntimeError(
+                    f'拒绝在非配置库建临时 schema，当前库是 {current_db}，只允许 {settings.DATABASE_SCHEMA}'
+                )
             await conn.execute(text(f'CREATE SCHEMA {schema}'))
             await conn.run_sync(_create_tables)
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -154,8 +157,8 @@ async def _drop_schema(engine: AsyncEngine, schema: str) -> None:
         return
     async with engine.begin() as conn:
         current_db = await conn.scalar(text('select current_database()'))
-        if current_db != 'fba':
-            raise RuntimeError(f'拒绝清理临时 schema，当前库是 {current_db}')
+        if current_db != settings.DATABASE_SCHEMA:
+            raise RuntimeError(f'拒绝清理临时 schema，当前库是 {current_db}，只允许 {settings.DATABASE_SCHEMA}')
         await conn.execute(text(f'DROP SCHEMA IF EXISTS {schema} CASCADE'))
 
 
