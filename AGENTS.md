@@ -25,11 +25,11 @@
 ## 3. 快速开始
 
 ```bash
-# 启停（后端 8000、管理端 5173、H5 5174；日志在 .runtime/logs/）
-/Users/zghmvp/Desktop/QiPay/scripts/start_all.sh
-/Users/zghmvp/Desktop/QiPay/scripts/stop_all.sh
+# 启停（仓库根目录；后端 8000、管理端 5173、H5 5174；日志在 .runtime/logs/）
+scripts/start_all.sh
+scripts/stop_all.sh
 
-# 数据库：127.0.0.1:5432  用户 root / 密码 postgres  库 fba（PostgreSQL，自增主键）
+# 数据库：127.0.0.1:5432  用户 root / 密码 postgres  库 fba（PostgreSQL 16，自增主键）
 PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d fba
 
 # 后端测试 / 格式（在 fastapi-best-architecture 目录）

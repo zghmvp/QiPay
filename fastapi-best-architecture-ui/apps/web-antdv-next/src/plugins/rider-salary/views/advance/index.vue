@@ -1,7 +1,11 @@
 <script lang="ts" setup>
 import type { VbenFormProps } from '@vben/common-ui';
 
-import type { AdvanceQuery, AdvanceResult } from '../../types/advance';
+import type {
+  AdvanceLedger,
+  AdvanceQuery,
+  AdvanceResult,
+} from '../../types/advance';
 
 import type {
   OnActionClickParams,
@@ -21,12 +25,14 @@ import {
   approveAdvanceApi,
   cancelAdvanceApi,
   exportAdvancesApi,
+  getAdvanceLedgerApi,
   getAdvanceListApi,
   markPaidAdvanceApi,
   rejectAdvanceApi,
 } from '../../api/advance';
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
+import { LIST_OPEN_CODES } from '../../constants/access';
 import { toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import AdvanceDrawer from './components/AdvanceDrawer.vue';
@@ -40,6 +46,7 @@ function isUserCancelled(error: unknown) {
 const { ReasonModal, prompt } = useReasonModal();
 
 const route = useRoute();
+const ledger = ref<AdvanceLedger>();
 const ADVANCE_TABS = new Set(['all', 'paid', 'pending', 'to_pay']);
 const initialStatus =
   typeof route.query.status === 'string' ? route.query.status : undefined;
@@ -99,14 +106,29 @@ const gridOptions: VxeTableGridOptions<AdvanceResult> = {
 
 const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 
+async function loadLedger() {
+  let siteId: number | undefined;
+  try {
+    const filters = await currentFilters();
+    siteId = filters.site_id || undefined;
+  } catch {
+    siteId = undefined;
+  }
+  ledger.value = await getAdvanceLedgerApi(
+    siteId ? { site_id: siteId } : undefined,
+  );
+}
+
 onMounted(() => {
   if (initialStatus && !ADVANCE_TABS.has(initialStatus)) {
     void gridApi.formApi.setValues({ status: initialStatus });
   }
+  void loadLedger();
 });
 
 function onRefresh() {
   gridApi.query();
+  void loadLedger();
 }
 
 function onTabChange(key: number | string) {
@@ -190,7 +212,19 @@ const [DetailDrawer, detailApi] = useVbenDrawer({
 </script>
 
 <template>
-  <PageContainer>
+  <PageContainer v-access:code="LIST_OPEN_CODES.advance">
+    <div
+      v-if="ledger"
+      class="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm"
+    >
+      <span>发放 <MoneyText :value="ledger.issued" /></span>
+      <span>抵扣 <MoneyText :value="ledger.deducted" /></span>
+      <span>结转 <MoneyText :value="ledger.carried" /></span>
+      <span v-if="ledger.balanced">已对平</span>
+      <span v-else class="text-red-500">
+        差额 <MoneyText :value="ledger.gap" />
+      </span>
+    </div>
     <a-tabs :active-key="tab" class="mb-2" @change="onTabChange">
       <a-tab-pane key="pending" tab="待审核" />
       <a-tab-pane key="to_pay" tab="待发放" />

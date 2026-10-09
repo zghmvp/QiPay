@@ -14,6 +14,7 @@ import {
   enumTagOptions,
   PERIOD_STATUS_OPTIONS,
 } from '../../constants/enums';
+import { showPeriodDelete } from './delete-access';
 
 export const querySchema: VbenFormSchema[] = [
   {
@@ -36,7 +37,9 @@ export const querySchema: VbenFormSchema[] = [
     component: 'Select',
     componentProps: {
       allowClear: true,
+      mode: 'multiple',
       options: enumTagOptions(PERIOD_STATUS_OPTIONS),
+      placeholder: '全部',
     },
     fieldName: 'status',
     label: '状态',
@@ -68,10 +71,6 @@ function canMarkPaid(row: PeriodResult) {
 
 function canReverse(row: PeriodResult) {
   return row.status === 'locked' || row.status === 'paid';
-}
-
-function canDelete(row: PeriodResult) {
-  return row.status === 'open' && !(row.payroll_count ?? 0);
 }
 
 export function useColumns(
@@ -177,7 +176,7 @@ export function useColumns(
           {
             code: 'remove',
             show: (row: PeriodResult) =>
-              hasAccessByCodes(['rs:period:generate']) && canDelete(row),
+              showPeriodDelete(hasAccessByCodes(['rs:period:delete']), row),
             text: '删除',
           },
         ],

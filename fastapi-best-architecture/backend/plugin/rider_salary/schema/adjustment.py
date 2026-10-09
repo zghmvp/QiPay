@@ -1,10 +1,21 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import ConfigDict, Field, computed_field
+from pydantic import ConfigDict, Field, computed_field, field_validator
 
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.enums import SubjectDirection
+from backend.plugin.rider_salary.schema.limits import (
+    LEN_REMARK,
+    MAX_ADJUSTMENT_BATCH,
+    MONEY_DIGITS,
+    MONEY_MAX,
+    MONEY_PLACES,
+    zh_list,
+    zh_money,
+    zh_str,
+)
 
 
 class AdjustmentSchemaBase(SchemaBase):
@@ -20,11 +31,32 @@ class AdjustmentSchemaBase(SchemaBase):
 class CreateAdjustmentParam(AdjustmentSchemaBase):
     """创建奖惩记录参数"""
 
+    amount: Annotated[Decimal, zh_money('金额', signed=True)] = Field(
+        ge=-MONEY_MAX,
+        le=MONEY_MAX,
+        max_digits=MONEY_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='金额（正数；上期补差允许负数）',
+    )
+    remark: Annotated[str, zh_str('备注', LEN_REMARK, min_length=1)] = Field(
+        min_length=1, max_length=LEN_REMARK, description='备注'
+    )
+
 
 class BatchCreateAdjustmentParam(SchemaBase):
     """批量创建奖惩记录参数"""
 
-    items: list[CreateAdjustmentParam] = Field(description='奖惩记录列表')
+    items: Annotated[list[CreateAdjustmentParam], zh_list('批量条数', MAX_ADJUSTMENT_BATCH)] = Field(
+        max_length=MAX_ADJUSTMENT_BATCH, description='奖惩记录列表'
+    )
+
+    @field_validator('items')
+    @classmethod
+    def limit_items(cls, value: list[CreateAdjustmentParam]) -> list[CreateAdjustmentParam]:
+        """限制批量条数"""
+        if len(value) > MAX_ADJUSTMENT_BATCH:
+            raise ValueError(f'批量条数不能超过 {MAX_ADJUSTMENT_BATCH} 条')
+        return value
 
 
 class UpdateAdjustmentParam(SchemaBase):
@@ -33,15 +65,28 @@ class UpdateAdjustmentParam(SchemaBase):
     rider_id: int | None = Field(None, description='骑手 ID')
     biz_date: date | None = Field(None, description='业务日期')
     subject_id: int | None = Field(None, description='科目 ID')
-    amount: Decimal | None = Field(None, description='金额')
-    remark: str | None = Field(None, description='备注')
-    reason: str = Field(description='操作原因')
+    amount: Annotated[Decimal | None, zh_money('金额', signed=True)] = Field(
+        None,
+        ge=-MONEY_MAX,
+        le=MONEY_MAX,
+        max_digits=MONEY_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='金额',
+    )
+    remark: Annotated[str | None, zh_str('备注', LEN_REMARK, min_length=1)] = Field(
+        None, min_length=1, max_length=LEN_REMARK, description='备注'
+    )
+    reason: Annotated[str, zh_str('操作原因', LEN_REMARK, min_length=1)] = Field(
+        min_length=1, max_length=LEN_REMARK, description='操作原因'
+    )
 
 
 class DeleteAdjustmentParam(SchemaBase):
     """删除奖惩记录参数"""
 
-    reason: str = Field(description='操作原因')
+    reason: Annotated[str, zh_str('操作原因', LEN_REMARK, min_length=1)] = Field(
+        min_length=1, max_length=LEN_REMARK, description='操作原因'
+    )
 
 
 class GetAdjustmentDetail(AdjustmentSchemaBase):

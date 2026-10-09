@@ -17,7 +17,12 @@ from backend.plugin.rider_salary.schema.plan import (
     UpdatePlanParam,
     UpdatePlanVersionParam,
 )
-from backend.plugin.rider_salary.schema.plan_item import GetPlanVersionDetail, PlanItemParam, TrialPlanVersionParam
+from backend.plugin.rider_salary.schema.plan_item import (
+    GetPlanVersionDetail,
+    PlanItemList,
+    TrialPlanVersionParam,
+    TrialUnsavedPlanParam,
+)
 from backend.plugin.rider_salary.schema.rollback import RollbackParam, RollbackPreviewResult
 from backend.plugin.rider_salary.schema.trial import TrialResult
 from backend.plugin.rider_salary.service.plan_service import plan_service
@@ -181,9 +186,23 @@ async def put_plan_version_items(
     db: CurrentSessionTransaction,
     request: Request,
     pk: Annotated[int, Path(description='版本 ID')],
-    items: list[PlanItemParam],
+    items: PlanItemList,
 ) -> ResponseSchemaModel[GetPlanVersionDetail]:
     data = await plan_service.replace_items(db, pk, items, request)
+    return response_base.success(data=data)
+
+
+@version_router.post(
+    '/trial',
+    summary='试算未保存方案草稿',
+    dependencies=[Depends(RequestPermission('rs:plan:trial')), DependsRBAC],
+)
+async def trial_unsaved_plan_version(
+    db: CurrentSession,
+    request: Request,
+    obj: TrialUnsavedPlanParam,
+) -> ResponseSchemaModel[TrialResult]:
+    data = await plan_service.trial_unsaved(db, obj, request)
     return response_base.success(data=data)
 
 

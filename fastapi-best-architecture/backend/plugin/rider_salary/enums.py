@@ -259,6 +259,28 @@ _bind_labels(
 )
 
 
+class CalcJobStatus(LabeledStrEnum):
+    """算薪作业状态"""
+
+    queued = 'queued'
+    running = 'running'
+    succeeded = 'succeeded'
+    failed = 'failed'
+    partial = 'partial'
+
+
+_bind_labels(
+    CalcJobStatus,
+    {
+        CalcJobStatus.queued: '排队中',
+        CalcJobStatus.running: '计算中',
+        CalcJobStatus.succeeded: '成功',
+        CalcJobStatus.failed: '失败',
+        CalcJobStatus.partial: '部分成功',
+    },
+)
+
+
 class PayrollKind(LabeledStrEnum):
     """薪资单类型"""
 

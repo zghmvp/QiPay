@@ -12,7 +12,7 @@ from backend.plugin.rider_salary.schema.site import (
     CreateSiteParam,
     GetSiteDetail,
     GetSiteManagerDetail,
-    SiteManagerItem,
+    SiteManagerList,
     UpdateSiteParam,
 )
 from backend.plugin.rider_salary.service.site_service import site_service
@@ -62,7 +62,7 @@ async def update_site_managers(
     db: CurrentSessionTransaction,
     request: Request,
     pk: Annotated[int, Path(description='站点 ID')],
-    managers: list[SiteManagerItem],
+    managers: SiteManagerList,
 ) -> ResponseModel:
     await site_service.update_managers(db=db, request=request, pk=pk, managers=managers)
     return response_base.success()

@@ -2,6 +2,8 @@ from datetime import date, datetime
 
 import sqlalchemy as sa
 
+from sqlalchemy import DDL, column, event
+from sqlalchemy.dialects.postgresql import ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.common.model import Base, TimeZone, UniversalText, id_key
@@ -21,6 +23,16 @@ class RiderSalarySettlePeriod(Base):
             name='uk_rs_settle_period_site_rider_start_deleted',
         ),
         sa.Index('ix_rs_settle_period_site_dates', 'site_id', 'start_date', 'end_date'),
+        # 同一范围（同站点、同 rider_id）的未删除闭区间不得相交。
+        # 不同骑手互不影响；站点级与骑手级可以并存，部分覆盖由生成周期时校验。
+        # 等值比较依赖 btree_gist，建表前由 before_create 创建扩展；已有库走 sql/patch/006。
+        ExcludeConstraint(
+            (column('site_id'), '='),
+            (column('rider_id'), '='),
+            (sa.func.daterange(column('start_date'), column('end_date'), sa.literal('[]')), '&&'),
+            where=column('deleted') == 0,
+            name='ex_rs_settle_period_no_overlap',
+        ),
         {'comment': '结算周期表'},
     )
 
@@ -44,3 +56,10 @@ class RiderSalarySettlePeriod(Base):
     reopened_by: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, comment='反冲人 ID')
     reopened_time: Mapped[datetime | None] = mapped_column(TimeZone, default=None, comment='反冲时间')
     remark: Mapped[str | None] = mapped_column(UniversalText, default=None, comment='备注')
+
+
+event.listen(
+    RiderSalarySettlePeriod.__table__,
+    'before_create',
+    DDL('CREATE EXTENSION IF NOT EXISTS btree_gist'),
+)

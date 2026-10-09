@@ -15,7 +15,7 @@ from backend.plugin.rider_salary.service.audit_service import audit_service, is_
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.utils.timezone import timezone
 
-_NOTICE_FIELDS = ('id', 'title', 'content', 'site_id', 'publisher_id', 'publish_time', 'status')
+_NOTICE_FIELDS = ('id', 'title', 'content', 'site_id', 'publisher_id', 'publish_time', 'status', 'is_top')
 
 
 class NoticeService:

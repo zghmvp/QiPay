@@ -13,6 +13,7 @@ import { getCalendarMonthApi } from '../../api/calendar';
 import { getRiderApi } from '../../api/rider';
 import SalaryCalendar from '../../components/SalaryCalendar.vue';
 import StatusTag from '../../components/StatusTag.vue';
+import { LIST_OPEN_CODES } from '../../constants/access';
 import {
   EMPLOY_TYPE_OPTIONS,
   RIDER_STATUS_OPTIONS,
@@ -107,7 +108,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <PageContainer>
+  <PageContainer v-access:code="LIST_OPEN_CODES.rider">
     <a-spin :spinning="loading">
       <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>

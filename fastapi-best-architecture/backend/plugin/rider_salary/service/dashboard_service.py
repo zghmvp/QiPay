@@ -12,8 +12,6 @@ from backend.plugin.rider_salary.enums import (
     AdvanceStatus,
     DayStatus,
     OrderStatus,
-    PayrollKind,
-    PayrollStatus,
     PeriodStatus,
     RiderStatus,
 )
@@ -34,14 +32,16 @@ from backend.plugin.rider_salary.schema.dashboard import (
     DashboardTrendPoint,
     GetDashboardSummary,
 )
-from backend.plugin.rider_salary.service.calendar_service import parse_month, period_range_text, pick_effective_payroll
+from backend.plugin.rider_salary.service.calendar_service import parse_month, period_range_text
+from backend.plugin.rider_salary.service.payroll_view import sum_effective_gross
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
 
 ZERO = Decimal('0.00')
-_PAYROLL_OK = {PayrollStatus.draft.value, PayrollStatus.finalized.value, PayrollStatus.paid.value}
 _ATTENTION_LIMIT = 10
+# 需重算草稿只出现在开放和补发中，深链不能只钉 open。
+STALE_PERIODS_LINK = '/rider-salary/period?status=open,reopened&stale=1'
 
 
 class DashboardService:
@@ -182,21 +182,11 @@ class DashboardService:
                     select(RiderSalaryPayroll).where(
                         RiderSalaryPayroll.period_id.in_(period_ids),
                         RiderSalaryPayroll.deleted == 0,
-                        RiderSalaryPayroll.status.in_(list(_PAYROLL_OK)),
-                        RiderSalaryPayroll.kind != PayrollKind.reversal.value,
                     )
                 )
             ).all()
         )
-        grouped: dict[tuple[int, int], list[RiderSalaryPayroll]] = defaultdict(list)
-        for row in payrolls:
-            grouped[row.period_id, row.rider_id].append(row)
-        total = ZERO
-        for rows in grouped.values():
-            chosen = pick_effective_payroll(rows)
-            if chosen is not None:
-                total += q2(chosen.gross)
-        return total
+        return sum_effective_gross(payrolls)
 
     async def _attention(
         self,
@@ -271,7 +261,7 @@ class DashboardService:
             title='需重算周期',
             count=len(rows),
             items=items,
-            link='/rider-salary/period?status=open&stale=1',
+            link=STALE_PERIODS_LINK,
         )
 
     async def _no_plan_days(
@@ -383,42 +373,15 @@ class DashboardService:
                 )
             ).all()
         )
-        items: list[dict[str, Any]] = []
-        total = 0
-        for site in sites:
-            batches = list(
-                (
-                    await db.scalars(
-                        select(RiderSalaryImportBatch).where(
-                            RiderSalaryImportBatch.site_id == site.id,
-                            RiderSalaryImportBatch.deleted == 0,
-                        )
-                    )
-                ).all()
-            )
-            covered: set[date] = set()
-            for batch in batches:
-                if batch.date_from is None or batch.date_to is None:
-                    continue
-                covered.update(iter_dates(max(batch.date_from, start), min(batch.date_to, gap_end)))
-            order_dates = set(
-                (
-                    await db.scalars(
-                        select(RiderSalaryOrder.biz_date).where(
-                            RiderSalaryOrder.site_id == site.id,
-                            RiderSalaryOrder.biz_date >= start,
-                            RiderSalaryOrder.biz_date <= gap_end,
-                            RiderSalaryOrder.deleted == 0,
-                        )
-                    )
-                ).all()
-            )
-            for day in iter_dates(start, gap_end):
-                if day in covered or day in order_dates:
-                    continue
-                total += 1
-                if len(items) < _ATTENTION_LIMIT:
-                    items.append({'site_id': site.id, 'site_name': site.name, 'date': day.isoformat()})
+        if not sites:
+            return None
+        batches_by_site, order_dates_by_site = await _load_import_coverage(
+            db,
+            [site.id for site in sites],
+            start,
+            gap_end,
+        )
+        total, items = _import_gap_items(sites, batches_by_site, order_dates_by_site, start, gap_end)
         if total <= 0:
             return None
         return DashboardAttentionBlock(
@@ -679,6 +642,76 @@ class DashboardService:
         top = ranked[:10]
         bottom = sorted(ranked, key=lambda item: (item.order_count, item.rider_id))[:5]
         return DashboardTopRiders(top=top, bottom=bottom)
+
+
+async def _load_import_coverage(
+    db: AsyncSession,
+    site_id_list: list[int],
+    start: date,
+    gap_end: date,
+) -> tuple[dict[int, list[Any]], dict[int, set[date]]]:
+    """一次取出这些站点的导入批次，并按站点汇总已有订单日期。"""
+    batches = list(
+        (
+            await db.scalars(
+                select(RiderSalaryImportBatch).where(
+                    RiderSalaryImportBatch.deleted == 0,
+                    RiderSalaryImportBatch.site_id.in_(site_id_list),
+                )
+            )
+        ).all()
+    )
+    batches_by_site: dict[int, list[Any]] = defaultdict(list)
+    for batch in batches:
+        batches_by_site[batch.site_id].append(batch)
+    order_rows = (
+        await db.execute(
+            select(RiderSalaryOrder.site_id, RiderSalaryOrder.biz_date)
+            .where(
+                RiderSalaryOrder.site_id.in_(site_id_list),
+                RiderSalaryOrder.biz_date >= start,
+                RiderSalaryOrder.biz_date <= gap_end,
+                RiderSalaryOrder.deleted == 0,
+            )
+            .group_by(RiderSalaryOrder.site_id, RiderSalaryOrder.biz_date)
+        )
+    ).all()
+    order_dates_by_site: dict[int, set[date]] = defaultdict(set)
+    for site_id, biz_date in order_rows:
+        if biz_date is not None:
+            order_dates_by_site[int(site_id)].add(biz_date)
+    return batches_by_site, order_dates_by_site
+
+
+def _covered_dates(batches: list[Any], start: date, gap_end: date) -> set[date]:
+    covered: set[date] = set()
+    for batch in batches:
+        if batch.date_from is None or batch.date_to is None:
+            continue
+        covered.update(iter_dates(max(batch.date_from, start), min(batch.date_to, gap_end)))
+    return covered
+
+
+def _import_gap_items(
+    sites: list[Any],
+    batches_by_site: dict[int, list[Any]],
+    order_dates_by_site: dict[int, set[date]],
+    start: date,
+    gap_end: date,
+) -> tuple[int, list[dict[str, Any]]]:
+    """按站点顺序统计未被批次或订单覆盖的日期。"""
+    items: list[dict[str, Any]] = []
+    total = 0
+    for site in sites:
+        covered = _covered_dates(batches_by_site.get(site.id, []), start, gap_end)
+        order_dates = order_dates_by_site.get(site.id, set())
+        for day in iter_dates(start, gap_end):
+            if day in covered or day in order_dates:
+                continue
+            total += 1
+            if len(items) < _ATTENTION_LIMIT:
+                items.append({'site_id': site.id, 'site_name': site.name, 'date': day.isoformat()})
+    return total, items
 
 
 def _site_filter(column: Any, site_ids: set[int] | None) -> Any:

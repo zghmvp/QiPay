@@ -15,7 +15,7 @@ import {
   FIELD_GROUPS,
   isGroup,
   MULTI_OPERATORS,
-  OPERATORS_BY_TYPE,
+  operatorsForFieldType,
   RANGE_OPERATORS,
 } from '../helpers';
 
@@ -58,10 +58,7 @@ function fieldOf(name?: string) {
 }
 
 function operatorsOf(name?: string) {
-  const spec = fieldOf(name);
-  const fromApi = spec ? props.operatorsByType[spec.type] : undefined;
-  if (fromApi?.length) return fromApi;
-  return OPERATORS_BY_TYPE[spec?.type || 'number'] ?? ['='];
+  return operatorsForFieldType(fieldOf(name)?.type, props.operatorsByType);
 }
 
 function patch(next: ConditionGroup) {
@@ -82,7 +79,7 @@ function addLeaf() {
     return;
   }
   const first = availableFields.value[0];
-  const operator = defaultOperatorForType(first?.type);
+  const operator = defaultOperatorForType(first?.type, props.operatorsByType);
   patch({
     ...props.value,
     条件: [
@@ -132,7 +129,7 @@ function updateGroup(index: number, group: ConditionGroup) {
 
 function onFieldChange(index: number, name: string) {
   const spec = fieldOf(name);
-  const operator = defaultOperatorForType(spec?.type);
+  const operator = defaultOperatorForType(spec?.type, props.operatorsByType);
   updateLeaf(index, {
     值: defaultValueFor(spec?.type, operator),
     字段: name,

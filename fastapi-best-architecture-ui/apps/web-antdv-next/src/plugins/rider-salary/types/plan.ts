@@ -122,6 +122,10 @@ export interface TrialParam {
   start_date: string;
 }
 
+export interface TrialUnsavedParam extends TrialParam {
+  items: PlanItemParam[];
+}
+
 export interface TrialSummary {
   advance_deductible?: number | string;
   advance_deduction?: number | string;

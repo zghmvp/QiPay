@@ -28,7 +28,7 @@ class RiderSalaryPayrollDetail(Base):
     include_in_gross: Mapped[bool] = mapped_column(default=True, comment='是否计入应发')
     source: Mapped[str] = mapped_column(sa.String(20), default=DetailSource.formula.value, comment='来源')
     biz_date: Mapped[date | None] = mapped_column(sa.Date, default=None, index=True, comment='业务日期')
-    plan_version_id: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, comment='方案版本 ID')
+    plan_version_id: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, index=True, comment='方案版本 ID')
     plan_item_id: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, comment='方案项 ID')
     order_id: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, comment='订单 ID')
     calc_trace: Mapped[dict | None] = mapped_column(sa.JSON(), default=None, comment='计算过程')

@@ -29,7 +29,8 @@ async def find_covering_period(
     """
     查找覆盖目标日期的结算周期
 
-    优先骑手级周期（rider_id=该骑手），再站点级（rider_id=0）；无周期返回 None
+    优先骑手级周期（rider_id=该骑手），再站点级（rider_id=0）。
+    同一层级有多条时取 id 最小的一条，保证结果稳定。无周期返回 None
     """
     period = None
     if rider_id:
@@ -42,6 +43,7 @@ async def find_covering_period(
                 RiderSalarySettlePeriod.end_date >= biz_date,
                 RiderSalarySettlePeriod.deleted == 0,
             )
+            .order_by(RiderSalarySettlePeriod.id.asc())
             .limit(1)
         )
     if period is None:
@@ -54,6 +56,7 @@ async def find_covering_period(
                 RiderSalarySettlePeriod.end_date >= biz_date,
                 RiderSalarySettlePeriod.deleted == 0,
             )
+            .order_by(RiderSalarySettlePeriod.id.asc())
             .limit(1)
         )
     return period
@@ -134,15 +137,56 @@ async def assert_not_locked(
         raise errors.ForbiddenError(msg='该日期所属结算周期已锁账，禁止修改，请走反冲补发流程')
 
 
+async def site_locked_dates(
+    db: AsyncSession,
+    *,
+    site_id: int,
+    date_from: date,
+    date_to: date,
+) -> set[date]:
+    """
+    返回区间内被该站点任一 locked/paid 周期覆盖的日期
+
+    与 locked_dates_in_range 不同：不按单个骑手优先匹配。站点级或任意骑手级周期
+    只要是 locked/paid 且覆盖该日，该日即锁定。供站点级事实（日标记）使用。
+    订单、奖惩等按骑手校验的调用方请继续使用 assert_not_locked。
+    """
+    if date_from > date_to:
+        return set()
+    rows = list(
+        (
+            await db.scalars(
+                select(RiderSalarySettlePeriod).where(
+                    RiderSalarySettlePeriod.site_id == site_id,
+                    RiderSalarySettlePeriod.start_date <= date_to,
+                    RiderSalarySettlePeriod.end_date >= date_from,
+                    RiderSalarySettlePeriod.deleted == 0,
+                    RiderSalarySettlePeriod.status.in_([PeriodStatus.locked, PeriodStatus.paid]),
+                )
+            )
+        ).all()
+    )
+    locked: set[date] = set()
+    for row in rows:
+        start = max(row.start_date, date_from)
+        end = min(row.end_date, date_to)
+        current = start
+        while current <= end:
+            locked.add(current)
+            current += timedelta(days=1)
+    return locked
+
+
 def _pick_period(
     biz_date: date,
     rider_periods: list[RiderSalarySettlePeriod],
     site_periods: list[RiderSalarySettlePeriod],
 ) -> RiderSalarySettlePeriod | None:
-    for row in rider_periods:
+    """骑手级优先，同一层级按 id 升序取第一条覆盖该日的周期。"""
+    for row in sorted(rider_periods, key=lambda item: int(item.id)):
         if row.start_date <= biz_date <= row.end_date:
             return row
-    for row in site_periods:
+    for row in sorted(site_periods, key=lambda item: int(item.id)):
         if row.start_date <= biz_date <= row.end_date:
             return row
     return None

@@ -47,86 +47,101 @@ export const querySchema: VbenFormSchema[] = [
   },
 ];
 
-export const riderFormSchema: VbenFormSchema[] = [
-  {
-    component: 'Input',
-    fieldName: 'job_no',
-    label: '工号',
-    rules: 'required',
-  },
-  {
-    component: 'Input',
-    fieldName: 'name',
-    label: '姓名',
-    rules: 'required',
-  },
-  {
-    component: 'Input',
-    fieldName: 'phone',
-    label: '手机',
-  },
-  {
-    component: h(SiteSelect),
-    fieldName: 'site_id',
-    label: '所属站点',
-    modelPropName: 'value',
-    rules: 'selectRequired',
-  },
-  {
-    component: 'Select',
-    componentProps: {
-      options: enumTagOptions(EMPLOY_TYPE_OPTIONS),
+function buildRiderFormSchema(mode: 'create' | 'edit'): VbenFormSchema[] {
+  const fields: VbenFormSchema[] = [
+    {
+      component: 'Input',
+      fieldName: 'job_no',
+      label: '工号',
+      rules: 'required',
     },
-    defaultValue: 'part_time',
-    fieldName: 'employ_type',
-    label: '用工类型',
-    rules: 'selectRequired',
-  },
-  {
-    component: 'DatePicker',
-    componentProps: {
-      format: 'YYYY-MM-DD',
-      style: { width: '100%' },
-      valueFormat: 'YYYY-MM-DD',
+    {
+      component: 'Input',
+      fieldName: 'name',
+      label: '姓名',
+      rules: 'required',
     },
-    fieldName: 'hire_date',
-    label: '入职日期',
-    rules: 'required',
-  },
-  {
-    component: 'InputNumber',
-    componentProps: {
-      min: 0,
-      precision: 2,
-      style: { width: '100%' },
+    {
+      component: 'Input',
+      fieldName: 'phone',
+      label: '手机',
     },
-    fieldName: 'advance_limit',
-    label: '预支上限',
-  },
-  {
-    component: 'Select',
-    componentProps: {
-      allowClear: true,
-      options: enumTagOptions(CYCLE_TYPE_OPTIONS),
+    {
+      component: h(SiteSelect),
+      fieldName: 'site_id',
+      label: '所属站点',
+      modelPropName: 'value',
+      rules: 'selectRequired',
     },
-    fieldName: 'settle_cycle_override',
-    label: '结算周期覆盖',
-  },
-  {
-    component: 'Select',
-    componentProps: {
-      options: enumTagOptions(RIDER_STATUS_OPTIONS),
+  ];
+  if (mode === 'create') {
+    fields.push({
+      component: 'Select',
+      componentProps: {
+        options: enumTagOptions(EMPLOY_TYPE_OPTIONS),
+      },
+      defaultValue: 'part_time',
+      fieldName: 'employ_type',
+      label: '用工类型',
+      rules: 'selectRequired',
+    });
+  }
+  fields.push(
+    {
+      component: 'DatePicker',
+      componentProps: {
+        format: 'YYYY-MM-DD',
+        style: { width: '100%' },
+        valueFormat: 'YYYY-MM-DD',
+      },
+      fieldName: 'hire_date',
+      label: '入职日期',
+      rules: 'required',
     },
-    defaultValue: 'on_job',
-    fieldName: 'status',
-    label: '状态',
-  },
-  {
+    {
+      component: 'InputNumber',
+      componentProps: {
+        min: 0,
+        precision: 2,
+        style: { width: '100%' },
+      },
+      fieldName: 'advance_limit',
+      label: '预支上限',
+    },
+    {
+      component: 'Select',
+      componentProps: {
+        allowClear: true,
+        options: enumTagOptions(CYCLE_TYPE_OPTIONS),
+      },
+      fieldName: 'settle_cycle_override',
+      label: '结算周期覆盖',
+    },
+  );
+  if (mode === 'create') {
+    fields.push({
+      component: 'Select',
+      componentProps: {
+        options: enumTagOptions(RIDER_STATUS_OPTIONS),
+      },
+      defaultValue: 'on_job',
+      fieldName: 'status',
+      label: '状态',
+    });
+  }
+  fields.push({
     component: 'Textarea',
     fieldName: 'remark',
     label: '备注',
-  },
-];
+  });
+  return fields;
+}
+
+/** 新增骑手：用工类型和状态只在创建时填写 */
+export const riderFormSchema = buildRiderFormSchema('create');
+
+/** 编辑骑手：用工类型、状态、离职日期分别走用工历史和离职 */
+export const riderEditFormSchema = buildRiderFormSchema('edit');
 
 export const bindingFormSchema: VbenFormSchema[] = [
   {
@@ -219,6 +234,7 @@ export function useColumns(
 ): VxeGridProps['columns'] {
   const { hasAccessByCodes } = useAccess();
   return [
+    { align: 'center', field: 'checkbox', type: 'checkbox', width: 48 },
     { field: 'seq', title: '序号', type: 'seq', width: 60 },
     { field: 'job_no', title: '工号', width: 110 },
     { field: 'name', title: '姓名', width: 100 },
@@ -317,6 +333,14 @@ export function useColumns(
                 show: (row: RiderResult) =>
                   hasAccessByCodes(['rs:rider:edit']) && row.status === 'on_job',
                 text: '离职',
+              },
+              {
+                code: 'leave-settlement',
+                show: (row: RiderResult) =>
+                  hasAccessByCodes(['rs:rider:edit']) &&
+                  row.status === 'resigned' &&
+                  Boolean(row.leave_date),
+                text: '离职结算',
               },
             ],
             text: '更多',

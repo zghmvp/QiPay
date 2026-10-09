@@ -8,7 +8,7 @@ import type {
   VxeTableGridOptions,
 } from '#/adapter/vxe-table';
 
-import { onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { useVbenDrawer, useVbenModal, VbenButton } from '@vben/common-ui';
@@ -21,6 +21,7 @@ import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
   deleteOrderApi,
   downloadImportTemplateApi,
+  exportOrdersApi,
   getOrderListApi,
 } from '../../api/order';
 import { useReasonModal } from '../../components/use-reason-modal';
@@ -30,6 +31,7 @@ import BatchList from './components/BatchList.vue';
 import ImportWizard from './components/ImportWizard.vue';
 import OrderForm from './components/OrderForm.vue';
 import { querySchema, useColumns } from './data';
+import { buildOrderExportQuery, ORDER_EXPORT_NEED_SITE } from './export-query';
 
 function isUserCancelled(error: unknown) {
   const msg = (error as Error)?.message;
@@ -38,6 +40,7 @@ function isUserCancelled(error: unknown) {
 
 const route = useRoute();
 const { ReasonModal, prompt } = useReasonModal();
+const exporting = ref(false);
 
 const initialStatus =
   typeof route.query.status === 'string' ? route.query.status : undefined;
@@ -114,6 +117,25 @@ async function onDownloadTemplate() {
   await downloadImportTemplateApi();
 }
 
+async function onExport() {
+  const values = (await gridApi.formApi.getValues()) as {
+    date_range?: [string, string];
+    rider_id?: number;
+    site_id?: number;
+  };
+  const query = buildOrderExportQuery(values);
+  if (!query.site_id) {
+    message.warning(ORDER_EXPORT_NEED_SITE);
+    return;
+  }
+  exporting.value = true;
+  try {
+    await exportOrdersApi({ ...query, site_id: query.site_id });
+  } finally {
+    exporting.value = false;
+  }
+}
+
 async function onImported(batchId?: null | number) {
   if (batchId) {
     await gridApi.formApi.setValues({ import_batch_id: batchId });
@@ -164,7 +186,14 @@ onMounted(() => {
           <MaterialSymbolsAdd class="size-5" />
           补录
         </VbenButton>
-        <VbenButton @click="() => batchApi.open()">导入批次</VbenButton>
+        <VbenButton class="mr-2" @click="() => batchApi.open()">导入批次</VbenButton>
+        <VbenButton
+          v-access:code="'rs:order:export'"
+          :loading="exporting"
+          @click="onExport"
+        >
+          导出
+        </VbenButton>
       </template>
       <template #locked="{ row }">
         <IconifyIcon

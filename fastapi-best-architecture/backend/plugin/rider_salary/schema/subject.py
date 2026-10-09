@@ -1,11 +1,24 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import ConfigDict, Field, computed_field
 
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.enums import EnableStatus, EntryGranularity, FeeMode, SubjectDirection
+from backend.plugin.rider_salary.schema.limits import (
+    LEN_CODE_64,
+    LEN_NAME_64,
+    LEN_REMARK,
+    MAX_SCOPE_ITEMS,
+    MAX_SORT_ORDER,
+    MONEY_DIGITS,
+    MONEY_MAX,
+    MONEY_PLACES,
+    zh_list,
+    zh_money,
+    zh_str,
+)
 
 
 class SubjectSchemaBase(SchemaBase):
@@ -28,22 +41,60 @@ class SubjectSchemaBase(SchemaBase):
 class CreateSubjectParam(SubjectSchemaBase):
     """创建科目参数"""
 
+    code: Annotated[str, zh_str('科目编码', LEN_CODE_64, min_length=1)] = Field(
+        min_length=1, max_length=LEN_CODE_64, description='科目编码'
+    )
+    name: Annotated[str, zh_str('科目名称', LEN_NAME_64, min_length=1)] = Field(
+        min_length=1, max_length=LEN_NAME_64, description='科目名称'
+    )
+    fixed_amount: Annotated[Decimal | None, zh_money('定额金额')] = Field(
+        None,
+        ge=0,
+        le=MONEY_MAX,
+        max_digits=MONEY_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='定额金额',
+    )
+    scope_sites: Annotated[list[Any] | None, zh_list('适用站点', MAX_SCOPE_ITEMS)] = Field(
+        None, max_length=MAX_SCOPE_ITEMS, description='适用站点'
+    )
+    scope_employ_types: Annotated[list[Any] | None, zh_list('适用用工类型', MAX_SCOPE_ITEMS)] = Field(
+        None, max_length=MAX_SCOPE_ITEMS, description='适用用工类型'
+    )
+    sort_order: int = Field(0, ge=0, le=MAX_SORT_ORDER, description='排序')
+    remark: Annotated[str | None, zh_str('备注', LEN_REMARK)] = Field(None, max_length=LEN_REMARK, description='备注')
+
 
 class UpdateSubjectParam(SchemaBase):
     """更新科目参数"""
 
-    code: str | None = Field(None, description='科目编码')
-    name: str | None = Field(None, description='科目名称')
+    code: Annotated[str | None, zh_str('科目编码', LEN_CODE_64, min_length=1)] = Field(
+        None, min_length=1, max_length=LEN_CODE_64, description='科目编码'
+    )
+    name: Annotated[str | None, zh_str('科目名称', LEN_NAME_64, min_length=1)] = Field(
+        None, min_length=1, max_length=LEN_NAME_64, description='科目名称'
+    )
     direction: SubjectDirection | None = Field(None, description='方向')
     fee_mode: FeeMode | None = Field(None, description='计费方式')
-    fixed_amount: Decimal | None = Field(None, description='定额金额')
+    fixed_amount: Annotated[Decimal | None, zh_money('定额金额')] = Field(
+        None,
+        ge=0,
+        le=MONEY_MAX,
+        max_digits=MONEY_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='定额金额',
+    )
     include_in_gross: bool | None = Field(None, description='是否参与应发合计')
     entry_granularity: EntryGranularity | None = Field(None, description='入账粒度')
-    scope_sites: list[Any] | None = Field(None, description='适用站点')
-    scope_employ_types: list[Any] | None = Field(None, description='适用用工类型')
+    scope_sites: Annotated[list[Any] | None, zh_list('适用站点', MAX_SCOPE_ITEMS)] = Field(
+        None, max_length=MAX_SCOPE_ITEMS, description='适用站点'
+    )
+    scope_employ_types: Annotated[list[Any] | None, zh_list('适用用工类型', MAX_SCOPE_ITEMS)] = Field(
+        None, max_length=MAX_SCOPE_ITEMS, description='适用用工类型'
+    )
     status: EnableStatus | None = Field(None, description='状态')
-    sort_order: int | None = Field(None, description='排序')
-    remark: str | None = Field(None, description='备注')
+    sort_order: int | None = Field(None, ge=0, le=MAX_SORT_ORDER, description='排序')
+    remark: Annotated[str | None, zh_str('备注', LEN_REMARK)] = Field(None, max_length=LEN_REMARK, description='备注')
 
 
 class GetSubjectDetail(SubjectSchemaBase):

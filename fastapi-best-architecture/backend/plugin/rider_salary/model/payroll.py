@@ -15,6 +15,16 @@ class RiderSalaryPayroll(Base):
     __tablename__ = 'rs_payroll'
     __table_args__ = (
         sa.Index('ix_rs_payroll_period_rider', 'period_id', 'rider_id'),
+        # 同周期、同骑手、同类型只允许一张未删除草稿。Q-18 推荐不再实现 MySQL，
+        # postgresql_where 只在 PostgreSQL 生效；MySQL 的 init 不建等价普通唯一索引。
+        sa.Index(
+            'uq_rs_payroll_one_draft',
+            'period_id',
+            'rider_id',
+            'kind',
+            unique=True,
+            postgresql_where=sa.text("status = 'draft' AND deleted = 0"),
+        ),
         {'comment': '薪资结果表'},
     )
 

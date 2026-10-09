@@ -1,11 +1,12 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import ConfigDict, Field, computed_field, field_validator
 
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.enums import CycleType, PeriodStatus
+from backend.plugin.rider_salary.schema.limits import LEN_REMARK, LEN_STATUS, MAX_ID_LIST, zh_list, zh_str
 from backend.plugin.rider_salary.schema.payroll import GetPayrollSummary
 
 
@@ -20,7 +21,9 @@ class GeneratePeriodParam(SchemaBase):
     """生成结算周期参数"""
 
     site_id: int = Field(description='站点 ID')
-    month: str = Field(description='目标月份，格式 YYYY-MM')
+    month: Annotated[str, zh_str('月份', 7, min_length=7)] = Field(
+        min_length=7, max_length=7, description='目标月份，格式 YYYY-MM'
+    )
 
     @field_validator('month')
     @classmethod
@@ -44,25 +47,48 @@ class GeneratePeriodParam(SchemaBase):
 class CalculatePeriodParam(SchemaBase):
     """算薪参数"""
 
-    rider_ids: list[int] | None = Field(None, description='指定骑手 ID，空表示周期内全部')
+    rider_ids: Annotated[list[int] | None, zh_list('骑手', MAX_ID_LIST)] = Field(
+        None, max_length=MAX_ID_LIST, description='指定骑手 ID，空表示周期内全部'
+    )
 
 
 class LockPeriodParam(SchemaBase):
     """锁账参数"""
 
-    reason: str = Field(description='锁账原因')
+    reason: Annotated[str, zh_str('锁账原因', LEN_REMARK, min_length=1)] = Field(
+        min_length=1, max_length=LEN_REMARK, description='锁账原因'
+    )
+    expected_status: Annotated[str | None, zh_str('期望状态', LEN_STATUS)] = Field(
+        None,
+        max_length=LEN_STATUS,
+        description='期望的当前状态。与库中状态不一致，或周期已锁账时返回 409，不重复执行',
+    )
 
 
 class MarkPaidPeriodParam(SchemaBase):
     """标记发薪参数"""
 
-    reason: str | None = Field(None, description='操作原因')
+    reason: Annotated[str | None, zh_str('操作原因', LEN_REMARK)] = Field(
+        None, max_length=LEN_REMARK, description='操作原因'
+    )
+    expected_status: Annotated[str | None, zh_str('期望状态', LEN_STATUS)] = Field(
+        None,
+        max_length=LEN_STATUS,
+        description='期望的当前状态。与库中状态不一致，或已经标记发薪时返回 409，不重复执行',
+    )
 
 
 class ReversePeriodParam(SchemaBase):
     """反冲补发参数"""
 
-    reason: str = Field(description='反冲原因')
+    reason: Annotated[str, zh_str('反冲原因', LEN_REMARK, min_length=1)] = Field(
+        min_length=1, max_length=LEN_REMARK, description='反冲原因'
+    )
+    expected_status: Annotated[str | None, zh_str('期望状态', LEN_STATUS)] = Field(
+        None,
+        max_length=LEN_STATUS,
+        description='期望的当前状态。与库中状态不一致时返回 409，不生成反冲单',
+    )
 
 
 class PeriodSchemaBase(SchemaBase):
@@ -120,6 +146,7 @@ class GetPeriodWithPayrolls(GetPeriodDetail):
     """周期详情 + 全部薪资单"""
 
     payrolls: list[GetPeriodPayrollItem] = Field(default_factory=list, description='薪资单摘要（含反冲/补发链）')
+    calc_warnings: list[str] = Field(default_factory=list, description='后台算薪告警')
     rider_count: int = Field(0, description='骑手数')
     payroll_count: int = Field(0, description='薪资单数')
     stale_count: int = Field(0, description='需重算数')
@@ -168,6 +195,28 @@ class CalculatePeriodResult(SchemaBase):
     calculated: int = Field(description='本次计算骑手数')
     warnings: list[str] = Field(default_factory=list, description='告警')
     queued: bool = Field(False, description='是否转入后台')
+    job_id: int | None = Field(None, description='算薪作业 ID')
+
+
+class CarryForwardParam(SchemaBase):
+    """沿用原单参数"""
+
+    rider_ids: Annotated[list[int] | None, zh_list('骑手', MAX_ID_LIST)] = Field(
+        None,
+        max_length=MAX_ID_LIST,
+        description='指定骑手 ID，空表示全部缺补发单的骑手',
+    )
+    reason: Annotated[str | None, zh_str('操作原因', LEN_REMARK)] = Field(
+        None, max_length=LEN_REMARK, description='操作原因，空则记为金额无需变化'
+    )
+
+
+class CarryForwardResult(SchemaBase):
+    """沿用原单结果"""
+
+    created_count: int = Field(description='生成或覆盖的补发草稿数')
+    rider_ids: list[int] = Field(description='已沿用原单的骑手 ID')
+    net_total: Decimal = Field(description='这些补发草稿的实发合计，等于对应原单实发合计')
 
 
 class ReversePeriodResult(SchemaBase):
@@ -187,3 +236,46 @@ class GetPeriodForDateResult(SchemaBase):
     start_date: date = Field(description='开始日期')
     end_date: date = Field(description='结束日期')
     period: GetPeriodDetail | None = Field(None, description='已存在的周期')
+
+
+class LockCheckRiderItem(SchemaBase):
+    """锁账预检中的一名骑手"""
+
+    rider_id: int = Field(description='骑手 ID')
+    job_no: str = Field(description='工号')
+    rider_name: str | None = Field(None, description='姓名')
+
+
+class GetLockCheckResult(SchemaBase):
+    """锁账预检：未算薪、需重算、缺补发单"""
+
+    can_lock: bool = Field(description='是否允许锁账')
+    empty: bool = Field(description='应算骑手为空，且没有已反冲待补发的骑手')
+    uncalculated: list[LockCheckRiderItem] = Field(default_factory=list, description='未算薪骑手')
+    needs_recalc: list[LockCheckRiderItem] = Field(default_factory=list, description='需重算骑手')
+    missing_supplement: list[LockCheckRiderItem] = Field(
+        default_factory=list,
+        description='已反冲但缺少非过期补发草稿的骑手',
+    )
+    message: str | None = Field(None, description='不能锁账时的说明')
+
+
+class MarkPaidPeriodResult(SchemaBase):
+    """标记发薪结果"""
+
+    warning: str | None = Field(None, description='提示，空周期为「本期没有薪资单」')
+
+
+class LeaveSettlementResult(SchemaBase):
+    """离职结算周期"""
+
+    period_id: int = Field(description='周期 ID')
+    site_id: int = Field(description='站点 ID')
+    rider_id: int = Field(description='骑手 ID')
+    start_date: date = Field(description='开始日期')
+    end_date: date = Field(description='结束日期')
+    status: str = Field(description='状态')
+    leave_date: date = Field(description='离职日期')
+    created: bool = Field(description='本次是否新生成')
+    remark: str | None = Field(None, description='备注')
+    hint: str = Field(description='计薪截止与周期覆盖说明')

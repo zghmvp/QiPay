@@ -40,6 +40,19 @@ export interface RiderForm {
   status?: string;
 }
 
+/** 编辑骑手：不含用工类型、状态、离职日期 */
+export interface RiderUpdateForm {
+  advance_limit?: null | number | string;
+  hire_date?: string;
+  job_no?: string;
+  name?: string;
+  phone?: null | string;
+  reason?: null | string;
+  remark?: null | string;
+  settle_cycle_override?: null | string;
+  site_id?: number;
+}
+
 export interface RiderQuery {
   employ_type?: string;
   keyword?: string;
@@ -96,9 +109,33 @@ export interface RiderLeaveForm {
   reason: string;
 }
 
+export interface RiderLeaveResult {
+  hints: string[];
+  rejected_advance_count: number;
+  to_pay_advance_count: number;
+}
+
+export interface LeaveSettlementResult {
+  created: boolean;
+  end_date: string;
+  hint: string;
+  leave_date: string;
+  period_id: number;
+  remark?: null | string;
+  rider_id: number;
+  site_id: number;
+  start_date: string;
+  status: string;
+}
+
 export interface RiderAccountForm {
   password?: null | string;
   reason?: null | string;
+}
+
+export interface IssuedRiderPassword {
+  initial_password?: null | string;
+  username: string;
 }
 
 export interface EffectivePlanSegment {
@@ -107,4 +144,42 @@ export interface EffectivePlanSegment {
   plan_short_name?: null | string;
   plan_version_id?: null | number;
   start: string;
+}
+
+export interface BatchPlanBindingForm {
+  binding_type: string;
+  end_date?: null | string;
+  plan_version_id: number;
+  remark?: null | string;
+  rider_ids: number[];
+  start_date: string;
+}
+
+export interface BatchBindingItem {
+  binding_id: number;
+  job_no: string;
+  name: string;
+  rider_id: number;
+}
+
+export interface BatchBindingResult {
+  count: number;
+  items: BatchBindingItem[];
+}
+
+export interface BatchAccountForm {
+  reason?: null | string;
+  rider_ids: number[];
+}
+
+export interface BatchIssuedPassword {
+  initial_password: string;
+  job_no: string;
+  name: string;
+  rider_id: number;
+  username: string;
+}
+
+export interface BatchIssuedPasswordResult {
+  items: BatchIssuedPassword[];
 }

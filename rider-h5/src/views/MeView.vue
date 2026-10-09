@@ -68,6 +68,12 @@ async function onLogout() {
           :value="auth.profile?.employ_type_label || enumLabel(EMPLOY_TYPE_OPTIONS, auth.profile?.employ_type)"
         />
         <Cell title="入职日期" :value="auth.profile?.hire_date || '—'" />
+        <Cell
+          v-if="auth.profile?.read_only"
+          title="在职状态"
+          :value="`${auth.profile.status_label || '离职'} · 查阅至 ${auth.profile.read_until || '宽限期结束'}`"
+        />
+        <Cell title="往期工资" is-link value="查看工资条" @click="router.push('/payslips')" />
       </CellGroup>
 
       <div class="section-title"><span>修改密码</span></div>

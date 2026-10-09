@@ -28,6 +28,7 @@ import {
 import { getAllSubjectsApi } from '../../api/subject';
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
+import { LIST_OPEN_CODES } from '../../constants/access';
 import { toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import BatchModal from './components/BatchModal.vue';
@@ -169,7 +170,7 @@ const [BatchModalComp, batchModalApi] = useVbenModal({
 </script>
 
 <template>
-  <PageContainer>
+  <PageContainer v-access:code="LIST_OPEN_CODES.adjustment">
     <Grid>
       <template #toolbar-actions>
         <VbenButton

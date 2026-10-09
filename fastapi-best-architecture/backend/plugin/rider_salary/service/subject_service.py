@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -9,6 +10,7 @@ from backend.plugin.rider_salary.crud.subject import subject_dao
 from backend.plugin.rider_salary.enums import SubjectDirection
 from backend.plugin.rider_salary.schema.subject import CreateSubjectParam, UpdateSubjectParam
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
+from backend.plugin.rider_salary.utils.db_errors import client_error_from_integrity
 
 _SUBJECT_FIELDS = (
     'id',
@@ -32,6 +34,11 @@ def builtin_forbidden_changed(before: Any, obj: UpdateSubjectParam) -> bool:
     """内置科目是否试图修改编码/方向/是否进应发"""
     if obj.code is not None and obj.code != before.code:
         return True
+    return calc_semantics_changed(before, obj)
+
+
+def calc_semantics_changed(before: Any, obj: UpdateSubjectParam) -> bool:
+    """方向或是否进应发是否相对当前值发生变化。未传的字段不算修改。"""
     if obj.direction is not None and obj.direction != before.direction:
         return True
     return bool(obj.include_in_gross is not None and obj.include_in_gross != before.include_in_gross)
@@ -76,7 +83,10 @@ class SubjectService:
         if await subject_dao.get_by_code(db, obj.code):
             raise errors.ConflictError(msg='科目编码已存在')
         SubjectService._validate_gross(direction=obj.direction, include_in_gross=obj.include_in_gross)
-        subject = await subject_dao.create(db, obj)
+        try:
+            subject = await subject_dao.create(db, obj)
+        except IntegrityError as exc:
+            raise client_error_from_integrity(exc) from exc
         await audit_service.record(
             db,
             request,
@@ -98,6 +108,12 @@ class SubjectService:
             raise errors.ConflictError(msg='科目编码已存在')
         if subject.is_builtin and builtin_forbidden_changed(subject, obj):
             raise errors.RequestError(msg='内置科目不允许修改编码、方向或是否进应发')
+        if calc_semantics_changed(subject, obj):
+            adj_count, item_count = await subject_dao.count_refs(db, pk)
+            if adj_count or item_count:
+                raise errors.RequestError(
+                    msg=(f'科目已被引用（奖惩记录 {adj_count} 条、方案项 {item_count} 条），不能修改方向或是否进应发')
+                )
         direction = obj.direction if obj.direction is not None else subject.direction
         include_in_gross = obj.include_in_gross if obj.include_in_gross is not None else subject.include_in_gross
         SubjectService._validate_gross(direction=direction, include_in_gross=include_in_gross)
@@ -107,7 +123,11 @@ class SubjectService:
             payload.pop('direction', None)
             payload.pop('include_in_gross', None)
         before = snapshot(subject, _SUBJECT_FIELDS)
-        count = await subject_dao.update(db, pk, payload)
+        try:
+            count = await subject_dao.update(db, pk, payload)
+            await db.flush()
+        except IntegrityError as exc:
+            raise client_error_from_integrity(exc) from exc
         updated = await subject_dao.get(db, pk)
         await audit_service.record(
             db,

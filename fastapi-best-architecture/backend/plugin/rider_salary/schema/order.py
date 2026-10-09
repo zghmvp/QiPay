@@ -1,10 +1,23 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated
 
 from pydantic import ConfigDict, Field, field_validator
 
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.enums import OrderSource, OrderStatus
+from backend.plugin.rider_salary.schema.limits import (
+    LEN_CODE_64,
+    LEN_REMARK,
+    LEN_STATUS,
+    MEASURE_DIGITS,
+    MEASURE_MAX,
+    MONEY_DIGITS,
+    MONEY_MAX,
+    MONEY_PLACES,
+    zh_money,
+    zh_str,
+)
 from backend.utils.timezone import timezone
 
 
@@ -34,6 +47,36 @@ class OrderSchemaBase(SchemaBase):
 class CreateOrderParam(OrderSchemaBase):
     """补录订单参数"""
 
+    order_no: Annotated[str, zh_str('订单号', LEN_CODE_64, min_length=1)] = Field(
+        min_length=1, max_length=LEN_CODE_64, description='订单号'
+    )
+    distance_km: Annotated[Decimal, zh_money('配送距离', upper=MEASURE_MAX)] = Field(
+        ge=0,
+        le=MEASURE_MAX,
+        max_digits=MEASURE_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='配送距离（公里）',
+    )
+    weight_jin: Annotated[Decimal, zh_money('商品重量', upper=MEASURE_MAX)] = Field(
+        ge=0,
+        le=MEASURE_MAX,
+        max_digits=MEASURE_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='商品重量（斤）',
+    )
+    status: Annotated[str, zh_str('订单状态', LEN_STATUS, min_length=1)] = Field(
+        min_length=1, max_length=LEN_STATUS, description='订单状态'
+    )
+    amount: Annotated[Decimal | None, zh_money('订单金额')] = Field(
+        None,
+        ge=0,
+        le=MONEY_MAX,
+        max_digits=MONEY_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='订单金额',
+    )
+    remark: Annotated[str | None, zh_str('备注', LEN_REMARK)] = Field(None, max_length=LEN_REMARK, description='备注')
+
     @field_validator('order_time', 'deliver_time')
     @classmethod
     def ensure_timezone(cls, value: datetime | None) -> datetime | None:
@@ -43,22 +86,57 @@ class CreateOrderParam(OrderSchemaBase):
 class UpdateOrderParam(SchemaBase):
     """纠错订单参数"""
 
-    reason: str = Field(description='修改原因')
-    order_no: str | None = Field(None, description='订单号')
+    reason: Annotated[str, zh_str('修改原因', LEN_REMARK, min_length=1)] = Field(
+        min_length=1, max_length=LEN_REMARK, description='修改原因'
+    )
+    order_no: Annotated[str | None, zh_str('订单号', LEN_CODE_64, min_length=1)] = Field(
+        None, min_length=1, max_length=LEN_CODE_64, description='订单号'
+    )
     site_id: int | None = Field(None, description='站点 ID')
     rider_id: int | None = Field(None, description='骑手 ID')
-    distance_km: Decimal | None = Field(None, description='配送距离（公里）')
-    weight_jin: Decimal | None = Field(None, description='商品重量（斤）')
+    distance_km: Annotated[Decimal | None, zh_money('配送距离', upper=MEASURE_MAX)] = Field(
+        None,
+        ge=0,
+        le=MEASURE_MAX,
+        max_digits=MEASURE_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='配送距离（公里）',
+    )
+    weight_jin: Annotated[Decimal | None, zh_money('商品重量', upper=MEASURE_MAX)] = Field(
+        None,
+        ge=0,
+        le=MEASURE_MAX,
+        max_digits=MEASURE_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='商品重量（斤）',
+    )
     order_time: datetime | None = Field(None, description='下单时间')
     deliver_time: datetime | None = Field(None, description='送达时间')
-    status: str | None = Field(None, description='订单状态')
-    amount: Decimal | None = Field(None, description='订单金额')
-    remark: str | None = Field(None, description='备注')
+    status: Annotated[str | None, zh_str('订单状态', LEN_STATUS, min_length=1)] = Field(
+        None, min_length=1, max_length=LEN_STATUS, description='订单状态'
+    )
+    amount: Annotated[Decimal | None, zh_money('订单金额')] = Field(
+        None,
+        ge=0,
+        le=MONEY_MAX,
+        max_digits=MONEY_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='订单金额',
+    )
+    remark: Annotated[str | None, zh_str('备注', LEN_REMARK)] = Field(None, max_length=LEN_REMARK, description='备注')
 
     @field_validator('order_time', 'deliver_time')
     @classmethod
     def ensure_timezone(cls, value: datetime | None) -> datetime | None:
         return _aware_datetime(value)
+
+
+class DeleteOrderParam(SchemaBase):
+    """删除订单参数"""
+
+    reason: Annotated[str, zh_str('删除原因', LEN_REMARK, min_length=1)] = Field(
+        min_length=1, max_length=LEN_REMARK, description='删除原因'
+    )
 
 
 class GetOrderDetail(OrderSchemaBase):

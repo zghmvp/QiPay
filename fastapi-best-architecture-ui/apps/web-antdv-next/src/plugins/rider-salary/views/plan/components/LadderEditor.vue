@@ -8,6 +8,12 @@ import { IconifyIcon } from '@vben/icons';
 
 import { evaluateSampleApi } from '../../../api/engine';
 import MoneyText from '../../../components/MoneyText.vue';
+import {
+  ILLEGAL_LADDER_MESSAGE,
+  isIllegalLadderCombo,
+  ladderModeDisabled,
+  ladderPricingDisabled,
+} from '../helpers';
 
 const props = withDefaults(
   defineProps<{
@@ -60,7 +66,9 @@ const ladderErrors = computed(() => {
 });
 
 function patch(partial: Record<string, unknown>) {
-  emit('update:value', { ...props.value, 类型: '阶梯', ...partial });
+  const next: Record<string, unknown> = { ...props.value, 类型: '阶梯', ...partial };
+  if (isIllegalLadderCombo(next.模式, next.计价)) return;
+  emit('update:value', next);
 }
 
 function updateTier(index: number, partial: Partial<LadderTier>) {
@@ -151,7 +159,12 @@ watch(
             @update:value="(v) => patch({ 模式: String(v ?? '') })"
           >
             <a-radio-button value="全量落档">全量落档</a-radio-button>
-            <a-radio-button value="分段累进">分段累进</a-radio-button>
+            <a-radio-button
+              value="分段累进"
+              :disabled="disabled || ladderModeDisabled(value.计价, '分段累进')"
+            >
+              分段累进
+            </a-radio-button>
           </a-radio-group>
         </div>
         <div>
@@ -162,15 +175,20 @@ watch(
             @update:value="(v) => patch({ 计价: String(v ?? '') })"
           >
             <a-radio-button value="按单价">按单价</a-radio-button>
-            <a-radio-button value="固定金额">固定金额</a-radio-button>
+            <a-radio-button
+              value="固定金额"
+              :disabled="disabled || ladderPricingDisabled(value.模式, '固定金额')"
+            >
+              固定金额
+            </a-radio-button>
           </a-radio-group>
         </div>
       </div>
       <a-alert
-        v-if="value.模式 === '分段累进' && value.计价 === '固定金额'"
-        type="warning"
+        v-if="isIllegalLadderCombo(value.模式, value.计价)"
+        type="error"
         show-icon
-        message="分段累进通常与「按单价」配合，请确认档位「值」表示该段单价。"
+        :message="ILLEGAL_LADDER_MESSAGE"
       />
       <div class="overflow-x-auto">
         <div class="text-muted-foreground mb-1 grid grid-cols-[1fr_1fr_1fr_90px] gap-2 text-xs">

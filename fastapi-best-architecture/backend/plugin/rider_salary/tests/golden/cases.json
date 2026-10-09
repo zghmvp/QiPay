@@ -1,0 +1,388 @@
+{
+  "period": { "start": "2026-09-01", "end": "2026-09-30" },
+  "cases": [
+    {
+      "id": "FIX_C01",
+      "title": "纯按单",
+      "preset_id": "C01",
+      "orders": { "completed": 100 },
+      "expect": {
+        "per_order_total": "500.00",
+        "daily_total": "0.00",
+        "period_total": "0.00",
+        "gross": "500.00",
+        "net": "500.00"
+      }
+    },
+    {
+      "id": "FIX_C02",
+      "title": "底薪 + 逐单 + 夜间",
+      "preset_id": "C02",
+      "orders": { "completed": 700, "night": 18 },
+      "expect": {
+        "per_order_total": "2836.00",
+        "daily_total": "0.00",
+        "period_total": "2000.00",
+        "gross": "4836.00",
+        "net": "4836.00"
+      }
+    },
+    {
+      "id": "FIX_C03",
+      "title": "底薪 + 单量阶梯全量落档",
+      "preset_id": "C03",
+      "orders": { "completed": 650 },
+      "expect": {
+        "per_order_total": "1950.00",
+        "daily_total": "0.00",
+        "period_total": "6250.00",
+        "gross": "8200.00",
+        "net": "8200.00"
+      }
+    },
+    {
+      "id": "FIX_C04",
+      "title": "底薪 + 单量阶梯分段累进",
+      "preset_id": "C04",
+      "orders": { "completed": 650 },
+      "expect": {
+        "per_order_total": "1950.00",
+        "daily_total": "0.00",
+        "period_total": "5850.00",
+        "gross": "7800.00",
+        "net": "7800.00"
+      }
+    },
+    {
+      "id": "FIX_C05A",
+      "title": "保底 + 提成 800 单",
+      "preset_id": "C05",
+      "orders": { "completed": 800 },
+      "expect": {
+        "per_order_total": "2800.00",
+        "daily_total": "0.00",
+        "period_total": "700.00",
+        "gross": "3500.00",
+        "net": "3500.00"
+      }
+    },
+    {
+      "id": "FIX_C05B",
+      "title": "保底 + 提成 1200 单",
+      "preset_id": "C05",
+      "orders": { "completed": 1200 },
+      "expect": {
+        "per_order_total": "4200.00",
+        "daily_total": "0.00",
+        "period_total": "0.00",
+        "gross": "4200.00",
+        "net": "4200.00"
+      }
+    },
+    {
+      "id": "FIX_C06",
+      "title": "纯单量阶梯全量落档",
+      "preset_id": "C06",
+      "orders": { "completed": 420 },
+      "expect": {
+        "per_order_total": "0.00",
+        "daily_total": "0.00",
+        "period_total": "2310.00",
+        "gross": "2310.00",
+        "net": "2310.00"
+      }
+    },
+    {
+      "id": "FIX_C07",
+      "title": "纯单量阶梯分段累进",
+      "preset_id": "C07",
+      "orders": { "completed": 420 },
+      "expect": {
+        "per_order_total": "0.00",
+        "daily_total": "0.00",
+        "period_total": "2160.00",
+        "gross": "2160.00",
+        "net": "2160.00"
+      }
+    },
+    {
+      "id": "FIX_C08_399",
+      "title": "门槛换价未满 400",
+      "preset_id": "C08",
+      "orders": { "completed": 399 },
+      "expect": {
+        "per_order_total": "0.00",
+        "daily_total": "0.00",
+        "period_total": "1995.00",
+        "gross": "1995.00",
+        "net": "1995.00"
+      }
+    },
+    {
+      "id": "FIX_C08_400",
+      "title": "门槛换价满 400",
+      "preset_id": "C08",
+      "orders": { "completed": 400 },
+      "expect": {
+        "per_order_total": "0.00",
+        "daily_total": "0.00",
+        "period_total": "2400.00",
+        "gross": "2400.00",
+        "net": "2400.00"
+      }
+    },
+    {
+      "id": "FIX_C09",
+      "title": "距离阶梯 + 重量阶梯",
+      "preset_id": "C09",
+      "orders": {
+        "samples": [{ "biz_date": "2026-09-01", "distance_km": "7.2", "weight_jin": "12" }]
+      },
+      "expect": {
+        "per_order_total": "7.00",
+        "daily_total": "0.00",
+        "period_total": "0.00",
+        "gross": "7.00",
+        "net": "7.00"
+      }
+    },
+    {
+      "id": "FIX_C10",
+      "title": "节假日夜间一单",
+      "preset_id": "C10",
+      "orders": {
+        "samples": [{ "biz_date": "2026-09-25", "night": true }]
+      },
+      "expect": {
+        "per_order_total": "9.00",
+        "daily_total": "0.00",
+        "period_total": "0.00",
+        "gross": "9.00",
+        "net": "9.00"
+      }
+    },
+    {
+      "id": "FIX_C11",
+      "title": "按日冲单 + 底薪 + 逐单",
+      "preset_id": "C11",
+      "orders": {
+        "pattern": [
+          { "days": 5, "completed": 32 },
+          { "days": 25, "completed": 20 }
+        ]
+      },
+      "expect": {
+        "per_order_total": "2640.00",
+        "daily_total": "250.00",
+        "period_total": "2000.00",
+        "gross": "4890.00",
+        "net": "4890.00"
+      }
+    },
+    {
+      "id": "FIX_C12",
+      "title": "按日全勤 + 周期阶梯",
+      "preset_id": "C12",
+      "orders": {
+        "pattern": [
+          { "days": 20, "completed": 20 },
+          { "days": 8, "completed": 15 },
+          { "days": 2, "completed": 0 }
+        ]
+      },
+      "expect": {
+        "per_order_total": "0.00",
+        "daily_total": "280.00",
+        "period_total": "2860.00",
+        "gross": "3140.00",
+        "net": "3140.00"
+      }
+    },
+    {
+      "id": "FIX_C13",
+      "title": "纯距离提成",
+      "preset_id": "C13",
+      "orders": {
+        "samples": [{ "biz_date": "2026-09-01", "distance_km": "7.2" }]
+      },
+      "expect": {
+        "per_order_total": "8.64",
+        "daily_total": "0.00",
+        "period_total": "0.00",
+        "gross": "8.64",
+        "net": "8.64"
+      }
+    },
+    {
+      "id": "FIX_C14",
+      "title": "恶劣天气 + 高温",
+      "preset_id": "C14",
+      "day_flags": [{ "date": "2026-09-01", "bad_weather": true, "high_temp": true }],
+      "orders": { "pattern": [{ "days": 1, "completed": 10 }] },
+      "expect": {
+        "per_order_total": "90.00",
+        "daily_total": "0.00",
+        "period_total": "0.00",
+        "gross": "90.00",
+        "net": "90.00"
+      }
+    },
+    {
+      "id": "FIX_C15",
+      "title": "大额 + 超重",
+      "preset_id": "C15",
+      "orders": {
+        "samples": [{ "biz_date": "2026-09-01", "amount": "120", "weight_jin": "25" }]
+      },
+      "expect": {
+        "per_order_total": "12.00",
+        "daily_total": "0.00",
+        "period_total": "0.00",
+        "gross": "12.00",
+        "net": "12.00"
+      }
+    },
+    {
+      "id": "FIX_C16",
+      "title": "兼职低单价 + 按日单量奖",
+      "preset_id": "C16",
+      "orders": {
+        "pattern": [
+          { "days": 10, "completed": 15 },
+          { "days": 10, "completed": 13 },
+          { "days": 10, "completed": 0 }
+        ]
+      },
+      "expect": {
+        "per_order_total": "1680.00",
+        "daily_total": "300.00",
+        "period_total": "0.00",
+        "gross": "1980.00",
+        "net": "1980.00"
+      }
+    },
+    {
+      "id": "FIX_C17",
+      "title": "方案期内单量：段内 20 单，周期共 300 单",
+      "preset_id": "C17",
+      "segment": { "start": "2026-09-15", "end": "2026-09-15" },
+      "orders": {
+        "by_date": [
+          { "biz_date": "2026-09-15", "completed": 20 },
+          { "biz_date": "2026-09-01", "completed": 280 }
+        ]
+      },
+      "expect": {
+        "per_order_total": "0.00",
+        "daily_total": "0.00",
+        "period_total": "100.00",
+        "gross": "100.00",
+        "net": "100.00"
+      }
+    },
+    {
+      "id": "FIX_C17_PERIOD_FIELD",
+      "title": "同一批订单改用周期有效单量",
+      "preset_id": "C17",
+      "ladder_field": "周期有效单量",
+      "segment": { "start": "2026-09-15", "end": "2026-09-15" },
+      "orders": {
+        "by_date": [
+          { "biz_date": "2026-09-15", "completed": 20 },
+          { "biz_date": "2026-09-01", "completed": 280 }
+        ]
+      },
+      "expect": {
+        "per_order_total": "0.00",
+        "daily_total": "0.00",
+        "period_total": "1650.00",
+        "gross": "1650.00",
+        "net": "1650.00"
+      }
+    },
+    {
+      "id": "FIX_C17_FULL",
+      "title": "方案期内单量覆盖全部 420 单",
+      "preset_id": "C17",
+      "orders": { "completed": 420 },
+      "expect": {
+        "per_order_total": "0.00",
+        "daily_total": "0.00",
+        "period_total": "2310.00",
+        "gross": "2310.00",
+        "net": "2310.00"
+      }
+    },
+    {
+      "id": "FIX_C18",
+      "title": "月中换方案：底薪 A + 阶梯 B",
+      "segments": [
+        { "preset_id": "C02", "start": "2026-09-01", "end": "2026-09-14", "version_id": 12 },
+        { "preset_id": "C17", "start": "2026-09-15", "end": "2026-09-30", "version_id": 15 }
+      ],
+      "orders": {
+        "parts": [
+          {
+            "start": "2026-09-01",
+            "end": "2026-09-14",
+            "completed": 280,
+            "night": 18,
+            "cancelled": 12,
+            "skip": ["2026-09-03"]
+          },
+          {
+            "start": "2026-09-15",
+            "end": "2026-09-30",
+            "completed": 420,
+            "cancelled": 23,
+            "skip": ["2026-09-17"]
+          }
+        ]
+      },
+      "adjustments": [
+        {
+          "biz_date": "2026-09-01",
+          "amount": "200.00",
+          "signed_amount": "200.00",
+          "include_in_gross": true,
+          "direction": "bonus"
+        },
+        {
+          "biz_date": "2026-09-08",
+          "amount": "50.00",
+          "signed_amount": "-50.00",
+          "include_in_gross": true,
+          "direction": "penalty"
+        },
+        {
+          "biz_date": "2026-09-20",
+          "amount": "80.00",
+          "signed_amount": "80.00",
+          "include_in_gross": true,
+          "direction": "bonus"
+        },
+        {
+          "biz_date": "2026-09-30",
+          "amount": "120.00",
+          "signed_amount": "-120.00",
+          "include_in_gross": false,
+          "direction": "penalty"
+        }
+      ],
+      "advance": { "amount": "800.00", "paid_date": "2026-09-07" },
+      "expect": {
+        "order_count": 735,
+        "valid_order_count": 700,
+        "per_order_total": "1156.00",
+        "daily_total": "0.00",
+        "period_total": "3243.33",
+        "bonus_total": "280.00",
+        "penalty_total": "-50.00",
+        "gross": "4629.33",
+        "deduction_total": "120.00",
+        "advance_deduction": "800.00",
+        "net": "3709.33"
+      }
+    }
+  ]
+}
