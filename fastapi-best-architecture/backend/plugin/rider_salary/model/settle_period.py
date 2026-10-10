@@ -24,7 +24,7 @@ class RiderSalarySettlePeriod(Base):
         ),
         sa.Index('ix_rs_settle_period_site_dates', 'site_id', 'start_date', 'end_date'),
         # 同一范围（同站点、同 rider_id）的未删除闭区间不得相交。
-        # 不同骑手互不影响；站点级与骑手级可以并存，部分覆盖由生成周期时校验。
+        # 不同骑手互不影响。站点级与骑手级的日期重叠由生成周期时拒绝，离职结算整段覆盖除外。
         # 等值比较依赖 btree_gist，建表前由 before_create 创建扩展；已有库走 sql/patch/006。
         ExcludeConstraint(
             (column('site_id'), '='),

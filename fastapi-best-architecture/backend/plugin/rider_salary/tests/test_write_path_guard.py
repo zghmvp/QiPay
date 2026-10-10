@@ -22,9 +22,7 @@
 - 会话变量不叫 ``db`` / ``session``。
 - 解包赋值（``a, b = ...``）、把已加载实例当参数传进另一个函数再改属性（参数没标模型注解）。
 - 注解成 ``list[Any]`` 的容器。``run_calc_pipeline`` 在带符号金额为 0 时会给元素赋值，
-  扫描器看不到元素类型。``_backfill_adjustments`` 的参数标成
-  ``list[RiderSalaryAdjustment]``，所以 ``period_id`` 赋值能被认出来，并在白名单里豁免。
-  ``_load_calc_input`` 只在内存里推导空的带符号金额，不再回写列。
+  扫描器看不到元素类型。算薪不再回写 ``rs_adjustment``，带符号金额只在内存里推导。
 - 只构造模型、由调用方 ``add`` 的工厂（如 ``_build_orders``）本身不算写入点。
 - crud 层是持久化原语，三件套记在 service 调用方，不记在 DAO 方法上。
 """
@@ -170,17 +168,6 @@ WAIVERS = (
         ),
     ),
     Waiver(
-        path='service/calc_service.py',
-        qualname='_backfill_adjustments',
-        skip=frozenset({'lock', 'stale', 'audit'}),
-        reason=(
-            '算薪落库时回填 rs_adjustment.period_id，标明这条奖惩被哪个周期归集。'
-            '纲要规定算薪时回填；锁账和反冲按业务日期改 is_locked，列表也不按这个字段过滤。'
-            '写入发生在算薪锁内、周期仍可出单、本次正在为它出薪资单，不是改奖惩金额，'
-            '所以不再做写前锁账校验，也不 mark_stale。审计记在重算薪资单上。'
-        ),
-    ),
-    Waiver(
         path='service/period_service.py',
         qualname='PeriodService.set_locked_flags',
         skip=frozenset({'lock', 'stale', 'audit'}),
@@ -231,7 +218,6 @@ EXPECTED_SITES = (
     ('service/period_service.py', 'PeriodService.set_locked_flags', 'sql_dml', 'rs_order'),
     ('service/period_service.py', 'PeriodService.set_locked_flags', 'sql_dml', 'rs_adjustment'),
     ('service/rollback_service.py', 'RollbackService.rollback', 'attr_flush', 'rs_rider_plan_binding'),
-    ('service/calc_service.py', '_backfill_adjustments', 'attr_flush', 'rs_adjustment'),
 )
 
 SQL_PROBE = """\

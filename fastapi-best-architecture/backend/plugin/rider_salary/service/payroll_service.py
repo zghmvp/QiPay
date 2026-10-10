@@ -355,12 +355,12 @@ class PayrollService:
             .execution_options(synchronize_session=False)
         )
         rowcount = getattr(claimed, 'rowcount', None)
-        if rowcount is None:
-            payroll.reversed = True
-        elif int(rowcount or 0) != 1:
+        if rowcount is None or int(rowcount or 0) != 1:
             raise errors.RequestError(msg='该薪资单已被反冲')
-        else:
+        if hasattr(payroll, '_sa_instance_state'):
             set_committed_value(payroll, 'reversed', True)
+        else:
+            payroll.reversed = True
 
         details = await payroll_detail_dao.list_by_payroll(db, payroll.id)
         reversal = RiderSalaryPayroll(

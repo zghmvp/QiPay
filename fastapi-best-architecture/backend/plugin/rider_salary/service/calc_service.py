@@ -21,6 +21,7 @@ from backend.plugin.rider_salary.crud.payroll import payroll_dao
 from backend.plugin.rider_salary.crud.payroll_daily import payroll_daily_dao
 from backend.plugin.rider_salary.crud.payroll_detail import payroll_detail_dao
 from backend.plugin.rider_salary.engine.context import (
+    batch_overlap_dates,
     build_day_context,
     build_order_context,
     build_period_context,
@@ -39,7 +40,6 @@ from backend.plugin.rider_salary.engine.segments import (
 )
 from backend.plugin.rider_salary.enums import (
     CalcStage,
-    DayStatus,
     DetailSource,
     OrderStatus,
     PayrollKind,
@@ -66,6 +66,7 @@ from backend.plugin.rider_salary.service.payroll_service import (
     payroll_service,
 )
 from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.day_status import resolve_day_status
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
 
@@ -766,14 +767,12 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             )
         )
         imported = day in data.covered_dates or day in data.site_order_dates
-        if day in no_plan_days:
-            status = DayStatus.no_plan.value
-        elif completed or day_orders:
-            status = DayStatus.has_data.value
-        elif imported:
-            status = DayStatus.no_orders.value
-        else:
-            status = DayStatus.not_imported.value
+        status = resolve_day_status(
+            has_plan=day in covered and day not in no_plan_days,
+            order_count=len(day_orders),
+            valid_order_count=len(completed),
+            imported=imported,
+        )
         dailies.append(
             CalcDaily(
                 rider_id=rider_id,
@@ -1237,25 +1236,6 @@ async def calculate_rider_period(
             await _finish_held(held_lock)
 
 
-def _batch_overlap_dates(
-    date_from: date | None,
-    date_to: date | None,
-    start: date,
-    end: date,
-) -> set[date]:
-    """批次与闭区间的交集。任一端为空，或与区间不相交，则没有覆盖日。
-
-    :param date_from: 批次覆盖开始；空表示范围不可用
-    :param date_to: 批次覆盖结束；空表示范围不可用
-    :param start: 周期开始
-    :param end: 周期结束
-    :return: 落在周期内的日期
-    """
-    if date_from is None or date_to is None or date_from > end or date_to < start:
-        return set()
-    return set(iter_dates(max(date_from, start), min(date_to, end)))
-
-
 async def load_site_period_coverage(
     db: AsyncSession,
     *,
@@ -1288,7 +1268,7 @@ async def load_site_period_coverage(
     ).all()
     covered: set[date] = set()
     for batch in batches:
-        covered.update(_batch_overlap_dates(batch.date_from, batch.date_to, start, end))
+        covered.update(batch_overlap_dates(batch.date_from, batch.date_to, start, end))
     site_rows = (
         await db.scalars(
             select(RiderSalaryOrder.biz_date)
@@ -1659,21 +1639,6 @@ async def _persist_result(
     return result
 
 
-def _backfill_adjustments(
-    *,
-    period: RiderSalarySettlePeriod,
-    adjustments: list[RiderSalaryAdjustment],
-) -> None:
-    """算薪落库时回填奖惩所属周期。
-
-    只写 ``period_id``，不改金额。发生在算薪锁内、周期仍可出单时。
-    锁账和反冲按业务日期更新 ``is_locked``，不读这个字段。
-    """
-    for adj in adjustments:
-        if getattr(adj, 'id', None):
-            adj.period_id = period.id
-
-
 async def _restore_draft_advances(
     db: AsyncSession,
     *,
@@ -1713,7 +1678,6 @@ async def _calculate_rider_period_inner(
     )
     result = await asyncio.get_running_loop().run_in_executor(None, run_calc_pipeline, data)
     if persist:
-        _backfill_adjustments(period=period, adjustments=data.adjustments)
         result = await _persist_result(db, rider=rider, period=period, result=result, operator=operator)
     return result
 

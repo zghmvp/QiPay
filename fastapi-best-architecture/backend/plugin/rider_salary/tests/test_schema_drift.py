@@ -1,11 +1,15 @@
 """对比插件 ORM metadata 与当前 PostgreSQL，模型有列而库里没有时失败。
 
 只读连接 ``settings.DATABASE_SCHEMA`` 指向的库（本机是 ``fba``；``127.0.0.1:5432``，用户 ``root``）。不建库、不改表。
-``create_all`` 不会给已有表补列，漏写 patch 时由本测试指出表名和列名。
+``create_all`` 不会给已有表补列。CI 里如果先 ``create_all``，连库对比看不出漏写的 patch，
+所以另有一份列清单：模型比清单多出来的列必须出现在 ``sql/patch/`` 里。
 """
+
+import json
 
 from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -159,3 +163,43 @@ def test_fba_has_every_plugin_model_column() -> None:
     assert readonly[0] == 'on'
     missing = find_missing_columns(orm_columns, db_columns)
     assert not missing, format_missing_columns(missing, absent_tables=absent_tables)
+
+
+_PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+_BASELINE_PATH = Path(__file__).resolve().parent / 'schema_column_baseline.json'
+
+
+def patch_sql_text() -> str:
+    """全部增量脚本拼在一起，用来确认新列写进了 patch。"""
+    folder = _PLUGIN_ROOT / 'sql' / 'patch'
+    return '\n'.join(path.read_text(encoding='utf-8') for path in sorted(folder.glob('*.sql')))
+
+
+def columns_added_without_patch(
+    orm_columns: Mapping[str, AbstractSet[str]],
+    baseline: Mapping[str, Sequence[str]],
+    patch_text: str,
+) -> list[tuple[str, str]]:
+    """模型比已登记清单多出来、且 patch 文本里没有的列。"""
+    missing: list[tuple[str, str]] = []
+    for table in sorted(orm_columns):
+        known = set(baseline.get(table, ()))
+        missing.extend((table, column) for column in sorted(orm_columns[table] - known) if column not in patch_text)
+    return missing
+
+
+def test_new_model_column_without_patch_is_reported() -> None:
+    """模型加一列、不写 patch 时，检查结果点名表和列。"""
+    missing = columns_added_without_patch(
+        {'rs_order': {'id', 'extra_col'}},
+        {'rs_order': ['id']},
+        'alter table rs_order add column other_col bigint',
+    )
+    assert missing == [('rs_order', 'extra_col')]
+
+
+def test_current_model_columns_are_baselined_or_in_a_patch() -> None:
+    """当前模型列要么已在清单里，要么写进了 sql/patch。漏写 patch 时本用例失败。"""
+    baseline = json.loads(_BASELINE_PATH.read_text(encoding='utf-8'))
+    missing = columns_added_without_patch(plugin_orm_columns(), baseline, patch_sql_text())
+    assert not missing, format_missing_columns(missing)

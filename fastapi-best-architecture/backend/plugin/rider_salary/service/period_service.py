@@ -174,10 +174,11 @@ def _mutual_overlap_message() -> str:
     return '即将生成的结算周期在同一范围内彼此相交。同一站点的站点级周期不能重叠，同一骑手的骑手级周期也不能重叠'
 
 
-def _partial_cover_message(start: date, end: date) -> str:
+def _cross_scope_overlap_message(start: date, end: date) -> str:
     return (
-        f'骑手级周期部分覆盖了站点级周期（{start}至{end}）。'
-        f'只要和站点级周期相交，该骑手的骑手级周期合起来就必须正好覆盖整个站点级周期'
+        f'与站点级结算周期相交（{start}至{end}）。'
+        f'骑手级周期不能与站点级周期重叠。请先删除开放且没有薪资单的旧周期。'
+        f'周期配置从下一个完整周期起生效'
     )
 
 
@@ -248,13 +249,18 @@ def _assert_planned_same_scope(planned: list[_PeriodSlot]) -> None:
                 raise errors.RequestError(msg=_mutual_overlap_message())
 
 
+_RiderSpan = tuple[date, date, bool]
+
+
 def _collect_ranges(
     existing: list[RiderSalarySettlePeriod],
     planned: list[_PeriodSlot],
-) -> tuple[list[_SiteSpan], dict[int, list[tuple[date, date]]]]:
-    """已有周期加上本次新区间。完全相同的已有周期不重复计入。"""
+    *,
+    planned_leave: bool = False,
+) -> tuple[list[_SiteSpan], dict[int, list[_RiderSpan]]]:
+    """已有周期加上本次新区间。完全相同的已有周期不重复计入。第三项表示离职结算。"""
     site_spans: list[_SiteSpan] = []
-    rider_ranges: dict[int, list[tuple[date, date]]] = {}
+    rider_ranges: dict[int, list[_RiderSpan]] = {}
     seen: set[_PeriodSlot] = set()
     for period in existing:
         slot = (int(period.rider_id), period.start_date, period.end_date)
@@ -262,7 +268,11 @@ def _collect_ranges(
         if slot[0] == SITE_LEVEL_RIDER_ID:
             site_spans.append((period.start_date, period.end_date, period))
         else:
-            rider_ranges.setdefault(slot[0], []).append((period.start_date, period.end_date))
+            rider_ranges.setdefault(slot[0], []).append((
+                period.start_date,
+                period.end_date,
+                _is_leave_settlement(period),
+            ))
     for rider_id, start, end in planned:
         slot = (int(rider_id), start, end)
         if slot in seen:
@@ -271,25 +281,32 @@ def _collect_ranges(
         if slot[0] == SITE_LEVEL_RIDER_ID:
             site_spans.append((start, end, None))
         else:
-            rider_ranges.setdefault(slot[0], []).append((start, end))
+            rider_ranges.setdefault(slot[0], []).append((start, end, planned_leave))
     return site_spans, rider_ranges
 
 
-def _assert_cross_scope_cover(
+async def _reject_cross_scope_overlap(
+    db: AsyncSession,
+    *,
     site_spans: list[_SiteSpan],
-    rider_ranges: dict[int, list[tuple[date, date]]],
+    rider_ranges: dict[int, list[_RiderSpan]],
 ) -> None:
-    """骑手级只要和某个站点级相交，就必须正好盖住该站点级的每一天。"""
-    for start, end, _period in site_spans:
-        for ranges in rider_ranges.values():
-            hits = ranges_overlap_any(ranges, start, end)
-            if hits and not span_is_covered(start, end, ranges):
-                raise errors.RequestError(msg=_partial_cover_message(start, end))
-
-
-def ranges_overlap_any(ranges: list[tuple[date, date]], start: date, end: date) -> bool:
-    """任一区间与目标闭区间相交。"""
-    return any(ranges_overlap(range_start, range_end, start, end) for range_start, range_end in ranges)
+    """骑手级与站点级相交即拒绝。离职结算整段盖住站点级周期时除外。"""
+    persisted = [period for _start, _end, period in site_spans if period is not None]
+    payrolls = await _site_payroll_riders(db, [int(period.id) for period in persisted])
+    for start, end, period in site_spans:
+        for rider_id, ranges in rider_ranges.items():
+            overlapping = [item for item in ranges if ranges_overlap(item[0], item[1], start, end)]
+            if not overlapping:
+                continue
+            if period is not None and is_status_locked(period.status):
+                raise errors.RequestError(msg=_next_cycle_message(start, end, '已锁账'))
+            if period is not None and (int(period.id), rider_id) in payrolls:
+                raise errors.RequestError(msg=_next_cycle_message(start, end, '已有该骑手的薪资单'))
+            leave_ranges = [(item[0], item[1]) for item in ranges if item[2]]
+            if span_is_covered(start, end, leave_ranges):
+                continue
+            raise errors.RequestError(msg=_cross_scope_overlap_message(start, end))
 
 
 def expand_leave_settlement_span(
@@ -365,15 +382,6 @@ def leave_settlement_result(
     )
 
 
-def _new_rider_slots(existing: list[RiderSalarySettlePeriod], planned: list[_PeriodSlot]) -> list[_PeriodSlot]:
-    existing_keys = {(int(period.rider_id), period.start_date, period.end_date) for period in existing}
-    return [
-        (int(rider_id), start, end)
-        for rider_id, start, end in planned
-        if int(rider_id) != SITE_LEVEL_RIDER_ID and (int(rider_id), start, end) not in existing_keys
-    ]
-
-
 async def _site_payroll_riders(db: AsyncSession, period_ids: list[int]) -> set[tuple[int, int]]:
     if not period_ids:
         return set()
@@ -385,27 +393,11 @@ async def _site_payroll_riders(db: AsyncSession, period_ids: list[int]) -> set[t
     return {(int(period_id), int(rider_id)) for period_id, rider_id in rows.all()}
 
 
-async def _assert_next_full_cycle(
-    db: AsyncSession,
-    *,
-    new_slots: list[_PeriodSlot],
-    site_spans: list[_SiteSpan],
-) -> None:
-    """已锁账或已有该骑手薪资单的站点级周期，不能再被新的骑手级周期盖住。"""
-    persisted = [period for _start, _end, period in site_spans if period is not None]
-    if not new_slots or not persisted:
-        return
-    payrolls = await _site_payroll_riders(db, [int(period.id) for period in persisted])
-    for rider_id, start, end in new_slots:
-        for period in persisted:
-            if not ranges_overlap(start, end, period.start_date, period.end_date):
-                continue
-            if is_status_locked(period.status):
-                raise errors.RequestError(msg=_next_cycle_message(period.start_date, period.end_date, '已锁账'))
-            if (int(period.id), rider_id) in payrolls:
-                raise errors.RequestError(
-                    msg=_next_cycle_message(period.start_date, period.end_date, '已有该骑手的薪资单')
-                )
+def _is_leave_settlement(period: RiderSalarySettlePeriod | None) -> bool:
+    """离职结算周期允许整段盖住站点级周期，避免和在职同事的站点周期抢同一段日期。"""
+    if period is None:
+        return False
+    return str(period.remark or '').startswith('离职结算')
 
 
 async def assert_period_plan(
@@ -413,18 +405,20 @@ async def assert_period_plan(
     *,
     site_id: int,
     planned: list[_PeriodSlot],
+    allow_leave_cover: bool = False,
 ) -> None:
     """
     校验即将生成的周期
 
     同一站点的站点级之间、同一骑手的骑手级之间不得相交。
-    骑手级与站点级相交时必须正好盖住整个站点级周期。
-    被盖住的站点级周期若已锁账，或该骑手已有未删除薪资单，则拒绝，配置从下一个完整周期起生效。
+    按 Q-08 方案 A，骑手级与站点级只要相交就拒绝，周期配置从下一个完整周期起生效。
+    离职结算是 Q-05 要求的独立周期：整段盖住站点级周期时放行，站点级算薪会跳过该骑手。
     完全相同的已有周期可以重复生成。
 
     :param db: 数据库会话
     :param site_id: 站点 ID
     :param planned: (骑手 ID, 开始日期, 结束日期)，0 表示站点级
+    :param allow_leave_cover: 本次新增的骑手级区间是离职结算
     :return:
     """
     _assert_planned_same_scope(planned)
@@ -439,9 +433,54 @@ async def assert_period_plan(
         )
         if conflict is not None:
             raise errors.RequestError(msg=period_overlap_message(conflict))
-    site_spans, rider_ranges = _collect_ranges(existing, planned)
-    _assert_cross_scope_cover(site_spans, rider_ranges)
-    await _assert_next_full_cycle(db, new_slots=_new_rider_slots(existing, planned), site_spans=site_spans)
+    site_spans, rider_ranges = _collect_ranges(existing, planned, planned_leave=allow_leave_cover)
+    await _reject_cross_scope_overlap(db, site_spans=site_spans, rider_ranges=rider_ranges)
+
+
+def _without_rider_copies_of_site_ranges(
+    planned: list[tuple[int, str, date, date]],
+) -> list[tuple[int, str, date, date]]:
+    """与站点级起止完全相同的骑手级区间不另建周期，避免同一日期两套薪资单。"""
+    site_ranges = {(start, end) for rider_id, _cycle, start, end in planned if int(rider_id) == SITE_LEVEL_RIDER_ID}
+    return [item for item in planned if int(item[0]) == SITE_LEVEL_RIDER_ID or (item[2], item[3]) not in site_ranges]
+
+
+async def assert_cycle_override_change(
+    db: AsyncSession,
+    *,
+    site_id: int,
+    rider_id: int,
+    cycle_type: str,
+    cycle_config: dict | None,
+) -> None:
+    """修改骑手结算周期覆盖时，不能和已有站点级周期相交。
+
+    起止与站点级完全相同的区间不会另建骑手级周期，因此不算冲突。
+    已锁账或已有薪资单时，提示从下一个完整周期起生效。
+
+    :param db: 数据库会话
+    :param site_id: 站点 ID
+    :param rider_id: 骑手 ID
+    :param cycle_type: 新的周期类型
+    :param cycle_config: 新的周期配置
+    :return:
+    """
+    existing = await _periods_at_site(db, site_id)
+    site_periods = [period for period in existing if int(period.rider_id) == SITE_LEVEL_RIDER_ID]
+    if not site_periods:
+        return
+    site_ranges = {(period.start_date, period.end_date) for period in site_periods}
+    months = {(period.start_date.year, period.start_date.month) for period in site_periods}
+    months.update((period.end_date.year, period.end_date.month) for period in site_periods)
+    planned: list[_PeriodSlot] = []
+    for year, month in months:
+        for start, end in covering_period_ranges(cycle_type, cycle_config, year, month):
+            if (start, end) in site_ranges:
+                continue
+            if any(ranges_overlap(start, end, period.start_date, period.end_date) for period in site_periods):
+                planned.append((rider_id, start, end))
+    if planned:
+        await assert_period_plan(db, site_id=site_id, planned=planned)
 
 
 def parse_year_month(month: str) -> tuple[int, int]:
@@ -1419,6 +1458,7 @@ class PeriodService:
                 month,
             ):
                 planned.append((rider.id, rider_cycle, start, end))
+        planned = _without_rider_copies_of_site_ranges(planned)
         await assert_period_plan(
             db,
             site_id=site.id,
@@ -1515,7 +1555,12 @@ class PeriodService:
         if covering is not None:
             return leave_settlement_result(covering, rider.leave_date, created=False)
         cycle_type = _cycle_value(site.settle_cycle, CycleType.month.value)
-        await assert_period_plan(db, site_id=site.id, planned=[(rider.id, start, end)])
+        await assert_period_plan(
+            db,
+            site_id=site.id,
+            planned=[(rider.id, start, end)],
+            allow_leave_cover=True,
+        )
         existing_period = await settle_period_dao.get_by_unique(
             db, site_id=site.id, rider_id=rider.id, start_date=start
         )

@@ -373,7 +373,7 @@ class _ReversalDb:
         self.added.append(row)
 
     async def execute(self, _stmt: object) -> SimpleNamespace:
-        return SimpleNamespace(rowcount=None)
+        return SimpleNamespace(rowcount=1)
 
     async def flush(self) -> None:
         return None

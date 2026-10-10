@@ -7,7 +7,7 @@ from fastapi import Request
 from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.plugin.rider_salary.engine.context import iter_dates
+from backend.plugin.rider_salary.engine.context import batch_overlap_dates, iter_dates
 from backend.plugin.rider_salary.enums import (
     AdvanceStatus,
     DayStatus,
@@ -686,9 +686,7 @@ async def _load_import_coverage(
 def _covered_dates(batches: list[Any], start: date, gap_end: date) -> set[date]:
     covered: set[date] = set()
     for batch in batches:
-        if batch.date_from is None or batch.date_to is None:
-            continue
-        covered.update(iter_dates(max(batch.date_from, start), min(batch.date_to, gap_end)))
+        covered.update(batch_overlap_dates(batch.date_from, batch.date_to, start, gap_end))
     return covered
 
 

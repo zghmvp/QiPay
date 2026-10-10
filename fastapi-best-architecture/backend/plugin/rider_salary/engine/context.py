@@ -13,6 +13,18 @@ from backend.plugin.rider_salary.utils.money import q2
 WEEKDAY_MONDAY_ONE = 1
 
 
+def batch_overlap_dates(
+    date_from: date | None,
+    date_to: date | None,
+    start: date,
+    end: date,
+) -> set[date]:
+    """批次与闭区间的交集。任一端为空，或与区间不相交，则没有覆盖日。"""
+    if date_from is None or date_to is None or date_from > end or date_to < start:
+        return set()
+    return set(iter_dates(max(date_from, start), min(date_to, end)))
+
+
 def iter_dates(start: date, end: date) -> list[date]:
     """闭区间日期序列"""
     if end < start:

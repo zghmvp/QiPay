@@ -103,11 +103,9 @@ class AdjustmentService:
 
     @staticmethod
     def _employ_type_on(histories: list, biz_date: date, fallback: str) -> str:
-        for item in histories:
-            end = item.end_date
-            if item.start_date <= biz_date and (end is None or end >= biz_date):
-                return item.employ_type
-        return fallback
+        from backend.plugin.rider_salary.engine.segments import employ_type_on
+
+        return employ_type_on(histories, fallback, biz_date)
 
     @staticmethod
     def _validate_amount(subject: RiderSalarySubject, amount: Decimal) -> None:

@@ -1,4 +1,4 @@
-"""结算周期：同范围不相交，跨范围必须整段覆盖，已有薪资单不能再被骑手级盖住。"""
+"""结算周期：同范围不相交；骑手级不能与站点级重叠。离职结算整段覆盖另见离职用例。"""
 
 import uuid
 
@@ -43,7 +43,7 @@ def test_two_riders_can_share_the_same_half_month(
     client: ApiClient,
     admin_token: dict[str, str],
 ) -> None:
-    """两个骑手同一组半月结日期都能生成，彼此不冲突。"""
+    """两个骑手的覆盖与站点周期起止相同时，只生成站点级周期，不另建骑手级。"""
     site = create_site(client, admin_token, name='双骑手半月站点', settle_cycle='half_month')
     first = create_rider(client, admin_token, site_id=site['id'], name='半月甲', hire_date='2026-10-01')
     second = create_rider(client, admin_token, site_id=site['id'], name='半月乙', hire_date='2026-10-01')
@@ -53,35 +53,40 @@ def test_two_riders_can_share_the_same_half_month(
     created = expect_ok(_generate(client, admin_token, site['id'], '2026-10'))
     halves = [('2026-10-01', '2026-10-15'), ('2026-10-16', '2026-10-31')]
     assert _ranges(created['items'], 0) == halves
-    assert _ranges(created['items'], first['id']) == halves
-    assert _ranges(created['items'], second['id']) == halves
-    assert created['created_count'] == 6
+    assert _ranges(created['items'], first['id']) == []
+    assert _ranges(created['items'], second['id']) == []
+    assert created['created_count'] == 2
 
 
-def test_rider_halves_can_cover_site_month(client: ApiClient, admin_token: dict[str, str]) -> None:
-    """站点月结存在时，骑手两段半月结合起来正好盖住整月，可以生成。"""
-    site = create_site(client, admin_token, name='月结可被半月盖住', settle_cycle='month')
-    rider = create_rider(client, admin_token, site_id=site['id'], name='整月覆盖骑手', hire_date='2026-10-01')
+def test_month_period_rejects_rider_half_month(client: ApiClient, admin_token: dict[str, str]) -> None:
+    """月结周期与骑手半月结相交时生成返回 400，并且不写入骑手级周期。"""
+    site = create_site(client, admin_token, name='月结拒绝半月', settle_cycle='month')
+    rider = create_rider(client, admin_token, site_id=site['id'], name='半月覆盖骑手', hire_date='2026-10-01')
     _set_override(client, admin_token, rider['id'], 'half_month')
 
-    created = expect_ok(_generate(client, admin_token, site['id'], '2026-10'))
-    assert _ranges(created['items'], 0) == [('2026-10-01', '2026-10-31')]
-    assert _ranges(created['items'], rider['id']) == [
-        ('2026-10-01', '2026-10-15'),
-        ('2026-10-16', '2026-10-31'),
-    ]
-    assert created['created_count'] == 3
+    message = expect_error(_generate(client, admin_token, site['id'], '2026-10'), 400)
+    assert '相交' in message
+    assert '下一个完整周期' in message
+
+    listed = expect_ok(
+        client.get(
+            '/rider-salary/periods',
+            headers=admin_token,
+            params={'site_id': site['id'], 'month': '2026-10', 'page': 1, 'size': 20},
+        )
+    )
+    assert _ranges(listed['items'], 0) == []
+    assert _ranges(listed['items'], rider['id']) == []
 
 
-def test_rider_month_can_cover_site_halves(client: ApiClient, admin_token: dict[str, str]) -> None:
-    """站点半月结、骑手月结 10/1–31 可以生成。"""
-    site = create_site(client, admin_token, name='半月可被月结盖住', settle_cycle='half_month')
+def test_site_halves_reject_rider_month(client: ApiClient, admin_token: dict[str, str]) -> None:
+    """站点半月结与骑手月结相交时生成返回 400。"""
+    site = create_site(client, admin_token, name='半月拒绝月结', settle_cycle='half_month')
     rider = create_rider(client, admin_token, site_id=site['id'], name='月结覆盖骑手', hire_date='2026-10-01')
     _set_override(client, admin_token, rider['id'], 'month')
 
-    created = expect_ok(_generate(client, admin_token, site['id'], '2026-10'))
-    assert _ranges(created['items'], 0) == [('2026-10-01', '2026-10-15'), ('2026-10-16', '2026-10-31')]
-    assert _ranges(created['items'], rider['id']) == [('2026-10-01', '2026-10-31')]
+    message = expect_error(_generate(client, admin_token, site['id'], '2026-10'), 400)
+    assert '相交' in message
 
 
 def test_partial_cover_rejected(client: ApiClient, admin_token: dict[str, str]) -> None:
@@ -100,11 +105,16 @@ def test_partial_cover_rejected(client: ApiClient, admin_token: dict[str, str]) 
         ('2026-10-20', '2026-11-19'),
     ]
     rider = create_rider(client, admin_token, site_id=site['id'], name='部分覆盖骑手', hire_date='2026-09-01')
-    _set_override(client, admin_token, rider['id'], 'half_month')
-
-    message = expect_error(_generate(client, admin_token, site['id'], '2026-10'), 400)
-    assert '部分覆盖' in message
-    assert '正好覆盖' in message
+    message = expect_error(
+        client.put(
+            f'/rider-salary/riders/{rider["id"]}',
+            headers=admin_token,
+            json={'settle_cycle_override': 'half_month'},
+        ),
+        400,
+    )
+    assert '相交' in message
+    assert '不能与站点级周期重叠' in message
 
     listed = expect_ok(
         client.get(
@@ -118,7 +128,7 @@ def test_partial_cover_rejected(client: ApiClient, admin_token: dict[str, str]) 
 
 
 def test_payroll_blocks_later_rider_cover(client: ApiClient, admin_token: dict[str, str]) -> None:
-    """站点级周期里已有该骑手薪资单时，不能再生成相交的骑手级周期。保存覆盖本身不报错。"""
+    """站点级周期里已有该骑手薪资单时，保存相交的周期覆盖即返回 400。"""
     ready = provision_c01_month(
         client,
         admin_token,
@@ -132,11 +142,19 @@ def test_payroll_blocks_later_rider_cover(client: ApiClient, admin_token: dict[s
     rider_id = ready['rider']['id']
     site_id = ready['site']['id']
     calculate_period(client, admin_token, period_id)
-    _set_override(client, admin_token, rider_id, 'half_month')
-
-    message = expect_error(_generate(client, admin_token, site_id, '2026-04'), 400)
+    message = expect_error(
+        client.put(
+            f'/rider-salary/riders/{rider_id}',
+            headers=admin_token,
+            json={'settle_cycle_override': 'half_month'},
+        ),
+        400,
+    )
     assert '薪资单' in message
     assert '下一个完整周期' in message
+
+    again = expect_ok(_generate(client, admin_token, site_id, '2026-04'))
+    assert again['created_count'] == 0
 
     listed = expect_ok(
         client.get(

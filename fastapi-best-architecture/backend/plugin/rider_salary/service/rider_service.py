@@ -964,6 +964,22 @@ class RiderService:
             obj.hire_date,
             extra_site_id=new_site_id if site_changed else None,
         )
+        if (
+            'settle_cycle_override' in obj.model_fields_set
+            and obj.settle_cycle_override
+            and obj.settle_cycle_override != rider.settle_cycle_override
+        ):
+            from backend.plugin.rider_salary.service.period_service import assert_cycle_override_change
+
+            await assert_cycle_override_change(
+                db,
+                site_id=int(rider.site_id),
+                rider_id=int(rider.id),
+                cycle_type=obj.settle_cycle_override,
+                cycle_config=obj.cycle_config_override
+                if 'cycle_config_override' in obj.model_fields_set
+                else rider.cycle_config_override,
+            )
         before = snapshot(rider, _RIDER_FIELDS)
         count = await rider_dao.update(db, pk, obj)
         updated = await rider_dao.get(db, pk)

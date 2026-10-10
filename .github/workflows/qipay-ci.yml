@@ -169,6 +169,11 @@ jobs:
             echo "执行 ${script}"
             PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d fba_ci -v ON_ERROR_STOP=1 -f "${script}"
           done
+          for script in backend/plugin/rider_salary/sql/patch/*.sql
+          do
+            echo "执行 ${script}"
+            PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d fba_ci -v ON_ERROR_STOP=1 -f "${script}"
+          done
 
       - name: ruff check
         run: uv run ruff check --no-fix backend/plugin/rider_salary

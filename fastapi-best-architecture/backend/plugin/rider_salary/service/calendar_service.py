@@ -21,7 +21,6 @@ from backend.plugin.rider_salary.crud.site import site_dao
 from backend.plugin.rider_salary.engine.context import iter_dates
 from backend.plugin.rider_salary.enums import (
     CalcStage,
-    DayStatus,
     DetailSource,
     OrderStatus,
     PeriodStatus,
@@ -59,6 +58,7 @@ from backend.plugin.rider_salary.service.payroll_view import (
     pick_effective_payroll,
 )
 from backend.plugin.rider_salary.service.rider_service import Segment, resolve_effective_plans
+from backend.plugin.rider_salary.utils.day_status import resolve_day_status
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import assert_export_row_limit, stream_rows
 from backend.plugin.rider_salary.utils.money import q2
@@ -97,17 +97,6 @@ def period_range_text(start: date, end: date) -> str:
     if start.year == end.year:
         return f'{start:%m-%d}~{end:%m-%d}'
     return f'{start.isoformat()}~{end.isoformat()}'
-
-
-def resolve_day_status(*, has_plan: bool, order_count: int, valid_order_count: int, imported: bool) -> str:
-    """日状态四态：无方案优先于有数据"""
-    if not has_plan and valid_order_count > 0:
-        return DayStatus.no_plan.value
-    if order_count > 0:
-        return DayStatus.has_data.value
-    if imported:
-        return DayStatus.no_orders.value
-    return DayStatus.not_imported.value
 
 
 def summarize_subjects(names: Sequence[str], *, limit: int = 3) -> list[str]:

@@ -185,6 +185,35 @@ async def run_period_calc_in_session(
     return await enqueue_period_calc(db, period=period, rider_ids=rider_ids, operator=operator)
 
 
+async def resume_interrupted_calc_jobs() -> list[int]:
+    """进程重新启动后，把仍处于排队或计算中的作业重新执行。
+
+    计算中的作业改回排队再领取，避免停在 running。已结束的作业不改，重启后仍可查询。
+
+    :return: 重新执行的作业 ID
+    """
+    async with async_db_session.begin() as db:
+        rows = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryCalcJob).where(
+                        RiderSalaryCalcJob.status.in_(_ACTIVE),
+                        RiderSalaryCalcJob.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        job_ids = [int(job.id) for job in rows]
+        for job in rows:
+            if job.status == CalcJobStatus.running.value:
+                job.status = CalcJobStatus.queued.value
+    for job_id in job_ids:
+        task = asyncio.get_running_loop().create_task(run_calc_job(job_id))
+        _PENDING.add(task)
+        task.add_done_callback(_PENDING.discard)
+    return job_ids
+
+
 async def run_calc_job(job_id: int) -> None:
     """独立事务执行已提交的作业。每 20 名骑手提交一次。
 
