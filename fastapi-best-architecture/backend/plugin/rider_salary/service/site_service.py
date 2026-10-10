@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.admin.model import User
@@ -19,6 +20,7 @@ from backend.plugin.rider_salary.schema.site import (
     UpdateSiteParam,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
+from backend.plugin.rider_salary.utils.db_errors import SITE_OWNER_EXISTS_MSG, client_error_from_integrity
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.periods import compute_period_range
 from backend.utils.timezone import timezone
@@ -123,7 +125,10 @@ class SiteService:
         if await site_dao.get_by_code(db, obj.code):
             raise errors.ConflictError(msg='站点编码已存在')
         SiteService._validate_cycle(obj.settle_cycle, obj.cycle_config)
-        site = await site_dao.create(db, obj)
+        try:
+            site = await site_dao.create(db, obj)
+        except IntegrityError as exc:
+            raise client_error_from_integrity(exc) from exc
         await audit_service.record(
             db,
             request,
@@ -173,7 +178,11 @@ class SiteService:
             if locked is not None:
                 extra_desc = '仅影响未来周期'
         before = snapshot(site, _SITE_FIELDS)
-        count = await site_dao.update(db, pk, obj)
+        try:
+            count = await site_dao.update(db, pk, obj)
+            await db.flush()
+        except IntegrityError as exc:
+            raise client_error_from_integrity(exc) from exc
         updated = await site_dao.get(db, pk)
         await audit_service.record(
             db,
@@ -280,7 +289,7 @@ class SiteService:
         assert_site_visible(visible, site.id)
         owner_count = sum(1 for item in managers if item.role == ManagerRole.owner)
         if owner_count > 1:
-            raise errors.RequestError(msg='每个站点最多一名负责人')
+            raise errors.ConflictError(msg=SITE_OWNER_EXISTS_MSG)
         user_ids = [item.user_id for item in managers]
         if len(user_ids) != len(set(user_ids)):
             raise errors.RequestError(msg='同一用户不能重复配置为站点负责人')
@@ -290,8 +299,11 @@ class SiteService:
                 raise errors.NotFoundError(msg='用户不存在')
         before = [{'user_id': item.user_id, 'role': item.role} for item in await site_manager_dao.get_by_site(db, pk)]
         await site_manager_dao.delete_by_site(db, pk)
-        for item in managers:
-            await site_manager_dao.create(db, pk, item)
+        try:
+            for item in managers:
+                await site_manager_dao.create(db, pk, item)
+        except IntegrityError as exc:
+            raise client_error_from_integrity(exc) from exc
         after = [{'user_id': item.user_id, 'role': item.role} for item in managers]
         await audit_service.record(
             db,

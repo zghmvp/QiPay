@@ -1,8 +1,10 @@
 from decimal import Decimal
 from typing import Any
 
+from backend.common.exception import errors
 from backend.plugin.rider_salary.engine.compiler import FORMULA_TEMPLATES, validate_item
-from backend.plugin.rider_salary.engine.evaluator import evaluate_amount, evaluate_condition
+from backend.plugin.rider_salary.engine.context import trace_variables
+from backend.plugin.rider_salary.engine.evaluator import EvalError, evaluate_amount, evaluate_condition
 from backend.plugin.rider_salary.engine.fields import fields_as_dicts, get_field
 from backend.plugin.rider_salary.engine.functions import functions_as_dicts, to_minutes
 from backend.plugin.rider_salary.engine.operators import operators_as_dicts, operators_for_field
@@ -58,7 +60,7 @@ class EngineService:
 
     @staticmethod
     def evaluate_sample(obj: EngineEvaluateParam) -> EngineEvaluateResult:
-        """给定上下文即时求值"""
+        """给定上下文即时求值。运行期失败返回中文 400，不按 0 元处理。"""
         compiled = validate_item(obj.stage, obj.condition_json, obj.formula_json)
         context = dict(obj.context or {})
         for key, value in list(context.items()):
@@ -71,12 +73,16 @@ class EngineService:
                 amount=0,
                 trace={'错误': compiled.errors, '条件': compiled.condition_expr, '公式': compiled.formula_expr},
             )
-        hit = evaluate_condition(compiled.condition_expr, context)
+        try:
+            hit = evaluate_condition(compiled.condition_expr, context)
+        except EvalError as exc:
+            raise errors.RequestError(msg=_sample_eval_error('条件', exc, obj.formula_json)) from exc
         amount = q2(Decimal(0))
         if hit:
-            amount = evaluate_amount(compiled.formula_expr, context)
-        from backend.plugin.rider_salary.engine.context import trace_variables
-
+            try:
+                amount = evaluate_amount(compiled.formula_expr, context)
+            except EvalError as exc:
+                raise errors.RequestError(msg=_sample_eval_error('公式', exc, obj.formula_json)) from exc
         return EngineEvaluateResult(
             hit=hit,
             amount=float(amount),
@@ -88,6 +94,35 @@ class EngineService:
                 '结果': float(amount),
             },
         )
+
+
+def _formula_item_name(formula_json: dict[str, Any] | None) -> str | None:
+    if not isinstance(formula_json, dict):
+        return None
+    raw = formula_json.get('名称')
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def _zh_eval_reason(exc: EvalError) -> str:
+    """把求值异常收成中文原因。除零等文案本身已是中文。"""
+    text = str(exc).strip() or '未知错误'
+    if ' is not defined' in text:
+        start = text.find("'")
+        end = text.find("'", start + 1)
+        if 0 <= start < end:
+            return f'变量「{text[start + 1 : end]}」未提供'
+        return '引用了未提供的变量'
+    return text
+
+
+def _sample_eval_error(part: str, exc: EvalError, formula_json: dict[str, Any] | None) -> str:
+    reason = _zh_eval_reason(exc)
+    name = _formula_item_name(formula_json)
+    if name:
+        return f'计薪项「{name}」{part}求值失败：{reason}'
+    return f'{part}求值失败：{reason}'
 
 
 engine_service = EngineService()

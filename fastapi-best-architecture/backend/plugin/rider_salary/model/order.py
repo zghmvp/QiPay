@@ -16,6 +16,7 @@ class RiderSalaryOrder(Base):
     __table_args__ = (
         sa.UniqueConstraint('order_no', 'deleted', name='uk_rs_order_order_no_deleted'),
         sa.Index('ix_rs_order_rider_biz_date', 'rider_id', 'biz_date'),
+        sa.Index('ix_rs_order_site_biz_date', 'site_id', 'biz_date'),
         {'comment': '订单明细表'},
     )
 

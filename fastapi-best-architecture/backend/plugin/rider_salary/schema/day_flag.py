@@ -1,8 +1,10 @@
 from datetime import date, datetime
+from typing import Annotated
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from backend.common.schema import SchemaBase
+from backend.plugin.rider_salary.schema.limits import LEN_REMARK, MAX_DAY_FLAGS, zh_list, zh_str
 
 
 class DayFlagItem(SchemaBase):
@@ -12,14 +14,24 @@ class DayFlagItem(SchemaBase):
     bad_weather: bool = Field(False, description='恶劣天气')
     high_temp: bool = Field(False, description='高温')
     promo: bool = Field(False, description='大促')
-    remark: str | None = Field(None, description='备注')
+    remark: Annotated[str | None, zh_str('备注', LEN_REMARK)] = Field(None, max_length=LEN_REMARK, description='备注')
 
 
 class UpsertDayFlagParam(SchemaBase):
     """批量更新日标记参数"""
 
     site_id: int = Field(description='站点 ID')
-    days: list[DayFlagItem] = Field(description='日标记列表')
+    days: Annotated[list[DayFlagItem], zh_list('批量条数', MAX_DAY_FLAGS)] = Field(
+        max_length=MAX_DAY_FLAGS, description='日标记列表'
+    )
+
+    @field_validator('days')
+    @classmethod
+    def limit_days(cls, value: list[DayFlagItem]) -> list[DayFlagItem]:
+        """限制批量条数"""
+        if len(value) > MAX_DAY_FLAGS:
+            raise ValueError(f'批量条数不能超过 {MAX_DAY_FLAGS} 条')
+        return value
 
 
 class GetDayFlagDetail(SchemaBase):

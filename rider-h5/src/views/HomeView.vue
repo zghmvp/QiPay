@@ -117,6 +117,14 @@ onMounted(() => {
         </section>
       </Skeleton>
 
+      <p v-if="auth.profile?.read_only" class="muted grace">
+        已离职，只读查阅至 {{ auth.profile.read_until || '宽限期结束' }}，不能提交预支
+      </p>
+      <button type="button" class="card-block payslip-entry" @click="router.push('/payslips')">
+        <span>往期工资</span>
+        <span class="muted">查看已定稿的工资条</span>
+      </button>
+
       <div class="section-title">
         <span>月历</span>
         <span class="muted" @click="router.push('/plan')">查看方案</span>
@@ -147,6 +155,22 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.grace {
+  margin: 0 2px 8px;
+}
+
+.payslip-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+}
+
 .top {
   background: #15202b;
   color: #f4efe6;

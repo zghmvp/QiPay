@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Cell, CellGroup, Collapse, CollapseItem, Empty, NavBar, Tag } from 'vant'
+import { Button, Cell, CellGroup, Collapse, CollapseItem, Empty, NavBar, Skeleton, Tag } from 'vant'
 import MoneyText from '@/components/MoneyText.vue'
 import { getDayDetail } from '@/api/me'
 import {
@@ -14,28 +14,56 @@ import {
   enumColor,
 } from '@/constants/enums'
 import { toDateTimeString } from '@/utils/date'
+import { dailyItemTitle } from '@/utils/daily-item'
 import type { CalendarDayDetail } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const date = computed(() => String(route.params.date || ''))
 const loading = ref(true)
+const failed = ref(false)
 const detail = ref<CalendarDayDetail | null>(null)
-const active = ref(['orders'])
+const active = ref(['orders', 'daily'])
+let requestSeq = 0
 
-onMounted(async () => {
+async function load() {
+  const seq = ++requestSeq
+  loading.value = true
+  failed.value = false
   try {
-    detail.value = await getDayDetail(date.value)
+    const data = await getDayDetail(date.value)
+    if (seq !== requestSeq) return
+    detail.value = data
+  } catch {
+    if (seq !== requestSeq) return
+    detail.value = null
+    failed.value = true
   } finally {
-    loading.value = false
+    if (seq === requestSeq) loading.value = false
   }
-})
+}
+
+watch(
+  date,
+  () => {
+    void load()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <div>
     <NavBar :title="`${date} 明细`" left-arrow @click-left="router.back()" />
-    <div v-if="detail" class="page-body no-tab">
+    <div v-if="loading" class="page-body no-tab">
+      <Skeleton title :row="6" />
+    </div>
+    <div v-else-if="failed" class="page-body no-tab">
+      <Empty description="明细加载失败，请重试">
+        <Button round type="primary" size="small" @click="load">重试</Button>
+      </Empty>
+    </div>
+    <div v-else-if="detail" class="page-body no-tab">
       <section class="card-block info">
         <p>
           方案
@@ -44,7 +72,6 @@ onMounted(async () => {
           </strong>
           <Tag
             v-if="detail.plan?.short_name"
-            size="small"
             round
             :type="vantTagType(enumColor(PLAN_MODE_TAG_OPTIONS, detail.plan.mode_tag))"
           >
@@ -77,7 +104,7 @@ onMounted(async () => {
             >
               <template #value>
                 <div>
-                  <Tag size="mini" :type="vantTagType(enumColor(ORDER_STATUS_OPTIONS, order.status))">
+                  <Tag :type="vantTagType(enumColor(ORDER_STATUS_OPTIONS, order.status))">
                     {{ enumLabel(ORDER_STATUS_OPTIONS, order.status) }}
                   </Tag>
                   <div><MoneyText :value="order.amount" /></div>
@@ -91,6 +118,20 @@ onMounted(async () => {
                 <p v-if="order.details.length" class="hits">
                   命中科目：{{ order.details.map((item) => item.subject).join('、') || '无' }}
                 </p>
+              </template>
+            </Cell>
+          </CellGroup>
+        </CollapseItem>
+        <CollapseItem title="按日项" name="daily">
+          <Empty v-if="!detail.daily_items.length" description="当日没有按日项" />
+          <CellGroup v-else inset>
+            <Cell
+              v-for="(item, index) in detail.daily_items"
+              :key="`${item.subject}-${index}`"
+              :title="dailyItemTitle(item)"
+            >
+              <template #value>
+                <MoneyText :value="item.amount" />
               </template>
             </Cell>
           </CellGroup>

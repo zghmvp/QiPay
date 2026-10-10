@@ -10,15 +10,18 @@ from backend.plugin.rider_salary.model.rider import RiderSalaryRider as Rider
 from backend.plugin.rider_salary.schema.advance import CreateMeAdvanceParam, GetAdvanceDetail
 from backend.plugin.rider_salary.schema.calendar import GetCalendarDayDetail, GetCalendarMonth
 from backend.plugin.rider_salary.schema.me import (
+    ChangeMePasswordParam,
     GetMeAdjustmentItem,
     GetMeAdvanceLimit,
     GetMePayrollEstimate,
+    GetMePayslipDetail,
+    GetMePayslipItem,
     GetMePlan,
     GetMeProfile,
 )
 from backend.plugin.rider_salary.schema.notice import GetNoticeDetail
 from backend.plugin.rider_salary.service.me_service import me_service
-from backend.plugin.rider_salary.utils.deps import DependsCurrentRider
+from backend.plugin.rider_salary.utils.deps import DependsCurrentRider, DependsWritableRider
 
 router = APIRouter()
 
@@ -78,6 +81,35 @@ async def get_me_payroll_estimate(
 
 
 @router.get(
+    '/payslips',
+    summary='获取本人往期工资条',
+    description='按周期列出已定稿或已发薪的有效薪资单。草稿、作废和已被反冲的单不返回。',
+    dependencies=[DependsJwtAuth],
+)
+async def get_me_payslips(
+    db: CurrentSession,
+    rider: Annotated[Rider, DependsCurrentRider],
+) -> ResponseSchemaModel[list[GetMePayslipItem]]:
+    data = await me_service.payslips(db=db, rider=rider)
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/payslips/{pk}',
+    summary='获取本人工资条明细',
+    description='只返回该骑手当前有效且已定稿或已发薪的工资条，明细不含计算过程。',
+    dependencies=[DependsJwtAuth],
+)
+async def get_me_payslip(
+    db: CurrentSession,
+    rider: Annotated[Rider, DependsCurrentRider],
+    pk: int,
+) -> ResponseSchemaModel[GetMePayslipDetail]:
+    data = await me_service.payslip(db=db, rider=rider, pk=pk)
+    return response_base.success(data=data)
+
+
+@router.get(
     '/adjustments',
     summary='获取本人奖惩',
     dependencies=[DependsJwtAuth],
@@ -120,6 +152,7 @@ async def get_me_notices(
 @router.get(
     '/advance-limit',
     summary='获取预支额度',
+    description='可用额度 = 上限 − 在途 − 已发放未抵扣',
     dependencies=[DependsJwtAuth],
 )
 async def get_me_advance_limit(
@@ -151,7 +184,7 @@ async def get_me_advances(
 async def create_me_advance(
     db: CurrentSessionTransaction,
     request: Request,
-    rider: Annotated[Rider, DependsCurrentRider],
+    rider: Annotated[Rider, DependsWritableRider],
     obj: CreateMeAdvanceParam,
 ) -> ResponseSchemaModel[GetAdvanceDetail]:
     data = await me_service.create_advance(db=db, request=request, rider=rider, obj=obj)
@@ -161,13 +194,29 @@ async def create_me_advance(
 @router.post(
     '/advances/{pk}/cancel',
     summary='撤回预支申请',
+    description='仅待审核的预支可撤回；待发放需由管理员取消',
     dependencies=[DependsJwtAuth],
 )
 async def cancel_me_advance(
     db: CurrentSessionTransaction,
     request: Request,
-    rider: Annotated[Rider, DependsCurrentRider],
+    rider: Annotated[Rider, DependsWritableRider],
     pk: int,
 ) -> ResponseModel:
     await me_service.cancel_advance(db=db, request=request, rider=rider, pk=pk)
+    return response_base.success()
+
+
+@router.put(
+    '/password',
+    summary='修改本人密码',
+    description='须改密时仅此接口可调用。成功后清除必须改密标记，并保持当前登录。',
+    dependencies=[DependsJwtAuth],
+)
+async def update_me_password(
+    db: CurrentSessionTransaction,
+    rider: Annotated[Rider, DependsCurrentRider],
+    obj: ChangeMePasswordParam,
+) -> ResponseModel:
+    await me_service.change_password(db=db, rider=rider, obj=obj)
     return response_base.success()

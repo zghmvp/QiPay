@@ -12,7 +12,10 @@ class RiderSalaryImportBatch(Base):
     """导入批次表"""
 
     __tablename__ = 'rs_import_batch'
-    __table_args__ = {'comment': '导入批次表'}
+    __table_args__ = (
+        sa.Index('ix_rs_import_batch_site_dates', 'site_id', 'date_from', 'date_to'),
+        {'comment': '导入批次表'},
+    )
 
     id: Mapped[id_key] = mapped_column(init=False)
     site_id: Mapped[int] = mapped_column(sa.BigInteger, index=True, comment='站点 ID')

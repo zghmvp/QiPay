@@ -40,7 +40,10 @@ export interface PeriodQuery extends PageParams {
   month?: string;
   rider_id?: number;
   site_id?: number;
+  /** 单个状态，或多个状态用英文逗号分隔 */
   status?: string;
+  /** 为 true 时只返回存在需重算草稿的周期 */
+  stale?: boolean;
 }
 
 export interface GeneratePeriodParam {
@@ -73,11 +76,65 @@ export interface CalculatePeriodParam {
 
 export interface CalculatePeriodResult {
   calculated: number;
+  job_id?: null | number;
   queued: boolean;
+  warnings: string[];
+}
+
+export interface CalcJobFailure {
+  job_no: string;
+  reason: string;
+  rider_id: number;
+}
+
+export interface CalcJobDetail {
+  done_count: number;
+  error_message?: null | string;
+  failed_count: number;
+  failures: CalcJobFailure[];
+  finished_time?: null | string;
+  id: number;
+  period_id: number;
+  site_id: number;
+  started_time?: null | string;
+  status: string;
+  status_label: string;
+  success_count: number;
+  total_count: number;
   warnings: string[];
 }
 
 export interface ReversePeriodResult {
   reversal_count: number;
   reversal_net_total: MoneyValue;
+}
+
+export interface LockCheckRiderItem {
+  job_no: string;
+  rider_id: number;
+  rider_name?: null | string;
+}
+
+export interface LockCheckResult {
+  can_lock: boolean;
+  empty: boolean;
+  message?: null | string;
+  missing_supplement?: LockCheckRiderItem[];
+  needs_recalc: LockCheckRiderItem[];
+  uncalculated: LockCheckRiderItem[];
+}
+
+export interface CarryForwardParam {
+  reason?: string;
+  rider_ids?: number[];
+}
+
+export interface CarryForwardResult {
+  created_count: number;
+  net_total: MoneyValue;
+  rider_ids: number[];
+}
+
+export interface MarkPaidPeriodResult {
+  warning?: null | string;
 }

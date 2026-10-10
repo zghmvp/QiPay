@@ -1,13 +1,18 @@
 import ast
 import json
+import math
 
 from dataclasses import dataclass, field
-from decimal import Decimal
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from backend.plugin.rider_salary.engine.fields import (
     ALL_FIELD_NAMES,
+    PERIOD_STAGE_BANNED_FIELDS,
+    STAGE_PERIOD,
     TYPE_BOOL,
+    TYPE_DATE,
     TYPE_ENUM,
     TYPE_NUMBER,
     TYPE_TIME,
@@ -17,9 +22,9 @@ from backend.plugin.rider_salary.engine.fields import (
 )
 from backend.plugin.rider_salary.engine.functions import WHITELIST_FUNCTION_NAMES, to_minutes
 from backend.plugin.rider_salary.engine.ladder import MODE_FULL, MODE_PROGRESSIVE, PRICING_FIXED, PRICING_UNIT
+from backend.plugin.rider_salary.engine.numbers import parse_decimal
 from backend.plugin.rider_salary.engine.operators import (
     COMPARE_PYTHON,
-    OP_EQ,
     OP_IN,
     OP_IN_RANGE,
     OP_IN_TIME,
@@ -60,8 +65,8 @@ FORMULA_TEMPLATES: list[dict[str, Any]] = [
             '计价': PRICING_UNIT,
             '档位': [
                 {'下限': 0, '上限': 300, '值': 5},
-                {'下限': 300, '上限': 600, '值': 5.5},
-                {'下限': 600, '上限': None, '值': 6},
+                {'下限': 300, '上限': 700, '值': 5.5},
+                {'下限': 700, '上限': None, '值': 6},
             ],
         },
     },
@@ -74,11 +79,106 @@ FORMULA_TEMPLATES: list[dict[str, Any]] = [
     {
         'type': '底薪分摊',
         'name': '底薪分摊',
-        'description': '快捷模板：底薪金额 × 方案生效天数 / 周期天数（前端替换底薪金额常量）',
-        'skeleton': {'类型': FORMULA_EXPR, '表达式': '底薪金额 × 方案生效天数 / 周期天数'},
+        'description': '快捷模板：底薪金额 × 方案生效天数 / 周期天数。保存前须将占位符替换为具体金额',
+        'skeleton': {'类型': FORMULA_EXPR, '表达式': '{底薪金额} * 方案生效天数 / 周期天数'},
+        'placeholders': [
+            {
+                'token': '{底薪金额}',
+                'label': '底薪金额',
+                'kind': 'number',
+                'description': '底薪金额（元），保存前替换为具体数字',
+                'example': 2000,
+            },
+        ],
         'compiled_example': '2000 * 方案生效天数 / 周期天数',
     },
 ]
+
+RATE_MAX_DECIMALS = 4
+_IDENT_EXTRA = frozenset('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_')
+
+
+def _is_ident_char(ch: str) -> bool:
+    if not ch:
+        return False
+    if ch in _IDENT_EXTRA:
+        return True
+    code = ord(ch)
+    return 0x4E00 <= code <= 0x9FFF
+
+
+def _contains_label(text: str, label: str) -> bool:
+    """标签是否作为完整标识符出现（花括号不算标识符的一部分）。"""
+    if not label:
+        return False
+    start = 0
+    while True:
+        index = text.find(label, start)
+        if index < 0:
+            return False
+        before = text[index - 1] if index else ''
+        after_at = index + len(label)
+        after = text[after_at] if after_at < len(text) else ''
+        if not _is_ident_char(before) and not _is_ident_char(after):
+            return True
+        start = index + 1
+
+
+def _placeholder_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    for template in FORMULA_TEMPLATES:
+        raw = template.get('placeholders') or []
+        if isinstance(raw, list):
+            specs.extend(item for item in raw if isinstance(item, dict))
+    return specs
+
+
+def _unreplaced_placeholder_labels(text: str) -> list[str]:
+    """表达式中尚未替换的占位符标签，按模板声明顺序去重。"""
+    labels: list[str] = []
+    for item in _placeholder_specs():
+        token = str(item.get('token') or '')
+        label = str(item.get('label') or token)
+        if not label:
+            continue
+        hit = bool(token) and token in text
+        if not hit:
+            hit = _contains_label(text, label)
+        if hit and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _decimal_text(value: Any) -> str | None:
+    """把单价字面量收成十进制文本；无法表示时返回 None。"""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, Decimal):
+        return format(value, 'f')
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float) and math.isfinite(value):
+        return str(value)
+    return None
+
+
+def _decimal_places(value: Any) -> int | None:
+    """十进制有效小数位数；不是有限数字时返回 None。末尾 0 不计入。"""
+    text = _decimal_text(value)
+    if text is None:
+        return None
+    try:
+        number = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not number.is_finite():
+        return None
+    exponent = number.normalize().as_tuple().exponent
+    if not isinstance(exponent, int) or exponent >= 0:
+        return 0
+    return -exponent
 
 
 @dataclass
@@ -116,6 +216,23 @@ def _literal(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _iso_date_text(value: Any) -> str | None:
+    """把日期字面量规范成 YYYY-MM-DD；无法解析时返回 None。"""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10]).isoformat()
+    except ValueError:
+        return None
+
+
 def _is_group(node: Any) -> bool:
     return isinstance(node, dict) and '逻辑' in node
 
@@ -128,13 +245,20 @@ def _is_empty_condition(node: Any) -> bool:
     return bool(isinstance(node, dict) and not node.get('字段') and not node.get('条件') and not node.get('逻辑'))
 
 
+def _field_stage_error(name: str, stage: str) -> str:
+    """字段在当前阶段不可用时的中文错误。周期阶段点名被禁止的日期和日单量。"""
+    if stage == STAGE_PERIOD and name in PERIOD_STAGE_BANNED_FIELDS:
+        return f'周期阶段不能引用字段「{name}」'
+    return f'字段「{name}」在该阶段不可用'
+
+
 def _check_field(name: str, stage: str | None, errors: list[str]) -> FieldSpec | None:
     spec = get_field(name)
     if spec is None:
         errors.append(f'字段「{name}」未注册')
         return None
     if stage is not None and not field_available(name, stage):
-        errors.append(f'字段「{name}」在该阶段不可用')
+        errors.append(_field_stage_error(name, stage))
         return None
     return spec
 
@@ -176,6 +300,13 @@ def _compile_leaf(node: dict[str, Any], stage: str | None, errors: list[str]) ->
                 errors.append(f'字段「{field_name}」区间时刻格式无效')
                 return 'False'
             call = f'在区间内({field_name}, {low_m:g}, {high_m:g})'
+        elif spec.type == TYPE_DATE:
+            low_iso = _iso_date_text(low)
+            high_iso = _iso_date_text(high)
+            if low_iso is None or high_iso is None:
+                errors.append(f'字段「{field_name}」的区间日期无效')
+                return 'False'
+            call = f'在区间内({field_name}, {_literal(low_iso)}, {_literal(high_iso)})'
         else:
             call = f'在区间内({field_name}, {_literal(low)}, {_literal(high)})'
         return f'not {call}' if operator == OP_NOT_IN_RANGE else call
@@ -201,9 +332,18 @@ def _compile_leaf(node: dict[str, Any], stage: str | None, errors: list[str]) ->
             return 'False'
         return f'{field_name} {python_op} {minutes:g}'
 
-    if spec.type == TYPE_BOOL and operator != OP_EQ:
-        errors.append('布尔字段仅支持运算符「=」')
-        return 'False'
+    if spec.type == TYPE_BOOL:
+        if not isinstance(value, bool):
+            errors.append(f'字段「{field_name}」的比较值必须为是或否')
+            return 'False'
+        return f'{field_name} {python_op} {_literal(value)}'
+
+    if spec.type == TYPE_DATE:
+        iso = _iso_date_text(value)
+        if iso is None:
+            errors.append(f'字段「{field_name}」的日期值无效')
+            return 'False'
+        return f'{field_name} {python_op} {_literal(iso)}'
 
     if spec.type == TYPE_ENUM and not isinstance(value, (str, int)):
         errors.append(f'字段「{field_name}」的比较值无效')
@@ -230,6 +370,9 @@ def _compile_node(node: Any, stage: str | None, errors: list[str], *, depth: int
             _compile_node(child, stage, errors, depth=depth + 1 if _is_group(child) else depth) for child in children
         ]
         if logic == '非':
+            if len(compiled) != 1:
+                errors.append('「非」组只能有一个子条件')
+                return 'False'
             return f'not ({compiled[0]})'
         joiner = ' and ' if logic == '且' else ' or ' if logic == '或' else None
         if joiner is None:
@@ -280,17 +423,17 @@ def _compile_ladder(formula: dict[str, Any], stage: str | None, errors: list[str
     if not isinstance(tiers, list) or not tiers:
         errors.append('阶梯至少需要 1 档')
         return '0'
-    parsed: list[tuple[float, float | None, float]] = []
+    parsed: list[tuple[Decimal, Decimal | None, Decimal]] = []
     for index, raw in enumerate(tiers):
         if not isinstance(raw, dict):
             errors.append(f'第 {index + 1} 档格式无效')
             continue
         try:
-            low = float(raw['下限'])
+            low = parse_decimal(raw['下限'])
             raw_high = raw.get('上限')
-            high = None if raw_high is None else float(raw_high)
-            rate = float(raw['值'])
-        except (KeyError, TypeError, ValueError):
+            high = None if raw_high is None else parse_decimal(raw_high)
+            rate = parse_decimal(raw['值'])
+        except (KeyError, TypeError, ValueError, ArithmeticError):
             errors.append(f'第 {index + 1} 档上下限或值无效')
             continue
         parsed.append((low, high, rate))
@@ -316,34 +459,122 @@ def _compile_ladder(formula: dict[str, Any], stage: str | None, errors: list[str
     return f'阶梯({field_name}, {_literal(mode)}, {_literal(pricing)}, [{", ".join(rows)}])'
 
 
+_ALLOWED_BINOPS = frozenset({ast.Add, ast.Sub, ast.Mult, ast.Div})
+_ALLOWED_UNARY = frozenset({ast.UAdd, ast.USub})
+_FORMULA_NODES = (
+    ast.Expression,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.Call,
+    ast.Name,
+    ast.Constant,
+    ast.Load,
+    ast.keyword,
+)
+_OP_NODE_TYPES = frozenset({
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.Pow,
+    ast.Mod,
+    ast.FloorDiv,
+    ast.MatMult,
+    ast.BitAnd,
+    ast.BitOr,
+    ast.BitXor,
+    ast.LShift,
+    ast.RShift,
+    ast.UAdd,
+    ast.USub,
+    ast.Not,
+    ast.Invert,
+    ast.Eq,
+    ast.NotEq,
+    ast.Gt,
+    ast.Lt,
+    ast.GtE,
+    ast.LtE,
+    ast.In,
+    ast.NotIn,
+    ast.Is,
+    ast.IsNot,
+    ast.And,
+    ast.Or,
+})
+_OP_SYMBOLS: dict[type[ast.AST], str] = {
+    ast.Add: '+',
+    ast.Sub: '-',
+    ast.Mult: '*',
+    ast.Div: '/',
+    ast.Pow: '**',
+    ast.Mod: '%',
+    ast.FloorDiv: '//',
+    ast.MatMult: '@',
+    ast.BitAnd: '&',
+    ast.BitOr: '|',
+    ast.BitXor: '^',
+    ast.LShift: '<<',
+    ast.RShift: '>>',
+    ast.UAdd: '+',
+    ast.USub: '-',
+    ast.Not: 'not',
+    ast.Invert: '~',
+}
+
+
+def _op_symbol(op: ast.AST) -> str:
+    return _OP_SYMBOLS.get(type(op), '未知')
+
+
 def _walk_expr_errors(expr: str, stage: str | None, errors: list[str]) -> None:  # ruff: ignore[complex-structure]
+    """公式表达式只允许四则运算、正负号、白名单字段与函数。"""
     try:
         tree = ast.parse(expr, mode='eval')
     except SyntaxError:
         errors.append('表达式括号不匹配或语法无效')
         return
     for node in ast.walk(tree):
+        if type(node) in _OP_NODE_TYPES:
+            continue
+        if isinstance(node, ast.BinOp):
+            if type(node.op) not in _ALLOWED_BINOPS:
+                errors.append(f'表达式不允许运算符「{_op_symbol(node.op)}」')
+            elif isinstance(node.op, ast.Div):
+                right = node.right
+                const = getattr(right, 'value', None) if isinstance(right, ast.Constant) else None
+                if const == 0:
+                    errors.append('除以常数 0')
+            continue
+        if isinstance(node, ast.UnaryOp):
+            if type(node.op) not in _ALLOWED_UNARY:
+                errors.append(f'表达式不允许运算符「{_op_symbol(node.op)}」')
+            continue
         if isinstance(node, ast.Attribute):
             errors.append('表达式不允许属性访问')
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-            right = node.right
-            const = getattr(right, 'value', None) if isinstance(right, ast.Constant) else None
-            if const == 0:
-                errors.append('除以常数 0')
-        elif isinstance(node, ast.Call):
+            continue
+        if isinstance(node, ast.Compare):
+            errors.append('表达式不允许比较运算符')
+            continue
+        if isinstance(node, ast.BoolOp):
+            errors.append('表达式不允许逻辑运算符')
+            continue
+        if isinstance(node, ast.Call):
             func = node.func
             if not isinstance(func, ast.Name) or func.id not in WHITELIST_FUNCTION_NAMES:
                 name = getattr(func, 'id', '?')
                 errors.append(f'表达式包含未注册函数「{name}」')
-        elif isinstance(node, ast.Name):
-            if node.id in WHITELIST_FUNCTION_NAMES:
-                continue
-            if node.id in {'True', 'False', 'None'}:
+            continue
+        if isinstance(node, ast.Name):
+            if node.id in WHITELIST_FUNCTION_NAMES or node.id in {'True', 'False', 'None'}:
                 continue
             if node.id not in ALL_FIELD_NAMES:
                 errors.append(f'表达式包含未注册字段「{node.id}」')
             elif stage is not None and not field_available(node.id, stage):
-                errors.append(f'字段「{node.id}」在该阶段不可用')
+                errors.append(_field_stage_error(node.id, stage))
+            continue
+        if not isinstance(node, _FORMULA_NODES):
+            errors.append('表达式包含不允许的语法')
 
 
 def compile_formula(formula_json: dict | None, stage: str | None = None) -> str:
@@ -385,6 +616,10 @@ def _compile_formula(formula_json: dict | None, stage: str | None, errors: list[
         if rate is None or (isinstance(rate, str) and not rate):
             errors.append('请填写单价')
             return '0'
+        places = _decimal_places(rate)
+        if places is not None and places > RATE_MAX_DECIMALS:
+            errors.append('单价最多保留 4 位小数')
+            return '0'
         return f'最大值(0, ({field_name} - {_num_literal(start)})) * {_num_literal(rate)}'
     if kind == FORMULA_LADDER:
         return _compile_ladder(formula_json, stage, errors)
@@ -394,6 +629,10 @@ def _compile_formula(formula_json: dict | None, stage: str | None, errors: list[
             errors.append('请填写表达式')
             return '0'
         expr = expr.replace('×', '*').replace('÷', '/')
+        labels = _unreplaced_placeholder_labels(expr)
+        if labels:
+            errors.extend(f'请先替换占位符「{label}」' for label in labels)
+            return '0'
         _walk_expr_errors(expr, stage, errors)
         return expr
     errors.append(f'不支持的公式类型「{kind}」')
@@ -409,6 +648,8 @@ def validate_item(
     errors: list[str] = []
     condition_expr = _compile_node(condition_json, stage, errors, depth=1)
     formula_expr = _compile_formula(formula_json, stage, errors)
+    if not str(formula_expr).strip():
+        errors.append('请填写计算公式')
     unique: list[str] = []
     for item in errors:
         if item not in unique:
@@ -418,4 +659,56 @@ def validate_item(
         condition_expr=condition_expr,
         formula_expr=formula_expr,
         errors=unique,
+    )
+
+
+ACCRUED_AMOUNT_FIELD = '本期已计金额'
+
+
+def _expr_references_field(expr: str | None, field_name: str) -> bool:
+    if not isinstance(expr, str) or not expr.strip():
+        return False
+    text = expr.replace('×', '*').replace('÷', '/')
+    try:
+        tree = ast.parse(text, mode='eval')
+    except SyntaxError:
+        return field_name in text
+    return any(isinstance(node, ast.Name) and node.id == field_name for node in ast.walk(tree))
+
+
+def _json_references_field(node: Any, field_name: str) -> bool:
+    if isinstance(node, dict):
+        if node.get('字段') == field_name:
+            return True
+        expr = node.get('表达式')
+        if isinstance(expr, str) and _expr_references_field(expr, field_name):
+            return True
+        return any(
+            _json_references_field(value, field_name) for key, value in node.items() if key not in {'字段', '表达式'}
+        )
+    if isinstance(node, list):
+        return any(_json_references_field(item, field_name) for item in node)
+    return False
+
+
+def references_accrued_amount(
+    condition_json: Any = None,
+    formula_json: Any = None,
+    condition_expr: str | None = None,
+    formula_expr: str | None = None,
+) -> bool:
+    """条件或公式是否引用「本期已计金额」。
+
+    :param condition_json: 条件 JSON
+    :param formula_json: 公式 JSON
+    :param condition_expr: 已编译条件
+    :param formula_expr: 已编译公式
+    :return: 是否引用该字段
+    """
+    field_name = ACCRUED_AMOUNT_FIELD
+    return (
+        _json_references_field(condition_json, field_name)
+        or _json_references_field(formula_json, field_name)
+        or _expr_references_field(condition_expr, field_name)
+        or _expr_references_field(formula_expr, field_name)
     )

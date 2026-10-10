@@ -1,0 +1,19 @@
+/* Barlow Condensed 数字子集，SIL OFL 1.1（无保留字体名）。许可全文见同目录 OFL.txt。
+   相对路径：开发 base 为 /，生产 base 为 /rider-h5/ 时仍相对本文件解析。 */
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./barlow-condensed-600.woff2') format('woff2');
+  unicode-range: U+0020, U+0025, U+0028-002F, U+0030-0039, U+00A0, U+00A5, U+2013-2014, U+2212;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./barlow-condensed-700.woff2') format('woff2');
+  unicode-range: U+0020, U+0025, U+0028-002F, U+0030-0039, U+00A0, U+00A5, U+2013-2014, U+2212;
+}

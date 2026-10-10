@@ -26,6 +26,7 @@ import {
   publishNoticeApi,
   updateNoticeApi,
 } from '../../api/notice';
+import { LIST_OPEN_CODES } from '../../constants/access';
 import PageContainer from '../_shared/PageContainer.vue';
 import { noticeFormSchema, querySchema, useColumns } from './data';
 
@@ -77,6 +78,12 @@ async function onActionClick({ code, row }: OnActionClickParams<NoticeResult>) {
     drawerApi.setData(row).open();
     return;
   }
+  if (code === 'pin' || code === 'unpin') {
+    await updateNoticeApi(row.id, { is_top: code === 'pin' });
+    message.success(code === 'pin' ? '已置顶' : '已取消置顶');
+    onRefresh();
+    return;
+  }
   if (code === 'publish') {
     if (!row.site_id) {
       await confirm({
@@ -120,6 +127,7 @@ const [Drawer, drawerApi] = useVbenDrawer({
     const values = await formApi.getValues<NoticeForm>();
     const payload: NoticeForm = {
       content: values.content,
+      is_top: Boolean(values.is_top),
       site_id: values.site_id || null,
       title: values.title,
     };
@@ -152,7 +160,7 @@ const [Drawer, drawerApi] = useVbenDrawer({
 </script>
 
 <template>
-  <PageContainer>
+  <PageContainer v-access:code="LIST_OPEN_CODES.notice">
     <Grid>
       <template #toolbar-actions>
         <VbenButton

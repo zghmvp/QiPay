@@ -10,6 +10,7 @@ from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.schema.notice import CreateNoticeParam, GetNoticeDetail, UpdateNoticeParam
 from backend.plugin.rider_salary.service.notice_service import notice_service
+from backend.plugin.rider_salary.utils.permission import RequestAnyPermission
 
 router = APIRouter()
 
@@ -19,7 +20,7 @@ router = APIRouter()
     summary='获取公告详情',
     dependencies=[
         DependsJwtAuth,
-        Depends(RequestPermission('rs:notice:add')),
+        Depends(RequestAnyPermission('rs:notice:view', 'rs:notice:add')),
         DependsRBAC,
     ],
 )
@@ -38,7 +39,7 @@ async def get_notice(
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
-        Depends(RequestPermission('rs:notice:add')),
+        Depends(RequestAnyPermission('rs:notice:view', 'rs:notice:add')),
         DependsRBAC,
     ],
 )

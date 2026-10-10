@@ -1,8 +1,9 @@
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
-from backend.plugin.rider_salary.engine.compiler import compile_condition, compile_formula
+from backend.plugin.rider_salary.engine.compiler import CompileError, compile_condition, compile_formula
 from backend.plugin.rider_salary.engine.evaluator import evaluate, evaluate_amount, evaluate_condition
 from backend.plugin.rider_salary.engine.functions import to_minutes
 from backend.plugin.rider_salary.enums import CalcStage
@@ -165,11 +166,11 @@ def test_weight_gt() -> None:
     assert evaluate_condition(expr, {'商品重量': 20}) is False
 
 
-def test_not_in_time_range() -> None:
+def test_not_in_time_range_rejected() -> None:
+    """时刻矩阵以产品方案 §3.2 为准，不再接受「不在时段内」。"""
     raw = {'字段': '送达时刻', '运算符': '不在时段内', '值': ['22:00', '06:00']}
-    expr = compile_condition(raw, STAGE)
-    assert evaluate_condition(expr, {'送达时刻': to_minutes('10:00')}) is True
-    assert evaluate_condition(expr, {'送达时刻': to_minutes('23:00')}) is False
+    with pytest.raises(CompileError, match='不能用于字段'):
+        compile_condition(raw, STAGE)
 
 
 def test_formula_fixed() -> None:
@@ -193,13 +194,13 @@ def test_formula_ladder_compile() -> None:
         '计价': '按单价',
         '档位': [
             {'下限': 0, '上限': 300, '值': 5},
-            {'下限': 300, '上限': 600, '值': 5.5},
-            {'下限': 600, '上限': None, '值': 6},
+            {'下限': 300, '上限': 700, '值': 5.5},
+            {'下限': 700, '上限': None, '值': 6},
         ],
     }
     expr = compile_formula(formula, CalcStage.period.value)
     assert expr.startswith('阶梯(周期单量')
-    assert evaluate(expr, {'周期单量': 420}) == pytest.approx(420 * 5.5)
+    assert evaluate(expr, {'周期单量': 420}) == Decimal(420) * Decimal('5.5')
 
 
 def test_formula_expression() -> None:

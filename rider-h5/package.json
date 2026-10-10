@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc -b && vite build",
     "preview": "vite preview --port 5174",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc -b",
+    "test": "node --experimental-strip-types --test tests/api-base.test.ts tests/fonts.test.ts tests/money.test.ts tests/date.test.ts tests/no-v-html.test.ts tests/must-change-password.test.ts tests/rider-only.test.ts tests/day-detail.test.ts tests/advance-cancel.test.ts tests/payslip.test.ts"
   },
   "dependencies": {
     "axios": "^1.12.2",

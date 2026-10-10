@@ -1,0 +1,547 @@
+{
+  "categories": ["基础模式", "底薪与保底", "单量阶梯", "多补贴叠加", "按日奖励", "字段对照"],
+  "presets": [
+    {
+      "id": "C01",
+      "name": "纯按单（5 元/单）",
+      "category": "基础模式",
+      "mode_tag": "per_order",
+      "description": "众包兼职，每有效单固定 5 元，无底薪无阶梯。",
+      "expected": "100 单 → gross 500",
+      "tags": ["逐单", "最简单"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 5 }
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "name": "底薪 + 逐单 + 夜间",
+      "category": "底薪与保底",
+      "mode_tag": "base_plus_commission",
+      "description": "逐单 4 元 + 夜间 2 元 + 周期底薪 2000 分摊。",
+      "expected": "700 单（夜间 18）→ gross 4836",
+      "tags": ["逐单", "周期", "夜间"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 4 }
+        },
+        {
+          "name": "夜间补贴",
+          "stage": "per_order",
+          "subject_code": "BONUS_NIGHT",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "送达时刻", "运算符": "在时段内", "值": ["22:00", "06:00"] }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 2 }
+        },
+        {
+          "name": "底薪",
+          "stage": "period",
+          "subject_code": "BASE_SALARY",
+          "formula_json": { "类型": "表达式", "表达式": "2000 * 方案生效天数 / 周期天数" }
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "name": "底薪 + 单量阶梯（全量落档）",
+      "category": "底薪与保底",
+      "mode_tag": "base_plus_commission",
+      "description": "逐单 3 元 + 周期底薪 3000 + 整月单量全量落档提成（4/5/6 元/单）。",
+      "expected": "650 单 → gross 8200",
+      "tags": ["底薪", "阶梯", "最常见"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 3 }
+        },
+        {
+          "name": "底薪",
+          "stage": "period",
+          "subject_code": "BASE_SALARY",
+          "formula_json": { "类型": "表达式", "表达式": "3000 * 方案生效天数 / 周期天数" }
+        },
+        {
+          "name": "提成",
+          "stage": "period",
+          "subject_code": "COMMISSION",
+          "remark": "字段=周期有效单量，全量落档",
+          "formula_json": {
+            "类型": "阶梯",
+            "字段": "周期有效单量",
+            "模式": "全量落档",
+            "计价": "按单价",
+            "档位": [
+              { "下限": 0, "上限": 400, "值": 4 },
+              { "下限": 400, "上限": 700, "值": 5 },
+              { "下限": 700, "上限": null, "值": 6 }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "name": "底薪 + 单量阶梯（分段累进）",
+      "category": "底薪与保底",
+      "mode_tag": "base_plus_commission",
+      "description": "同 C03，提成改为分段累进，超出部分才升档。",
+      "expected": "650 单 → gross 7800（比全量落档少 400）",
+      "tags": ["底薪", "阶梯", "累进"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 3 }
+        },
+        {
+          "name": "底薪",
+          "stage": "period",
+          "subject_code": "BASE_SALARY",
+          "formula_json": { "类型": "表达式", "表达式": "3000 * 方案生效天数 / 周期天数" }
+        },
+        {
+          "name": "提成",
+          "stage": "period",
+          "subject_code": "COMMISSION",
+          "remark": "字段=周期有效单量，分段累进",
+          "formula_json": {
+            "类型": "阶梯",
+            "字段": "周期有效单量",
+            "模式": "分段累进",
+            "计价": "按单价",
+            "档位": [
+              { "下限": 0, "上限": 400, "值": 4 },
+              { "下限": 400, "上限": 700, "值": 5 },
+              { "下限": 700, "上限": null, "值": 6 }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "name": "保底 + 逐单提成",
+      "category": "底薪与保底",
+      "mode_tag": "guarantee_plus_commission",
+      "description": "逐单 3.5 元 + 周期保底补足（3500 − 本期已计），补足项放最后。",
+      "expected": "800 单 → gross 3500；1200 单 → gross 4200",
+      "tags": ["保底", "逐单"],
+      "items": [
+        {
+          "name": "提成",
+          "stage": "per_order",
+          "subject_code": "COMMISSION",
+          "formula_json": { "类型": "固定金额", "金额": 3.5 }
+        },
+        {
+          "name": "保底补足",
+          "stage": "period",
+          "subject_code": "GUARANTEE_TOPUP",
+          "remark": "sort 应晚于逐单，引用本期已计金额",
+          "formula_json": { "类型": "表达式", "表达式": "最大值(0, 3500 - 本期已计金额)" }
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "name": "纯单量阶梯（全量落档）",
+      "category": "单量阶梯",
+      "mode_tag": "commission",
+      "description": "无底薪无逐单，仅周期单量阶梯全量落档（5/5.5/6 元/单）。",
+      "expected": "420 单 → gross 2310",
+      "tags": ["阶梯", "无底薪"],
+      "items": [
+        {
+          "name": "提成",
+          "stage": "period",
+          "subject_code": "COMMISSION",
+          "formula_json": {
+            "类型": "阶梯",
+            "字段": "周期有效单量",
+            "模式": "全量落档",
+            "计价": "按单价",
+            "档位": [
+              { "下限": 0, "上限": 300, "值": 5 },
+              { "下限": 300, "上限": 700, "值": 5.5 },
+              { "下限": 700, "上限": null, "值": 6 }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "name": "纯单量阶梯（分段累进）",
+      "category": "单量阶梯",
+      "mode_tag": "commission",
+      "description": "无底薪，周期单量阶梯分段累进（5/5.5/6 元/单）。",
+      "expected": "420 单 → gross 2160",
+      "tags": ["阶梯", "累进"],
+      "items": [
+        {
+          "name": "提成",
+          "stage": "period",
+          "subject_code": "COMMISSION",
+          "formula_json": {
+            "类型": "阶梯",
+            "字段": "周期有效单量",
+            "模式": "分段累进",
+            "计价": "按单价",
+            "档位": [
+              { "下限": 0, "上限": 300, "值": 5 },
+              { "下限": 300, "上限": 700, "值": 5.5 },
+              { "下限": 700, "上限": null, "值": 6 }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "name": "门槛换价（整期跳档）",
+      "category": "单量阶梯",
+      "mode_tag": "custom",
+      "description": "未满 400 单整期 5 元/单，满 400 起整期 6 元/单（两条互斥周期项）。",
+      "expected": "399 单 → 1995；400 单 → 2400",
+      "tags": ["门槛", "周期"],
+      "items": [
+        {
+          "name": "提成（未达门槛）",
+          "stage": "period",
+          "subject_code": "COMMISSION",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "周期有效单量", "运算符": "<", "值": 400 }]
+          },
+          "formula_json": { "类型": "字段乘单价", "字段": "周期有效单量", "单价": 5, "起算值": 0 }
+        },
+        {
+          "name": "提成（已达门槛）",
+          "stage": "period",
+          "subject_code": "COMMISSION",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "周期有效单量", "运算符": "≥", "值": 400 }]
+          },
+          "formula_json": { "类型": "字段乘单价", "字段": "周期有效单量", "单价": 6, "起算值": 0 }
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "name": "距离阶梯 + 重量阶梯 + 基础",
+      "category": "多补贴叠加",
+      "mode_tag": "custom",
+      "description": "每单 4 元基础 + 距离档补贴 + 重量档补贴，逐单叠加。",
+      "expected": "7.2km / 12 斤 → 7 元/单",
+      "tags": ["距离", "重量", "逐单"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 4 }
+        },
+        {
+          "name": "距离补贴",
+          "stage": "per_order",
+          "subject_code": "BONUS_DISTANCE",
+          "formula_json": {
+            "类型": "阶梯",
+            "字段": "配送距离",
+            "模式": "全量落档",
+            "计价": "固定金额",
+            "档位": [
+              { "下限": 0, "上限": 3, "值": 0 },
+              { "下限": 3, "上限": 5, "值": 1 },
+              { "下限": 5, "上限": 8, "值": 2 },
+              { "下限": 8, "上限": null, "值": 4 }
+            ]
+          }
+        },
+        {
+          "name": "超重补贴",
+          "stage": "per_order",
+          "subject_code": "BONUS_OVERWEIGHT",
+          "formula_json": {
+            "类型": "阶梯",
+            "字段": "商品重量",
+            "模式": "全量落档",
+            "计价": "固定金额",
+            "档位": [
+              { "下限": 0, "上限": 10, "值": 0 },
+              { "下限": 10, "上限": 20, "值": 1 },
+              { "下限": 20, "上限": null, "值": 3 }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "时段 + 节假日 + 基础",
+      "category": "多补贴叠加",
+      "mode_tag": "custom",
+      "description": "基础 4 元 + 夜间 2 元 + 节假日 3 元，条件可叠加。",
+      "expected": "节假日夜间一单 → 9 元",
+      "tags": ["夜间", "节假日"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 4 }
+        },
+        {
+          "name": "夜间补贴",
+          "stage": "per_order",
+          "subject_code": "BONUS_NIGHT",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "送达时刻", "运算符": "在时段内", "值": ["22:00", "06:00"] }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 2 }
+        },
+        {
+          "name": "节假日补贴",
+          "stage": "per_order",
+          "subject_code": "BONUS_HOLIDAY",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "是否节假日", "运算符": "=", "值": true }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 3 }
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "name": "按日冲单 + 底薪 + 逐单",
+      "category": "按日奖励",
+      "mode_tag": "base_plus_commission",
+      "description": "逐单 4 元 + 日单≥30 奖 50 + 周期底薪 2000，三阶段同时使用。",
+      "expected": "660 单 / 5 天冲单 → gross 4890",
+      "tags": ["三阶段", "冲单奖"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 4 }
+        },
+        {
+          "name": "冲单奖",
+          "stage": "daily",
+          "subject_code": "BONUS_ORDER_RUSH",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "日有效单量", "运算符": "≥", "值": 30 }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 50 }
+        },
+        {
+          "name": "底薪",
+          "stage": "period",
+          "subject_code": "BASE_SALARY",
+          "formula_json": { "类型": "表达式", "表达式": "2000 * 方案生效天数 / 周期天数" }
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "name": "按日全勤 + 周期阶梯",
+      "category": "按日奖励",
+      "mode_tag": "custom",
+      "description": "出勤日奖 10 元 + 周期单量阶梯全量落档（5/5.5/6）。",
+      "expected": "28 出勤 / 520 单 → gross 3140",
+      "tags": ["全勤", "阶梯"],
+      "items": [
+        {
+          "name": "全勤奖",
+          "stage": "daily",
+          "subject_code": "BONUS_FULL_ATTEND",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "日有效单量", "运算符": "≥", "值": 1 }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 10 }
+        },
+        {
+          "name": "提成",
+          "stage": "period",
+          "subject_code": "COMMISSION",
+          "formula_json": {
+            "类型": "阶梯",
+            "字段": "周期有效单量",
+            "模式": "全量落档",
+            "计价": "按单价",
+            "档位": [
+              { "下限": 0, "上限": 300, "值": 5 },
+              { "下限": 300, "上限": 700, "值": 5.5 },
+              { "下限": 700, "上限": null, "值": 6 }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "name": "纯距离提成",
+      "category": "基础模式",
+      "mode_tag": "commission",
+      "description": "按配送距离 1.2 元/km 计提成，无底薪。",
+      "expected": "7.2 km → 8.64 元/单",
+      "tags": ["距离", "逐单"],
+      "items": [
+        {
+          "name": "提成",
+          "stage": "per_order",
+          "subject_code": "COMMISSION",
+          "formula_json": { "类型": "字段乘单价", "字段": "配送距离", "单价": 1.2, "起算值": 0 }
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "name": "恶劣天气 / 高温补贴",
+      "category": "多补贴叠加",
+      "mode_tag": "custom",
+      "description": "基础 4 元 + 恶劣天气 2 元 + 高温 3 元，依赖日标记维护。",
+      "expected": "双标记日 10 单 → 90 元/日",
+      "tags": ["日标记", "条件"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 4 }
+        },
+        {
+          "name": "恶劣天气补贴",
+          "stage": "per_order",
+          "subject_code": "BONUS_BAD_WEATHER",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "是否恶劣天气", "运算符": "=", "值": true }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 2 }
+        },
+        {
+          "name": "高温补贴",
+          "stage": "per_order",
+          "subject_code": "BONUS_HIGH_TEMP",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "是否高温", "运算符": "=", "值": true }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 3 }
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "name": "大重量 / 大额订单奖",
+      "category": "多补贴叠加",
+      "mode_tag": "custom",
+      "description": "基础 4 元 + 大额订单奖 + 超重补贴，逐单条件叠加。",
+      "expected": "120 元 / 25 斤 → 12 元/单",
+      "tags": ["大额", "超重"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 4 }
+        },
+        {
+          "name": "大额订单奖",
+          "stage": "per_order",
+          "subject_code": "BONUS_LARGE_ORDER",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "订单金额", "运算符": "≥", "值": 100 }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 5 }
+        },
+        {
+          "name": "超重补贴",
+          "stage": "per_order",
+          "subject_code": "BONUS_OVERWEIGHT",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "商品重量", "运算符": "≥", "值": 20 }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 3 }
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "name": "兼职低单价 + 按日单量奖",
+      "category": "按日奖励",
+      "mode_tag": "per_order",
+      "description": "兼职低单价 6 元 + 日单≥15 奖 30 元，无周期项。",
+      "expected": "280 单 / 10 天达标 → gross 1980",
+      "tags": ["兼职", "按日"],
+      "items": [
+        {
+          "name": "基础单价",
+          "stage": "per_order",
+          "subject_code": "BASE_UNIT_PRICE",
+          "formula_json": { "类型": "固定金额", "金额": 6 }
+        },
+        {
+          "name": "日单量奖",
+          "stage": "daily",
+          "subject_code": "BONUS_ORDER_RUSH",
+          "condition_json": {
+            "逻辑": "且",
+            "条件": [{ "字段": "日有效单量", "运算符": "≥", "值": 15 }]
+          },
+          "formula_json": { "类型": "固定金额", "金额": 30 }
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "name": "方案期内单量阶梯（换方案用）",
+      "category": "字段对照",
+      "mode_tag": "commission",
+      "description": "同档位阶梯，字段改为「方案期内单量」，适用于月中换方案分段统计。",
+      "expected": "整月单方案勿误用；换方案段内 20 单 → 100",
+      "tags": ["字段对照", "换方案"],
+      "items": [
+        {
+          "name": "提成",
+          "stage": "period",
+          "subject_code": "COMMISSION",
+          "remark": "月中换方案时用方案期内单量，勿与周期有效单量混用",
+          "formula_json": {
+            "类型": "阶梯",
+            "字段": "方案期内单量",
+            "模式": "全量落档",
+            "计价": "按单价",
+            "档位": [
+              { "下限": 0, "上限": 300, "值": 5 },
+              { "下限": 300, "上限": 700, "值": 5.5 },
+              { "下限": 700, "上限": null, "值": 6 }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

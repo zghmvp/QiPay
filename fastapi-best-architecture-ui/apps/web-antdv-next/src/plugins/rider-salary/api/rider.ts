@@ -1,15 +1,23 @@
 import type { PageResult } from '../types/common';
 import type {
+  BatchAccountForm,
+  BatchBindingResult,
+  BatchIssuedPasswordResult,
+  BatchPlanBindingForm,
   EffectivePlanSegment,
   EmployHistoryForm,
   EmployHistoryResult,
+  IssuedRiderPassword,
+  LeaveSettlementResult,
   PlanBindingForm,
   PlanBindingResult,
   RiderAccountForm,
   RiderForm,
   RiderLeaveForm,
+  RiderLeaveResult,
   RiderQuery,
   RiderResult,
+  RiderUpdateForm,
 } from '../types/rider';
 
 import { requestClient } from '#/api/request';
@@ -28,7 +36,7 @@ export async function createRiderApi(data: RiderForm) {
   return requestClient.post(BASE, data);
 }
 
-export async function updateRiderApi(pk: number, data: Partial<RiderForm>) {
+export async function updateRiderApi(pk: number, data: RiderUpdateForm) {
   return requestClient.put(`${BASE}/${pk}`, data);
 }
 
@@ -37,7 +45,13 @@ export async function deleteRiderApi(pk: number) {
 }
 
 export async function leaveRiderApi(pk: number, data: RiderLeaveForm) {
-  return requestClient.put(`${BASE}/${pk}/leave`, data);
+  return requestClient.put<RiderLeaveResult>(`${BASE}/${pk}/leave`, data);
+}
+
+export async function createLeaveSettlementApi(pk: number) {
+  return requestClient.post<LeaveSettlementResult>(
+    `${BASE}/${pk}/leave-settlement`,
+  );
 }
 
 export async function getRiderBindingsApi(pk: number) {
@@ -46,6 +60,24 @@ export async function getRiderBindingsApi(pk: number) {
 
 export async function createRiderBindingApi(pk: number, data: PlanBindingForm) {
   return requestClient.post(`${BASE}/${pk}/bindings`, data);
+}
+
+export async function createRiderBindingsBatchApi(data: BatchPlanBindingForm) {
+  return requestClient.post<BatchBindingResult>(`${BASE}/batch/bindings`, data);
+}
+
+export async function openRiderAccountsBatchApi(data: BatchAccountForm) {
+  return requestClient.post<BatchIssuedPasswordResult>(
+    `${BASE}/batch/open-account`,
+    data,
+  );
+}
+
+export async function resetRiderPasswordsBatchApi(data: BatchAccountForm) {
+  return requestClient.post<BatchIssuedPasswordResult>(
+    `${BASE}/batch/reset-password`,
+    data,
+  );
 }
 
 export async function updateRiderBindingApi(
@@ -99,14 +131,20 @@ export async function deleteRiderEmployHistoryApi(
 }
 
 export async function openRiderAccountApi(pk: number, data: RiderAccountForm) {
-  return requestClient.post(`${BASE}/${pk}/open-account`, data);
+  return requestClient.post<IssuedRiderPassword>(
+    `${BASE}/${pk}/open-account`,
+    data,
+  );
 }
 
 export async function resetRiderPasswordApi(
   pk: number,
   data: RiderAccountForm,
 ) {
-  return requestClient.post(`${BASE}/${pk}/reset-password`, data);
+  return requestClient.post<IssuedRiderPassword>(
+    `${BASE}/${pk}/reset-password`,
+    data,
+  );
 }
 
 export async function disableRiderAccountApi(

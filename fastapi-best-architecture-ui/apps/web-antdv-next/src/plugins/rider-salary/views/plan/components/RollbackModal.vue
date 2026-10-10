@@ -8,12 +8,14 @@ import { useVbenModal } from '@vben/common-ui';
 import { message } from 'antdv-next';
 
 import {
-  getPlanVersionListApi,
   getRollbackPreviewApi,
   rollbackPlanVersionApi,
 } from '../../../api/plan';
-
-const CONFIRM_TEXT = '确认回退';
+import {
+  ROLLBACK_CONFIRM_TEXT,
+  canSubmitRollback,
+  rollbackSuccessText,
+} from './rollback-contract';
 
 const loading = ref(false);
 const preview = ref<RollbackPreviewResult>();
@@ -31,31 +33,22 @@ const [Modal, modalApi] = useVbenModal({
       message.warning('请填写操作原因');
       return;
     }
-    if (confirmText.value !== CONFIRM_TEXT) {
+    if (preview.value?.has_paid && confirmText.value !== ROLLBACK_CONFIRM_TEXT) {
       message.warning('请输入确认文字「确认回退」');
       return;
     }
     modalApi.lock();
     try {
-      await rollbackPlanVersionApi(pk, {
+      const copied = await rollbackPlanVersionApi(pk, {
         confirm_text: confirmText.value,
         reason: reason.value.trim(),
       });
-      const planId = modalApi.getData<{ planId?: number }>()?.planId;
-      let newId: number | undefined;
-      if (planId) {
-        const page = await getPlanVersionListApi({
-          page: 1,
-          plan_id: planId,
-          size: 50,
-          status: 'draft',
-        });
-        newId = [...(page?.items ?? [])]
-          .filter((item) => item.copied_from_id === pk)
-          .sort((a, b) => b.version_no - a.version_no)[0]?.id;
-      }
+      const newId = copied?.id;
+      const versionNo = copied?.version_no;
       message.success(
-        `回退完成，已为你复制草稿${newId ? '' : ''}，请修改后重新试算启用`,
+        typeof versionNo === 'number'
+          ? rollbackSuccessText(versionNo)
+          : '回退完成，已复制草稿，请修改后重新试算启用',
       );
       modalApi.getData<{ onSuccess?: (id?: number) => void }>()?.onSuccess?.(newId);
       await modalApi.close();
@@ -83,8 +76,13 @@ const versionId = computed(
   () => modalApi.getData<{ versionId?: number }>()?.versionId,
 );
 
-const canSubmit = computed(
-  () => Boolean(reason.value.trim()) && confirmText.value === CONFIRM_TEXT,
+const canSubmit = computed(() =>
+  canSubmitRollback({
+    confirmText: confirmText.value,
+    hasPaid: Boolean(preview.value?.has_paid),
+    previewReady: Boolean(preview.value),
+    reason: reason.value,
+  }),
 );
 </script>
 
@@ -106,13 +104,13 @@ const canSubmit = computed(
             </li>
             <li>将解除 {{ preview?.binding_count ?? 0 }} 条骑手绑定；</li>
             <li>
-              将作废 {{ preview?.payrolls_draft ?? 0 }} 条草稿薪资结果，并标记需重算；
+              将作废 {{ preview?.payrolls_draft ?? 0 }} 条草稿薪资结果，下次算薪将新建草稿；
             </li>
-            <li v-if="preview?.has_paid || (preview?.payrolls_finalized ?? 0) > 0">
-              此外将对 {{ preview?.payrolls_paid ?? 0 }} 条已发薪结果、{{
-                preview?.payrolls_finalized ?? 0
-              }}
-              条已定稿结果生成反冲单，所属周期进入「补发中」。导出将出现原单 / 反冲 / 补发三行。
+            <li v-if="(preview?.reversal_count ?? 0) > 0">
+              此外将生成 {{ preview?.reversal_count ?? 0 }} 条反冲单（已发薪
+              {{ preview?.payrolls_paid ?? 0 }} 条、已定稿
+              {{ preview?.payrolls_finalized ?? 0 }}
+              条），所属周期进入「补发中」。同一周期内未使用该版本的已定稿、已发薪单也会一并反冲，避免重算后原单与补发双发。导出将出现原单 / 反冲 / 补发三行。
             </li>
             <li>系统将自动复制一份新草稿版本供修改后重新试算启用。</li>
           </ol>
@@ -136,12 +134,16 @@ const canSubmit = computed(
           :rows="3"
           placeholder="请说明回退原因"
         />
-        <div>
+        <div v-if="preview?.has_paid">
           <div class="mb-1 text-sm">请输入「确认回退」</div>
           <a-input v-model:value="confirmText" placeholder="确认回退" />
         </div>
         <div class="text-muted-foreground text-xs">
-          未输入或输入错误将无法执行。当前{{ canSubmit ? '可提交' : '不可提交' }}。
+          {{
+            preview?.has_paid
+              ? '已发薪结果需要输入确认文字。'
+              : '填写回退原因后即可执行。'
+          }}当前{{ canSubmit ? '可提交' : '不可提交' }}。
         </div>
       </div>
     </a-spin>

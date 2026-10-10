@@ -9,6 +9,8 @@ import type {
   MePlan,
   MeProfile,
   NoticeDetail,
+  MePayslipDetail,
+  MePayslipItem,
   PayrollEstimate,
 } from '@/types'
 
@@ -36,6 +38,20 @@ export function getDayDetail(date: string) {
 export function getPayrollEstimate() {
   return request<PayrollEstimate>({
     url: `${PREFIX}/payroll-estimate`,
+    method: 'GET',
+  })
+}
+
+export function getPayslips() {
+  return request<MePayslipItem[]>({
+    url: `${PREFIX}/payslips`,
+    method: 'GET',
+  })
+}
+
+export function getPayslip(id: number) {
+  return request<MePayslipDetail>({
+    url: `${PREFIX}/payslips/${id}`,
     method: 'GET',
   })
 }

@@ -9,6 +9,7 @@ from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.schema.day_flag import GetDayFlagDetail, UpsertDayFlagParam
 from backend.plugin.rider_salary.service.day_flag_service import day_flag_service
+from backend.plugin.rider_salary.utils.permission import RequestAnyPermission
 
 router = APIRouter()
 
@@ -18,7 +19,7 @@ router = APIRouter()
     summary='获取站点当月日标记',
     dependencies=[
         DependsJwtAuth,
-        Depends(RequestPermission('rs:dayflag:edit')),
+        Depends(RequestAnyPermission('rs:dayflag:view', 'rs:dayflag:edit')),
         DependsRBAC,
     ],
 )

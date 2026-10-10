@@ -55,6 +55,12 @@ export const noticeFormSchema: VbenFormSchema[] = [
     label: '正文',
     rules: 'required',
   },
+  {
+    component: 'Switch',
+    defaultValue: false,
+    fieldName: 'is_top',
+    label: '置顶',
+  },
 ];
 
 export function useColumns(
@@ -64,6 +70,13 @@ export function useColumns(
   return [
     { field: 'seq', title: '序号', type: 'seq', width: 60 },
     { field: 'title', minWidth: 180, title: '标题' },
+    {
+      field: 'is_top',
+      formatter: ({ cellValue }: { cellValue: boolean }) =>
+        cellValue ? '置顶' : '',
+      title: '置顶',
+      width: 80,
+    },
     {
       field: 'site_id',
       formatter: ({ cellValue }: { cellValue: null | number }) =>
@@ -97,6 +110,18 @@ export function useColumns(
             text: '编辑',
           },
           {
+            code: 'pin',
+            show: (row: NoticeResult) =>
+              hasAccessByCodes(['rs:notice:edit']) && !row.is_top,
+            text: '置顶',
+          },
+          {
+            code: 'unpin',
+            show: (row: NoticeResult) =>
+              hasAccessByCodes(['rs:notice:edit']) && !!row.is_top,
+            text: '取消置顶',
+          },
+          {
             code: 'publish',
             show: (row: NoticeResult) =>
               hasAccessByCodes(['rs:notice:edit']) && row.status !== 'published',
@@ -118,7 +143,7 @@ export function useColumns(
       field: 'operation',
       fixed: 'right',
       title: '操作',
-      width: 220,
+      width: 300,
     },
   ];
 }

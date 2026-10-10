@@ -1,0 +1,329 @@
+# QiPay 插件 CI。只覆盖骑手薪资插件，不改框架 fastapi-best-architecture/.github。
+# 凭据只写在作业生成的 backend/.env 里，不提交。
+name: QiPay CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - main
+
+concurrency:
+  group: qipay-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: 后端
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      DATABASE_SCHEMA: fba_ci
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U root -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: fastapi-best-architecture
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 安装 uv 与 Python 3.12
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: 安装 PostgreSQL 客户端
+        working-directory: ${{ github.workspace }}
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+
+      - name: 安装后端依赖与 ruff
+        run: |
+          set -euo pipefail
+          uv sync --group dev --python 3.12
+          uv pip install 'ruff>=0.15.0'
+          uv pip install \
+            -r backend/plugin/rider_salary/requirements.txt \
+            -r backend/plugin/email/requirements.txt \
+            -r backend/plugin/oauth2/requirements.txt
+
+      - name: 生成 .env
+        run: |
+          set -euo pipefail
+          token="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          cat > backend/.env <<EOF
+          ENVIRONMENT='dev'
+          DATABASE_TYPE='postgresql'
+          DATABASE_HOST='127.0.0.1'
+          DATABASE_PORT=5432
+          DATABASE_USER='root'
+          DATABASE_PASSWORD='postgres'
+          DATABASE_SCHEMA='fba_ci'
+          DATABASE_PK_MODE='autoincrement'
+          DATABASE_SOURCES='{}'
+          REDIS_HOST='127.0.0.1'
+          REDIS_PORT=6379
+          REDIS_PASSWORD=''
+          REDIS_DATABASE=2
+          TOKEN_SECRET_KEY='${token}'
+          CELERY_BROKER_REDIS_DATABASE=1
+          CELERY_RABBITMQ_HOST='127.0.0.1'
+          CELERY_RABBITMQ_PORT=5672
+          CELERY_RABBITMQ_USERNAME='guest'
+          CELERY_RABBITMQ_PASSWORD='guest'
+          OAUTH2_GITHUB_CLIENT_ID='test'
+          OAUTH2_GITHUB_CLIENT_SECRET='test'
+          OAUTH2_GOOGLE_CLIENT_ID='test'
+          OAUTH2_GOOGLE_CLIENT_SECRET='test'
+          EMAIL_USERNAME=''
+          EMAIL_PASSWORD=''
+          EOF
+          # backend/.gitignore 已忽略 .env，这里再确认不会被后续步骤加入暂存区。
+          git check-ignore -q backend/.env
+
+      - name: 初始化全新测试库 fba_ci
+        run: |
+          set -euo pipefail
+          if [ "${DATABASE_SCHEMA}" = "fba" ]; then
+            echo "拒绝初始化开发库 fba"
+            exit 1
+          fi
+          maintenance="$(PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d postgres -tAc 'select current_database()')"
+          echo "维护库: ${maintenance}"
+          test "${maintenance}" = "postgres"
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d postgres -v ON_ERROR_STOP=1 \
+            -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'fba_ci' AND pid <> pg_backend_pid()"
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d postgres -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS fba_ci"
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE fba_ci WITH ENCODING 'UTF8' OWNER root"
+          target="$(PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d fba_ci -tAc 'select current_database()')"
+          echo "目标库: ${target}"
+          test "${target}" = "fba_ci"
+          test "${target}" != "fba"
+          uv run --python 3.12 python - <<'PY'
+          import asyncio
+
+          from sqlalchemy.ext.asyncio import create_async_engine
+
+          from backend.common.model import MappedBase
+          from backend.core.conf import settings
+          from backend.database.db import get_database_url
+
+          import backend  # noqa: F401  注册全部 ORM 模型
+
+          assert settings.DATABASE_SCHEMA == "fba_ci", settings.DATABASE_SCHEMA
+          assert settings.DATABASE_SCHEMA != "fba"
+
+
+          async def main() -> None:
+              url = get_database_url()
+              assert url.database == "fba_ci", url.database
+              engine = create_async_engine(url, pool_pre_ping=True)
+              try:
+                  async with engine.begin() as conn:
+                      await conn.run_sync(MappedBase.metadata.create_all)
+              finally:
+                  await engine.dispose()
+
+
+          asyncio.run(main())
+          PY
+          # 与 docs/research/环境初始化记录.md §5 的种子顺序一致。
+          # 不调用 fba init：它会交互改写 .env，并按默认库名重建 fba。
+          for script in \
+            backend/sql/postgresql/init_test_data.sql \
+            backend/plugin/config/sql/postgresql/init.sql \
+            backend/plugin/oauth2/sql/postgresql/init.sql \
+            backend/plugin/notice/sql/postgresql/init.sql \
+            backend/plugin/code_generator/sql/postgresql/init.sql \
+            backend/plugin/dict/sql/postgresql/init.sql \
+            backend/plugin/rider_salary/sql/postgresql/init.sql
+          do
+            echo "执行 ${script}"
+            PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d fba_ci -v ON_ERROR_STOP=1 -f "${script}"
+          done
+          for script in backend/plugin/rider_salary/sql/patch/*.sql
+          do
+            echo "执行 ${script}"
+            PGPASSWORD=postgres psql -h 127.0.0.1 -U root -d fba_ci -v ON_ERROR_STOP=1 -f "${script}"
+          done
+
+      - name: ruff check
+        run: uv run ruff check --no-fix backend/plugin/rider_salary
+
+      - name: ruff format
+        run: uv run ruff format --check backend/plugin/rider_salary
+
+      - name: pytest 纯函数与 SQL 一致性
+        run: |
+          set -euo pipefail
+          set +e
+          uv run --python 3.12 pytest backend/plugin/rider_salary/tests -q --tb=short -p no:sugar -m "not integration" | tee "${RUNNER_TEMP}/pytest-unit.txt"
+          status=${PIPESTATUS[0]}
+          set -e
+          python3 - "${status}" "${RUNNER_TEMP}/pytest-unit.txt" <<'PY'
+          import re
+          import sys
+
+          status = int(sys.argv[1])
+          text = open(sys.argv[2], encoding="utf-8", errors="replace").read()
+          collected = re.search(r"已收集 (\d+) 个用例", text)
+          summary = None
+          for line in text.splitlines():
+              if re.search(r"\d+ passed", line):
+                  summary = line
+          print(summary or text[-500:])
+          if collected is None or int(collected.group(1)) <= 0:
+              sys.exit("未收集到用例")
+          if summary is None:
+              sys.exit("没有找到通过用例的汇总")
+          passed = int(re.search(r"(\d+) passed", summary).group(1))
+          skipped = int(m.group(1)) if (m := re.search(r"(\d+) skipped", summary)) else 0
+          failed = int(m.group(1)) if (m := re.search(r"(\d+) failed", summary)) else 0
+          errors = int(m.group(1)) if (m := re.search(r"(\d+) error", summary)) else 0
+          if status != 0 or passed <= 0 or skipped or failed or errors:
+              sys.exit(f"纯函数/SQL 测试未真正通过: status={status} passed={passed} skipped={skipped} failed={failed} errors={errors}")
+          print(f"纯函数与 SQL 测试通过 {passed} 项，跳过 0 项")
+          PY
+
+      - name: pytest 集成测试
+        run: |
+          set -euo pipefail
+          set +e
+          uv run --python 3.12 pytest backend/plugin/rider_salary/tests -q --tb=short -p no:sugar -m integration | tee "${RUNNER_TEMP}/pytest-integration.txt"
+          status=${PIPESTATUS[0]}
+          set -e
+          python3 - "${status}" "${RUNNER_TEMP}/pytest-integration.txt" <<'PY'
+          import re
+          import sys
+
+          status = int(sys.argv[1])
+          text = open(sys.argv[2], encoding="utf-8", errors="replace").read()
+          collected = re.search(r"已收集 (\d+) 个用例", text)
+          summary = None
+          for line in text.splitlines():
+              if re.search(r"\d+ passed", line):
+                  summary = line
+          print(summary or text[-800:])
+          if collected is None or int(collected.group(1)) <= 0:
+              sys.exit("未收集到集成用例")
+          if summary is None:
+              sys.exit("没有找到集成测试汇总，集成用例可能被跳过")
+          passed = int(re.search(r"(\d+) passed", summary).group(1))
+          skipped = int(m.group(1)) if (m := re.search(r"(\d+) skipped", summary)) else 0
+          failed = int(m.group(1)) if (m := re.search(r"(\d+) failed", summary)) else 0
+          errors = int(m.group(1)) if (m := re.search(r"(\d+) error", summary)) else 0
+          if "已跳过" in text and "集成测试" in text:
+              sys.exit("集成测试被跳过")
+          if status != 0 or passed <= 0 or skipped or failed or errors:
+              sys.exit(f"集成测试未真正执行: status={status} passed={passed} skipped={skipped} failed={failed} errors={errors}")
+          print(f"集成测试通过 {passed} 项，跳过 0 项，收集 {collected.group(1)} 项")
+          PY
+
+  admin:
+    name: 管理端
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: fastapi-best-architecture-ui/pnpm-lock.yaml
+
+      - name: 安装依赖
+        working-directory: fastapi-best-architecture-ui
+        # 锁文件会补一行 rider-salary importer（FW-02）。不用 --frozen-lockfile，避免 CI 因此失败。
+        run: CI=true pnpm install --no-frozen-lockfile
+
+      - name: vue-tsc 只检查 rider-salary
+        working-directory: fastapi-best-architecture-ui/apps/web-antdv-next
+        run: |
+          set -euo pipefail
+          set +e
+          npx vue-tsc --noEmit --skipLibCheck -p tsconfig.json > "${RUNNER_TEMP}/vue-tsc.txt" 2>&1
+          status=$?
+          set -e
+          if grep -F 'rider-salary' "${RUNNER_TEMP}/vue-tsc.txt"; then
+            echo "管理端插件存在类型错误"
+            exit 1
+          fi
+          if [ "${status}" -ne 0 ] && [ ! -s "${RUNNER_TEMP}/vue-tsc.txt" ]; then
+            echo "vue-tsc 失败且没有输出"
+            exit 1
+          fi
+          echo "rider-salary 类型检查输出为空（vue-tsc 退出码 ${status}）"
+
+      - name: vitest
+        working-directory: fastapi-best-architecture-ui
+        run: pnpm exec vitest run apps/web-antdv-next/src/plugins/rider-salary
+
+  h5:
+    name: 骑手 H5
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: rider-h5/pnpm-lock.yaml
+
+      - name: 安装依赖
+        working-directory: rider-h5
+        run: CI=true pnpm install --frozen-lockfile
+
+      - name: 类型检查
+        working-directory: rider-h5
+        run: pnpm typecheck
+
+      - name: 测试
+        working-directory: rider-h5
+        run: pnpm test
+
+      - name: 构建
+        working-directory: rider-h5
+        run: pnpm build

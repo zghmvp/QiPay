@@ -1,8 +1,10 @@
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
 from fastapi import Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -35,6 +37,20 @@ _ADJ_FIELDS = (
 _PERIOD_HINT = '该科目按周期入账，业务日期仅用于展示，服务层不改动'
 
 
+def _unique_ids(ids: Sequence[int | None]) -> list[int]:
+    """去重并丢掉空 ID，避免 IN ()。"""
+    return list(dict.fromkeys(pk for pk in ids if pk))
+
+
+async def _models_by_id(db: AsyncSession, model: Any, ids: Sequence[int | None]) -> dict[int, Any]:
+    """按主键一次取出模型。"""
+    unique = _unique_ids(ids)
+    if not unique:
+        return {}
+    rows = (await db.scalars(select(model).where(model.id.in_(unique), model.deleted == 0))).all()
+    return {row.id: row for row in rows}
+
+
 def compute_signed_amount(direction: str, amount: Decimal) -> Decimal:
     """按科目方向计算带符号金额"""
     quantized = q2(amount)
@@ -49,16 +65,47 @@ def _scope_allows(scope: list | None, value: Any) -> bool:
     return value in scope
 
 
+def _enum_value(value: Any) -> str:
+    raw = getattr(value, 'value', value)
+    return str(raw)
+
+
+def adjustment_employment_error(status: Any, leave_date: date | None, biz_date: date) -> str | None:
+    """
+    判断这名骑手在该业务日能否录入奖惩
+
+    在职不限制。已离职时按业务日期判断：不晚于离职日可以补录，例如急辞违约金。
+    不因当前状态已离职就一律拒绝。
+
+    :param status: 骑手状态
+    :param leave_date: 离职日期
+    :param biz_date: 业务日期
+    :return: 拒绝原因；允许时为空
+    """
+    if _enum_value(status) == RiderStatus.on_job.value:
+        return None
+    if leave_date is not None and biz_date <= leave_date:
+        return None
+    if leave_date is not None:
+        return f'业务日期晚于离职日 {leave_date.isoformat()}，无法录入奖惩'
+    return '骑手不在职，无法录入奖惩'
+
+
+def assert_adjustment_employment(status: Any, leave_date: date | None, biz_date: date) -> None:
+    """不允许时抛出中文错误。"""
+    message = adjustment_employment_error(status, leave_date, biz_date)
+    if message:
+        raise errors.RequestError(msg=message)
+
+
 class AdjustmentService:
     """奖惩记录服务"""
 
     @staticmethod
     def _employ_type_on(histories: list, biz_date: date, fallback: str) -> str:
-        for item in histories:
-            end = item.end_date
-            if item.start_date <= biz_date and (end is None or end >= biz_date):
-                return item.employ_type
-        return fallback
+        from backend.plugin.rider_salary.engine.segments import employ_type_on
+
+        return employ_type_on(histories, fallback, biz_date)
 
     @staticmethod
     def _validate_amount(subject: RiderSalarySubject, amount: Decimal) -> None:
@@ -83,8 +130,7 @@ class AdjustmentService:
             raise errors.NotFoundError(msg='骑手不存在')
         visible = await get_visible_site_ids(request, db)
         assert_site_visible(visible, rider.site_id)
-        if rider.status != RiderStatus.on_job:
-            raise errors.RequestError(msg='骑手不在职，无法录入奖惩')
+        assert_adjustment_employment(rider.status, rider.leave_date, biz_date)
         subject = await subject_dao.get(db, subject_id)
         if not subject:
             raise errors.NotFoundError(msg='科目不存在')
@@ -99,7 +145,7 @@ class AdjustmentService:
         return rider, subject, employ_type
 
     @staticmethod
-    async def _enrich(db: AsyncSession, row: Any) -> dict[str, Any]:
+    def _present(row: Any, rider: Any | None, subject: Any | None) -> dict[str, Any]:
         data = snapshot(row, _ADJ_FIELDS)
         data['biz_date'] = row.biz_date
         data['amount'] = row.amount
@@ -108,14 +154,29 @@ class AdjustmentService:
         data['updated_time'] = row.updated_time
         data['period_id'] = row.period_id
         data['operator_id'] = row.operator_id
-        rider = await rider_dao.get(db, row.rider_id)
-        subject = await subject_dao.get(db, row.subject_id)
         data['rider_job_no'] = rider.job_no if rider else None
         data['rider_name'] = rider.name if rider else None
         data['subject_name'] = subject.name if subject else None
         data['direction'] = subject.direction if subject else None
         data['hint'] = _PERIOD_HINT if subject and subject.entry_granularity == EntryGranularity.period else None
         return data
+
+    @staticmethod
+    async def _enrich_many(db: AsyncSession, rows: Sequence[Any]) -> list[dict[str, Any]]:
+        """批量补齐骑手和科目，查询次数不随行数增长。"""
+        if not rows:
+            return []
+        rider_map = await _models_by_id(db, rider_dao.model, [row.rider_id for row in rows])
+        subject_map = await _models_by_id(db, subject_dao.model, [row.subject_id for row in rows])
+        return [
+            AdjustmentService._present(row, rider_map.get(row.rider_id), subject_map.get(row.subject_id))
+            for row in rows
+        ]
+
+    @staticmethod
+    async def _enrich(db: AsyncSession, row: Any) -> dict[str, Any]:
+        items = await AdjustmentService._enrich_many(db, [row])
+        return items[0]
 
     @staticmethod
     async def get(*, db: AsyncSession, request: Request, pk: int) -> dict[str, Any]:
@@ -157,13 +218,11 @@ class AdjustmentService:
                 RiderSalarySubject.id == adjustment_dao.model.subject_id,
             ).where(RiderSalarySubject.direction == direction, RiderSalarySubject.deleted == 0)
         page = await paging_data(db, stmt)
-        items = []
-        for raw in page.get('items') or []:
-            pk = raw['id'] if isinstance(raw, dict) else raw.id
-            row = await adjustment_dao.get(db, pk)
-            if row:
-                items.append(await AdjustmentService._enrich(db, row))
-        page['items'] = items
+        raw_items = page.get('items') or []
+        ids = [raw['id'] if isinstance(raw, dict) else raw.id for raw in raw_items]
+        row_map = await _models_by_id(db, adjustment_dao.model, ids)
+        rows = [row_map[pk] for pk in ids if pk in row_map]
+        page['items'] = await AdjustmentService._enrich_many(db, rows)
         return page
 
     @staticmethod
@@ -203,20 +262,18 @@ class AdjustmentService:
 
     @staticmethod
     async def create_batch(*, db: AsyncSession, request: Request, items: list[CreateAdjustmentParam]) -> list[dict]:
-        """批量创建奖惩记录（同一事务，任一行失败整批失败）"""
+        """批量创建奖惩记录。收集全部行错误后一次返回，事务仍整单回滚。"""
         result: list[dict] = []
-        first_error: tuple[int, str] | None = None
+        row_errors: list[dict[str, Any]] = []
         for index, item in enumerate(items, start=1):
-            if first_error is not None:
-                break
             row_or_error = await AdjustmentService._create_or_error(db=db, request=request, obj=item)
             if isinstance(row_or_error, str):
-                first_error = (index, row_or_error)
+                row_errors.append({'row': index, 'reason': row_or_error})
             else:
                 result.append(row_or_error)
-        if first_error is not None:
-            index, reason = first_error
-            raise errors.RequestError(msg=f'第 {index} 行：{reason}', data={'row': index, 'reason': reason})
+        if row_errors:
+            prompts = [f'第 {item["row"]} 行：{item["reason"]}' for item in row_errors]
+            raise errors.RequestError(msg='；'.join(prompts), data={'errors': row_errors})
         return result
 
     @staticmethod

@@ -18,7 +18,8 @@ values
 (2060000000000091012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 12, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091013, '站点公告', 'RiderSalaryNotice', '/rider-salary/notice', 13, 'lucide:megaphone', 1, '/plugins/rider-salary/views/notice/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 14, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
-(2060000000000091015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null);
+(2060000000000091015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091016, '成本报表', 'RiderSalaryReport', '/rider-salary/report', 16, 'lucide:pie-chart', 1, '/plugins/rider-salary/views/report/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null);
 
 insert into sys_menu (id, title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
 values
@@ -70,7 +71,15 @@ values
 (2060000000000091146, '修改公告', 'RiderSalaryNoticeEdit', null, 0, null, 2, null, 'rs:notice:edit', 1, 0, 1, '', null, 2060000000000091013, now(), null),
 (2060000000000091147, '删除公告', 'RiderSalaryNoticeDel', null, 0, null, 2, null, 'rs:notice:del', 1, 0, 1, '', null, 2060000000000091013, now(), null),
 (2060000000000091148, '查看日志', 'RiderSalaryAuditView', null, 0, null, 2, null, 'rs:audit:view', 1, 0, 1, '', null, 2060000000000091014, now(), null),
-(2060000000000091149, '删除周期', 'RiderSalaryPeriodDelete', null, 0, null, 2, null, 'rs:period:delete', 1, 0, 1, '', null, 2060000000000091010, now(), null);
+(2060000000000091149, '删除周期', 'RiderSalaryPeriodDelete', null, 0, null, 2, null, 'rs:period:delete', 1, 0, 1, '', null, 2060000000000091010, now(), null),
+(2060000000000091150, '全站范围', 'RiderSalaryScopeAll', null, 0, null, 2, null, 'rs:scope:all', 1, 0, 1, '', null, 2060000000000091002, now(), null),
+(2060000000000091151, '查看骑手', 'RiderSalaryRiderView', null, 0, null, 2, null, 'rs:rider:view', 1, 0, 1, '', null, 2060000000000091003, now(), null),
+(2060000000000091152, '查看奖惩', 'RiderSalaryAdjustmentView', null, 0, null, 2, null, 'rs:adjustment:view', 1, 0, 1, '', null, 2060000000000091008, now(), null),
+(2060000000000091153, '查看日标记', 'RiderSalaryDayFlagView', null, 0, null, 2, null, 'rs:dayflag:view', 1, 0, 1, '', null, 2060000000000091009, now(), null),
+(2060000000000091154, '查看预支', 'RiderSalaryAdvanceView', null, 0, null, 2, null, 'rs:advance:view', 1, 0, 1, '', null, 2060000000000091012, now(), null),
+(2060000000000091155, '查看公告', 'RiderSalaryNoticeView', null, 0, null, 2, null, 'rs:notice:view', 1, 0, 1, '', null, 2060000000000091013, now(), null),
+(2060000000000091156, '导出日志', 'RiderSalaryAuditExport', null, 0, null, 2, null, 'rs:audit:export', 1, 0, 1, '', null, 2060000000000091014, now(), null),
+(2060000000000091157, '查看成本', 'RiderSalaryReportView', null, 0, null, 2, null, 'rs:report:view', 1, 0, 1, '', null, 2060000000000091016, now(), null);
 
 insert into sys_role (id, name, status, is_filter_scopes, remark, created_time, updated_time)
 values
@@ -236,7 +245,32 @@ values
 (2060000000000093153, 2060000000000092003, 2060000000000091149),
 (2060000000000093154, 2060000000000092001, 2060000000000091015),
 (2060000000000093155, 2060000000000092002, 2060000000000091015),
-(2060000000000093156, 2060000000000092003, 2060000000000091015);
+(2060000000000093156, 2060000000000092003, 2060000000000091015),
+(2060000000000093157, 2060000000000092001, 2060000000000091150),
+(2060000000000093158, 2060000000000092001, 2060000000000091151),
+(2060000000000093159, 2060000000000092001, 2060000000000091152),
+(2060000000000093160, 2060000000000092001, 2060000000000091153),
+(2060000000000093161, 2060000000000092001, 2060000000000091154),
+(2060000000000093162, 2060000000000092001, 2060000000000091155),
+(2060000000000093163, 2060000000000092002, 2060000000000091151),
+(2060000000000093164, 2060000000000092002, 2060000000000091152),
+(2060000000000093165, 2060000000000092002, 2060000000000091153),
+(2060000000000093166, 2060000000000092002, 2060000000000091154),
+(2060000000000093167, 2060000000000092002, 2060000000000091155),
+(2060000000000093168, 2060000000000092003, 2060000000000091151),
+(2060000000000093169, 2060000000000092003, 2060000000000091152),
+(2060000000000093170, 2060000000000092003, 2060000000000091153),
+(2060000000000093171, 2060000000000092003, 2060000000000091154),
+(2060000000000093172, 2060000000000092003, 2060000000000091155),
+(2060000000000093173, 2060000000000092001, 2060000000000091016),
+(2060000000000093174, 2060000000000092002, 2060000000000091016),
+(2060000000000093175, 2060000000000092003, 2060000000000091016),
+(2060000000000093176, 2060000000000092001, 2060000000000091156),
+(2060000000000093177, 2060000000000092002, 2060000000000091156),
+(2060000000000093178, 2060000000000092003, 2060000000000091156),
+(2060000000000093179, 2060000000000092001, 2060000000000091157),
+(2060000000000093180, 2060000000000092002, 2060000000000091157),
+(2060000000000093181, 2060000000000092003, 2060000000000091157);
 
 insert into rs_subject (id, code, name, direction, fee_mode, fixed_amount, include_in_gross, entry_granularity, scope_sites, scope_employ_types, is_builtin, status, sort_order, remark, created_time, updated_time)
 values
@@ -273,3 +307,130 @@ values
 (2060000000000094031, 'BASE_SALARY', '底薪', 'bonus', 'fixed', null, true, 'period', '[]', '[]', true, 'enable', 31, null, now(), null),
 (2060000000000094032, 'GUARANTEE_TOPUP', '保底补足', 'bonus', 'formula', null, true, 'period', '[]', '[]', true, 'enable', 32, null, now(), null),
 (2060000000000094033, 'COMMISSION', '提成', 'bonus', 'formula', null, true, 'period', '[]', '[]', true, 'enable', 33, null, now(), null);
+
+insert into rs_role_anchor (id, role_key, role_id, created_time, updated_time)
+values
+(2060000000000095001, 'rs-role:rider', 2060000000000092004, now(), null);
+
+do $body$
+begin
+    -- 同周期、同骑手、同类型只允许一张未删除草稿。现网重复行由 sql/patch/004 先清理。
+    if to_regclass('uq_rs_payroll_one_draft') is null then
+        create unique index uq_rs_payroll_one_draft
+            on rs_payroll (period_id, rider_id, kind)
+            where status = 'draft' and deleted = 0;
+    end if;
+end
+$body$;
+
+do $body$
+begin
+    -- 同一登录账号只绑一名未删除骑手；每个站点至多一名未删除负责人。现网重复行由 sql/patch/009 先查出并中止。
+    if to_regclass('uq_rs_rider_one_user') is null then
+        create unique index uq_rs_rider_one_user
+            on rs_rider (user_id)
+            where user_id is not null and deleted = 0;
+    end if;
+    if to_regclass('uq_rs_site_manager_one_owner') is null then
+        create unique index uq_rs_site_manager_one_owner
+            on rs_site_manager (site_id)
+            where role = 'owner' and deleted = 0;
+    end if;
+end
+$body$;
+
+do $body$
+begin
+    -- 同一骑手同时最多一笔待审核或待发放的预支。现网重复行由 sql/patch/010 先查出并中止。
+    if to_regclass('uq_rs_advance_one_in_flight') is null then
+        create unique index uq_rs_advance_one_in_flight
+            on rs_advance (rider_id)
+            where status in ('pending', 'to_pay') and deleted = 0;
+    end if;
+end
+$body$;
+
+do $body$
+begin
+    create index if not exists ix_rs_order_site_biz_date on rs_order (site_id, biz_date);
+    create index if not exists ix_rs_import_batch_site_dates on rs_import_batch (site_id, date_from, date_to);
+    create index if not exists ix_rs_audit_log_operate_time on rs_audit_log (operate_time);
+    create index if not exists ix_rs_payroll_detail_plan_version_id on rs_payroll_detail (plan_version_id);
+end
+$body$;
+
+do $body$
+begin
+    if to_regclass('public.rs_rider') is null then
+        return;
+    end if;
+    if not exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'rs_rider'
+          and column_name = 'must_change_password'
+    ) then
+        alter table rs_rider
+            add column must_change_password boolean not null default false;
+    end if;
+    comment on column rs_rider.must_change_password is '是否必须修改密码';
+end
+$body$;
+
+do $body$
+begin
+    if to_regclass('public.rs_notice') is null then
+        return;
+    end if;
+    if not exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'rs_notice'
+          and column_name = 'is_top'
+    ) then
+        alter table rs_notice
+            add column is_top boolean not null default false;
+    end if;
+    comment on column rs_notice.is_top is '是否置顶';
+end
+$body$;
+
+do $body$
+begin
+    if to_regclass('public.rs_calc_job') is not null then
+        return;
+    end if;
+    execute $sql$
+        create table rs_calc_job (
+            id bigint generated by default as identity primary key,
+            period_id bigint not null,
+            site_id bigint not null,
+            status varchar(20) not null default 'queued',
+            total_count integer not null default 0,
+            done_count integer not null default 0,
+            success_count integer not null default 0,
+            failed_count integer not null default 0,
+            operator_id bigint,
+            target_rider_ids json,
+            failures json,
+            warnings json,
+            error_message text,
+            started_time timestamptz,
+            finished_time timestamptz,
+            created_time timestamptz not null default now(),
+            updated_time timestamptz,
+            deleted bigint not null default 0,
+            deleted_time timestamptz
+        )
+    $sql$;
+    execute 'create index ix_rs_calc_job_period_status on rs_calc_job (period_id, status)';
+    execute $sql$
+        create unique index uq_rs_calc_job_one_active
+            on rs_calc_job (period_id)
+            where status in ('queued', 'running') and deleted = 0
+    $sql$;
+    comment on table rs_calc_job is '算薪作业表';
+end
+$body$;

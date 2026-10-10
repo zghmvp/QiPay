@@ -1,4 +1,4 @@
-import pytest
+from decimal import Decimal
 
 from backend.plugin.rider_salary.engine.ladder import ladder
 
@@ -8,32 +8,34 @@ WEIGHT_TIERS = [[0, 10, 0], [10, 20, 1], [20, None, 3]]
 
 
 def test_full_band_unit_price() -> None:
-    assert ladder(420, '全量落档', '按单价', TIERS) == pytest.approx(420 * 5.5)
-    assert ladder(299, '全量落档', '按单价', TIERS) == pytest.approx(299 * 5)
-    assert ladder(300, '全量落档', '按单价', TIERS) == pytest.approx(300 * 5.5)
-    assert ladder(599, '全量落档', '按单价', TIERS) == pytest.approx(599 * 5.5)
-    assert ladder(600, '全量落档', '按单价', TIERS) == pytest.approx(600 * 6)
-    assert ladder(700, '全量落档', '按单价', TIERS) == pytest.approx(700 * 6)
-    assert ladder(0, '全量落档', '按单价', TIERS) == pytest.approx(0)
+    assert ladder(420, '全量落档', '按单价', TIERS) == Decimal(420) * Decimal('5.5')
+    assert ladder(299, '全量落档', '按单价', TIERS) == Decimal(299) * 5
+    assert ladder(300, '全量落档', '按单价', TIERS) == Decimal(300) * Decimal('5.5')
+    assert ladder(599, '全量落档', '按单价', TIERS) == Decimal(599) * Decimal('5.5')
+    assert ladder(600, '全量落档', '按单价', TIERS) == Decimal(600) * 6
+    assert ladder(700, '全量落档', '按单价', TIERS) == Decimal(700) * 6
+    assert ladder(0, '全量落档', '按单价', TIERS) == 0
 
 
 def test_progressive_unit_price() -> None:
-    assert ladder(420, '分段累进', '按单价', TIERS) == pytest.approx(300 * 5 + 120 * 5.5)
-    assert ladder(300, '分段累进', '按单价', TIERS) == pytest.approx(1500)
-    assert ladder(299, '分段累进', '按单价', TIERS) == pytest.approx(299 * 5)
-    assert ladder(600, '分段累进', '按单价', TIERS) == pytest.approx(300 * 5 + 300 * 5.5)
-    assert ladder(700, '分段累进', '按单价', TIERS) == pytest.approx(300 * 5 + 300 * 5.5 + 100 * 6)
-    assert ladder(0, '分段累进', '按单价', TIERS) == pytest.approx(0)
+    assert ladder(420, '分段累进', '按单价', TIERS) == Decimal(300) * 5 + Decimal(120) * Decimal('5.5')
+    assert ladder(300, '分段累进', '按单价', TIERS) == 1500
+    assert ladder(299, '分段累进', '按单价', TIERS) == Decimal(299) * 5
+    assert ladder(600, '分段累进', '按单价', TIERS) == Decimal(300) * 5 + Decimal(300) * Decimal('5.5')
+    assert (
+        ladder(700, '分段累进', '按单价', TIERS) == Decimal(300) * 5 + Decimal(300) * Decimal('5.5') + Decimal(100) * 6
+    )
+    assert ladder(0, '分段累进', '按单价', TIERS) == 0
 
 
 def test_full_band_fixed_amount() -> None:
-    assert ladder(7.2, '全量落档', '固定金额', DISTANCE_TIERS) == pytest.approx(2)
-    assert ladder(3, '全量落档', '固定金额', DISTANCE_TIERS) == pytest.approx(1)
-    assert ladder(2.9, '全量落档', '固定金额', DISTANCE_TIERS) == pytest.approx(0)
-    assert ladder(8, '全量落档', '固定金额', DISTANCE_TIERS) == pytest.approx(4)
-    assert ladder(12, '全量落档', '固定金额', WEIGHT_TIERS) == pytest.approx(1)
-    assert ladder(25, '全量落档', '固定金额', WEIGHT_TIERS) == pytest.approx(3)
-    assert ladder(10, '全量落档', '固定金额', WEIGHT_TIERS) == pytest.approx(1)
+    assert ladder(7.2, '全量落档', '固定金额', DISTANCE_TIERS) == 2
+    assert ladder(3, '全量落档', '固定金额', DISTANCE_TIERS) == 1
+    assert ladder(2.9, '全量落档', '固定金额', DISTANCE_TIERS) == 0
+    assert ladder(8, '全量落档', '固定金额', DISTANCE_TIERS) == 4
+    assert ladder(12, '全量落档', '固定金额', WEIGHT_TIERS) == 1
+    assert ladder(25, '全量落档', '固定金额', WEIGHT_TIERS) == 3
+    assert ladder(10, '全量落档', '固定金额', WEIGHT_TIERS) == 1
 
 
 def test_progressive_fixed_forbidden() -> None:

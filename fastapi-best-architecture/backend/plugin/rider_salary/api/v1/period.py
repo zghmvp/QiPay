@@ -1,28 +1,35 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import StreamingResponse
 
 from backend.common.pagination import DependsPagination, PageData
+from backend.common.response.response_code import CustomResponse
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
+from backend.plugin.rider_salary.schema.calc_job import GetCalcJobDetail
 from backend.plugin.rider_salary.schema.period import (
     CalculatePeriodParam,
     CalculatePeriodResult,
+    CarryForwardParam,
+    CarryForwardResult,
     GeneratePeriodParam,
     GeneratePeriodResult,
+    GetLockCheckResult,
     GetPeriodForDateResult,
     GetPeriodListItem,
     GetPeriodWithPayrolls,
     LockPeriodParam,
     MarkPaidPeriodParam,
+    MarkPaidPeriodResult,
     ReversePeriodParam,
     ReversePeriodResult,
 )
+from backend.plugin.rider_salary.service.calc_job_service import get_visible_calc_job
 from backend.plugin.rider_salary.service.export_service import content_disposition, export_service
 from backend.plugin.rider_salary.service.period_service import period_service
 
@@ -43,8 +50,9 @@ async def get_periods_paginated(
     request: Request,
     site_id: Annotated[int | None, Query(description='站点 ID')] = None,
     rider_id: Annotated[int | None, Query(description='骑手 ID，0 表示站点级')] = None,
-    status: Annotated[str | None, Query(description='状态')] = None,
+    status: Annotated[str | None, Query(description='状态，多个用英文逗号分隔')] = None,
     month: Annotated[str | None, Query(description='年月 YYYY-MM')] = None,
+    stale: Annotated[bool | None, Query(description='是否存在需重算草稿')] = None,
 ) -> ResponseSchemaModel[PageData[GetPeriodListItem]]:
     data = await period_service.get_list(
         db=db,
@@ -53,6 +61,7 @@ async def get_periods_paginated(
         rider_id=rider_id,
         status=status,
         month=month,
+        stale=stale,
     )
     return response_base.success(data=data)
 
@@ -121,6 +130,24 @@ async def export_period(
 
 
 @router.get(
+    '/calc-jobs/{job_id}',
+    summary='获取算薪作业',
+    description='返回进度、失败骑手和原因。作业已落库，进程重启后仍可查询',
+    dependencies=[
+        Depends(RequestPermission('rs:period:calculate')),
+        DependsRBAC,
+    ],
+)
+async def get_calc_job(
+    db: CurrentSession,
+    request: Request,
+    job_id: Annotated[int, Path(description='作业 ID')],
+) -> ResponseSchemaModel[GetCalcJobDetail]:
+    data = await get_visible_calc_job(db=db, request=request, job_id=job_id)
+    return response_base.success(data=data)
+
+
+@router.get(
     '/{pk}',
     summary='获取结算周期详情',
     dependencies=[
@@ -148,7 +175,6 @@ async def get_period(
 async def calculate_period(
     db: CurrentSessionTransaction,
     request: Request,
-    background_tasks: BackgroundTasks,
     pk: Annotated[int, Path(description='周期 ID')],
     obj: CalculatePeriodParam | None = None,
 ) -> ResponseSchemaModel[CalculatePeriodResult]:
@@ -157,7 +183,50 @@ async def calculate_period(
         request=request,
         pk=pk,
         obj=obj or CalculatePeriodParam(),
-        background_tasks=background_tasks,
+    )
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/{pk}/lock-check',
+    summary='锁账预检',
+    description='返回未算薪、需重算和缺补发单骑手，不修改数据',
+    dependencies=[
+        DependsJwtAuth,
+        DependsRBAC,
+    ],
+)
+async def lock_check_period(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+) -> ResponseSchemaModel[GetLockCheckResult]:
+    data = await period_service.lock_check(db=db, request=request, pk=pk)
+    return response_base.success(data=data)
+
+
+@router.post(
+    '/{pk}/carry-forward',
+    summary='沿用原单',
+    description='为已反冲且金额无需变化的骑手生成与原单金额相同的补发草稿，并写入审计',
+    dependencies=[
+        Depends(RequestPermission('rs:period:lock')),
+        DependsRBAC,
+    ],
+)
+async def carry_forward_period(
+    db: CurrentSessionTransaction,
+    request: Request,
+    pk: Annotated[int, Path(description='周期 ID')],
+    obj: CarryForwardParam | None = None,
+) -> ResponseSchemaModel[CarryForwardResult]:
+    payload = obj or CarryForwardParam()
+    data = await period_service.carry_forward(
+        db=db,
+        request=request,
+        pk=pk,
+        rider_ids=payload.rider_ids,
+        reason=payload.reason,
     )
     return response_base.success(data=data)
 
@@ -165,6 +234,7 @@ async def calculate_period(
 @router.post(
     '/{pk}/lock',
     summary='锁账',
+    description='重复锁账，或期望状态与当前状态不一致时返回 409，不重复写审计',
     dependencies=[
         Depends(RequestPermission('rs:period:lock')),
         DependsRBAC,
@@ -176,14 +246,20 @@ async def lock_period(
     pk: Annotated[int, Path(description='周期 ID')],
     obj: LockPeriodParam,
 ) -> ResponseModel:
-    await period_service.lock(db=db, request=request, pk=pk, reason=obj.reason)
+    await period_service.lock(
+        db=db,
+        request=request,
+        pk=pk,
+        reason=obj.reason,
+        expected_status=obj.expected_status,
+    )
     return response_base.success()
 
 
 @router.post(
     '/{pk}/mark-paid',
     summary='标记发薪',
-    description='仅标记，不涉及实际打款',
+    description='仅标记，不涉及实际打款。重复标记或期望状态不一致时返回 409，不重复写审计',
     dependencies=[
         Depends(RequestPermission('rs:period:mark-paid')),
         DependsRBAC,
@@ -194,14 +270,23 @@ async def mark_paid_period(
     request: Request,
     pk: Annotated[int, Path(description='周期 ID')],
     obj: MarkPaidPeriodParam | None = None,
-) -> ResponseModel:
-    await period_service.mark_paid(db=db, request=request, pk=pk, reason=None if obj is None else obj.reason)
-    return response_base.success()
+) -> ResponseSchemaModel[MarkPaidPeriodResult]:
+    data = await period_service.mark_paid(
+        db=db,
+        request=request,
+        pk=pk,
+        reason=None if obj is None else obj.reason,
+        expected_status=None if obj is None else obj.expected_status,
+    )
+    if data.warning:
+        return response_base.success(res=CustomResponse(code=200, msg=data.warning), data=data)
+    return response_base.success(data=data)
 
 
 @router.post(
     '/{pk}/reverse',
     summary='反冲补发',
+    description='期望状态与当前状态不一致时返回 409。周期已在补发中时沿用原错误，不会生成第二张反冲单',
     dependencies=[
         Depends(RequestPermission('rs:period:reverse')),
         DependsRBAC,
@@ -213,7 +298,13 @@ async def reverse_period(
     pk: Annotated[int, Path(description='周期 ID')],
     obj: ReversePeriodParam,
 ) -> ResponseSchemaModel[ReversePeriodResult]:
-    data = await period_service.reverse(db=db, request=request, pk=pk, reason=obj.reason)
+    data = await period_service.reverse(
+        db=db,
+        request=request,
+        pk=pk,
+        reason=obj.reason,
+        expected_status=obj.expected_status,
+    )
     return response_base.success(data=data)
 
 
