@@ -70,8 +70,9 @@ class _Ledger:
     async def scalar(self, _stmt: object) -> None:
         return None
 
-    async def execute(self, _stmt: object) -> None:
-        return None
+    async def execute(self, _stmt: object) -> SimpleNamespace:
+        # 反冲抢占要求恰好更新 1 行；内存账本不跑 SQL，成功路径按已抢到返回。
+        return SimpleNamespace(rowcount=1)
 
 
 def _period() -> SimpleNamespace:
