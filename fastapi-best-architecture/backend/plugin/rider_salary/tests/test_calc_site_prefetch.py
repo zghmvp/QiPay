@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock
 import anyio
 import pytest
 
+from backend.plugin.rider_salary.engine.context import batch_overlap_dates
 from backend.plugin.rider_salary.engine.segments import Segment
 from backend.plugin.rider_salary.enums import DayStatus
 from backend.plugin.rider_salary.model.payroll_detail import RiderSalaryPayrollDetail
@@ -20,7 +21,6 @@ from backend.plugin.rider_salary.service import calc_service
 from backend.plugin.rider_salary.service.calc_service import (
     CalcDetail,
     CalcResult,
-    _batch_overlap_dates,
     _calc_held_riders,
     _load_calc_input,
     _load_site_period_coverage,
@@ -203,17 +203,17 @@ def _statuses(result: CalcResult) -> dict[date, str]:
 
 def test_batch_overlap_dates_skip_null_and_clip() -> None:
     """空日期、不相交、起止颠倒都不产生覆盖日；相交部分裁进周期。"""
-    assert _batch_overlap_dates(None, END, START, END) == set()
-    assert _batch_overlap_dates(START, None, START, END) == set()
-    assert _batch_overlap_dates(None, None, START, END) == set()
-    assert _batch_overlap_dates(date(2026, 8, 1), date(2026, 8, 31), START, END) == set()
-    assert _batch_overlap_dates(date(2026, 9, 4), date(2026, 9, 10), START, END) == set()
-    assert _batch_overlap_dates(END, START, START, END) == set()
-    assert _batch_overlap_dates(date(2026, 8, 20), date(2026, 9, 2), START, END) == {
+    assert batch_overlap_dates(None, END, START, END) == set()
+    assert batch_overlap_dates(START, None, START, END) == set()
+    assert batch_overlap_dates(None, None, START, END) == set()
+    assert batch_overlap_dates(date(2026, 8, 1), date(2026, 8, 31), START, END) == set()
+    assert batch_overlap_dates(date(2026, 9, 4), date(2026, 9, 10), START, END) == set()
+    assert batch_overlap_dates(END, START, START, END) == set()
+    assert batch_overlap_dates(date(2026, 8, 20), date(2026, 9, 2), START, END) == {
         date(2026, 9, 1),
         date(2026, 9, 2),
     }
-    assert _batch_overlap_dates(END, date(2026, 9, 10), START, END) == {END}
+    assert batch_overlap_dates(END, date(2026, 9, 10), START, END) == {END}
 
 
 def test_site_coverage_query_filters_range_and_nulls() -> None:
