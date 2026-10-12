@@ -57,6 +57,7 @@ npx vue-tsc --noEmit -p tsconfig.json 2>&1 | rg "rider-salary"
 | 产品交互与页面清单 | `docs/设计/01-产品方案.md` |
 | 后端骨架签名（工具函数、路由前缀、菜单 ID 段） | `docs/设计/03-后端骨架说明.md` |
 | 薪资方案配置算例 | `docs/设计/04-薪资方案案例库.md`；前端内置案例在 `constants/plan-presets.ts` |
+| 克隆后在本地把三个服务跑起来 | `docs/本地开发说明.md` |
 | 环境、端口、启停、验证码、重置库 | `docs/research/环境初始化记录.md` |
 | 历史问题与状态 | `docs/任务/待修复清单.md` |
 | FBA 框架本身怎么用 | `.agents/skills/fba/SKILL.md`；`llms.txt`；`fastapi_best_architecture_docs/` |
