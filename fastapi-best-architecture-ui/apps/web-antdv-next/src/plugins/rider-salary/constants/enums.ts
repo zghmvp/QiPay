@@ -129,6 +129,7 @@ export const DAY_STATUS_OPTIONS = opts([
   ['no_orders', '无数据', 'default'],
   ['not_imported', '未导入', 'warning'],
   ['no_plan', '无方案', 'orange'],
+  ['pending_recalc', '待补算', 'warning'],
 ]);
 
 export const ADVANCE_STATUS_OPTIONS = opts([
@@ -167,8 +168,10 @@ export const AUDIT_MODULE_OPTIONS: EnumOption[] = [
   { color: 'purple', label: '站点公告', value: '站点公告' },
   { color: 'processing', label: '薪资方案', value: '薪资方案' },
   { color: 'green', label: '订单明细', value: '订单明细' },
+  { color: 'blue', label: '薪资日历', value: '薪资日历' },
   { color: 'magenta', label: '结算周期', value: '结算周期' },
   { color: 'volcano', label: '薪资结果', value: '薪资结果' },
+  { color: 'lime', label: '预支', value: '预支' },
 ];
 
 export function enumLabel(

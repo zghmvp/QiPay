@@ -9,7 +9,7 @@ import type {
 } from '#/adapter/vxe-table';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import {
   confirm,
@@ -28,7 +28,6 @@ import {
   exportPeriodApi,
   getPeriodApi,
   getPeriodListApi,
-  lockPeriodApi,
   markPaidPeriodApi,
   reversePeriodApi,
 } from '../../api/period';
@@ -37,8 +36,15 @@ import { useReasonModal } from '../../components/use-reason-modal';
 import PageContainer from '../_shared/PageContainer.vue';
 import CalculateModal from './components/CalculateModal.vue';
 import GenerateModal from './components/GenerateModal.vue';
+import LockModal from './components/LockModal.vue';
 import PeriodDetail from './components/PeriodDetail.vue';
 import { querySchema, useColumns } from './data';
+import {
+  buildPeriodListQuery,
+  omitStaleQuery,
+  parseStaleFlag,
+  parseStatusQuery,
+} from './list-query';
 
 function isUserCancelled(error: unknown) {
   const msg = (error as Error)?.message;
@@ -46,19 +52,16 @@ function isUserCancelled(error: unknown) {
 }
 
 const route = useRoute();
+const router = useRouter();
 const { ReasonModal, prompt } = useReasonModal();
-const onlyStale = ref(
-  route.query.stale === '1' || route.query.stale === 'true',
-);
-
-const initialStatus =
-  typeof route.query.status === 'string' ? route.query.status : undefined;
+const onlyStale = ref(parseStaleFlag(route.query.stale));
+const initialStatuses = parseStatusQuery(route.query.status);
 
 const formOptions: VbenFormProps = {
   collapsed: true,
   schema: querySchema.map((item) =>
-    item.fieldName === 'status' && initialStatus
-      ? { ...item, defaultValue: initialStatus }
+    item.fieldName === 'status' && initialStatuses.length
+      ? { ...item, defaultValue: initialStatuses }
       : item,
   ),
   showCollapseButton: true,
@@ -72,21 +75,23 @@ const gridOptions: VxeTableGridOptions<PeriodResult> = {
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
-        const res = await getPeriodListApi({
-          page: page.currentPage,
-          size: page.pageSize,
-          ...(formValues as {
-            month?: string;
-            rider_id?: number;
-            site_id?: number;
-            status?: string;
+        const form = formValues as {
+          month?: string;
+          rider_id?: number;
+          site_id?: number;
+          status?: string | string[];
+        };
+        return getPeriodListApi(
+          buildPeriodListQuery({
+            month: form.month,
+            onlyStale: onlyStale.value,
+            page: page.currentPage,
+            rider_id: form.rider_id,
+            site_id: form.site_id,
+            size: page.pageSize,
+            status: form.status,
           }),
-        });
-        if (!onlyStale.value) return res;
-        const items = (res?.items ?? []).filter(
-          (item) => (item.stale_count ?? 0) > 0,
         );
-        return { ...res, items, total: items.length };
       },
     },
   },
@@ -108,24 +113,12 @@ function onRefresh() {
   gridApi.query();
 }
 
-function openDetail(row: PeriodResult) {
-  detailApi.setData({ id: row.id }).open();
+function clearStaleFilter() {
+  void router.replace({ query: omitStaleQuery(route.query) });
 }
 
-async function onLock(row: PeriodResult) {
-  if (!(row.payroll_count ?? 0)) {
-    await confirm({
-      content: '当前周期没有薪资结果，仍要锁账吗？',
-      icon: 'warning',
-    });
-  }
-  const { reason } = await prompt({
-    extraHint: `将冻结本周期订单、奖惩与薪资结果（骑手 ${row.rider_count ?? 0}，薪资单 ${row.payroll_count ?? 0}）。若存在需重算结果，后端会拒绝并列出工号。`,
-    title: '锁账原因',
-  });
-  await lockPeriodApi(row.id, reason);
-  message.success('已锁账');
-  onRefresh();
+function openDetail(row: PeriodResult) {
+  detailApi.setData({ id: row.id }).open();
 }
 
 async function onMarkPaid(row: PeriodResult) {
@@ -133,8 +126,12 @@ async function onMarkPaid(row: PeriodResult) {
     content: '确认将该周期标记为已发薪？此操作仅标记，不涉及实际打款。',
     icon: 'warning',
   });
-  await markPaidPeriodApi(row.id);
-  message.success('已标记发薪');
+  const res = await markPaidPeriodApi(row.id);
+  if (res?.warning) {
+    message.warning(res.warning);
+  } else {
+    message.success('已标记发薪');
+  }
   onRefresh();
 }
 
@@ -167,7 +164,7 @@ async function onActionClick({
       return;
     }
     if (code === 'lock') {
-      await onLock(row);
+      lockApi.setData({ ...row, onSuccess: onRefresh }).open();
       return;
     }
     if (code === 'mark-paid') {
@@ -206,6 +203,9 @@ const [GenModal, genApi] = useVbenModal({
 const [CalcModal, calcApi] = useVbenModal({
   connectedComponent: CalculateModal,
 });
+const [LockModalComp, lockApi] = useVbenModal({
+  connectedComponent: LockModal,
+});
 
 function queryId(): number | undefined {
   const raw = route.query.id;
@@ -241,7 +241,7 @@ async function openPeriodByQueryId() {
       onlyStale.value = false;
       await gridApi.formApi.setValues({
         site_id: detail.site_id,
-        status: detail.status,
+        status: detail.status ? [detail.status] : [],
       });
       await gridApi.query();
       selectPeriodRow(id);
@@ -260,9 +260,21 @@ watch(
   },
 );
 
+watch(
+  () => [route.query.stale, route.query.status] as const,
+  async () => {
+    onlyStale.value = parseStaleFlag(route.query.stale);
+    const statuses = parseStatusQuery(route.query.status);
+    if (statuses.length) {
+      await gridApi.formApi.setValues({ status: statuses });
+    }
+    onRefresh();
+  },
+);
+
 onMounted(() => {
-  if (initialStatus) {
-    void gridApi.formApi.setValues({ status: initialStatus });
+  if (initialStatuses.length) {
+    void gridApi.formApi.setValues({ status: initialStatuses });
   }
   void openPeriodByQueryId();
 });
@@ -277,7 +289,7 @@ onMounted(() => {
       show-icon
       type="warning"
       :message="staleHint"
-      @close="onlyStale = false"
+      @close="clearStaleFilter"
     />
     <Grid>
       <template #toolbar-actions>
@@ -304,6 +316,7 @@ onMounted(() => {
     <DetailDrawer />
     <GenModal />
     <CalcModal />
+    <LockModalComp />
     <ReasonModal />
   </PageContainer>
 </template>

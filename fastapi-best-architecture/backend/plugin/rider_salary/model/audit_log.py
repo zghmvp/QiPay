@@ -15,6 +15,8 @@ class RiderSalaryAuditLog(DataClassBase):
     __table_args__ = (
         sa.Index('ix_rs_audit_log_module_action', 'module', 'action'),
         sa.Index('ix_rs_audit_log_target', 'target_type', 'target_id'),
+        sa.Index('ix_rs_audit_log_site_id', 'site_id'),
+        sa.Index('ix_rs_audit_log_operate_time', 'operate_time'),
         {'comment': '业务审计日志表'},
     )
 
@@ -33,6 +35,7 @@ class RiderSalaryAuditLog(DataClassBase):
     description: Mapped[str | None] = mapped_column(UniversalText, default=None, comment='自然语言描述')
     ip: Mapped[str | None] = mapped_column(sa.String(64), default=None, comment='IP')
     trace_id: Mapped[str | None] = mapped_column(sa.String(64), default=None, comment='追踪 ID')
+    site_id: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, comment='站点 ID')
     created_time: Mapped[datetime] = mapped_column(
         TimeZone,
         init=False,

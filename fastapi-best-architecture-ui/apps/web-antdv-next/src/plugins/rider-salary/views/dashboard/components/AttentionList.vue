@@ -1,9 +1,18 @@
 <script lang="ts" setup>
 import type { DashboardAttentionBlock } from '../../../types/dashboard';
 
-import { computed } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useAccess } from '@vben/access';
+
+import { message } from 'antdv-next';
+
+import {
+  calculatePeriodApi,
+  getCalcJobApi,
+  getPeriodListApi,
+} from '../../../api/period';
 import MoneyText from '../../../components/MoneyText.vue';
 import StatusTag from '../../../components/StatusTag.vue';
 import {
@@ -11,12 +20,35 @@ import {
   PERIOD_STATUS_OPTIONS,
 } from '../../../constants/enums';
 import { toDateTimeString } from '../../../utils/date';
+import {
+  resolveStaleTargets,
+  runStaleRecalc,
+  showStaleRecalc,
+  stalePeriodListQuery,
+} from '../recalc';
 
 const props = defineProps<{
   blocks: DashboardAttentionBlock[];
+  month?: string;
+  siteId?: number;
+}>();
+
+const emit = defineEmits<{
+  done: [];
 }>();
 
 const router = useRouter();
+const { hasAccessByCodes } = useAccess();
+const canCalculate = computed(() =>
+  hasAccessByCodes(['rs:period:calculate']),
+);
+const running = ref(false);
+const progressText = ref('');
+let alive = true;
+
+onUnmounted(() => {
+  alive = false;
+});
 
 const visible = computed(() =>
   props.blocks.filter((block) => block.count > 0),
@@ -77,6 +109,47 @@ function columns(key: string) {
 function go(link: string) {
   router.push(link);
 }
+
+async function onRecalc(block: DashboardAttentionBlock) {
+  if (running.value || !showStaleRecalc(block.key, canCalculate.value)) return;
+  running.value = true;
+  progressText.value = '正在准备重算';
+  try {
+    const { skipped, targets } = await resolveStaleTargets({
+      count: block.count,
+      items: block.items,
+      listPage: async (page, size) => {
+        const pageResult = await getPeriodListApi(
+          stalePeriodListQuery({
+            month: props.month,
+            page,
+            siteId: props.siteId,
+            size,
+          }),
+        );
+        return {
+          items: pageResult.items as unknown as Record<string, unknown>[],
+          total: pageResult.total,
+        };
+      },
+    });
+    const result = await runStaleRecalc({
+      calculate: (periodId) => calculatePeriodApi(periodId),
+      loadJob: getCalcJobApi,
+      onProgress: (text) => {
+        progressText.value = text;
+      },
+      skipped,
+      targets,
+    });
+    if (!alive) return;
+    progressText.value = result.text;
+    message[result.level](result.text);
+    if (result.shouldRefresh) emit('done');
+  } finally {
+    if (alive) running.value = false;
+  }
+}
 </script>
 
 <template>
@@ -114,7 +187,24 @@ function go(link: string) {
             </span>
           </template>
         </a-table>
-        <div class="mt-2 text-right">
+        <div class="mt-2 flex items-center justify-end gap-2">
+          <span
+            v-if="block.key === 'stale_periods' && progressText"
+            class="mr-auto text-sm"
+          >
+            {{ progressText }}
+          </span>
+          <a-button
+            v-if="showStaleRecalc(block.key, canCalculate)"
+            v-access:code="'rs:period:calculate'"
+            :disabled="running"
+            :loading="running"
+            size="small"
+            type="primary"
+            @click="onRecalc(block)"
+          >
+            一键重算
+          </a-button>
           <a-button type="link" @click="go(block.link)">查看全部</a-button>
         </div>
       </a-collapse-panel>

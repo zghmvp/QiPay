@@ -6,7 +6,6 @@ from backend.common.exception import errors
 from backend.plugin.rider_salary.enums import BindingType, CycleType
 from backend.plugin.rider_salary.service.rider_service import (
     BindingView,
-    _default_password,
     check_binding_overlap,
     check_range_order,
     resolve_effective_plans_from_bindings,
@@ -66,12 +65,6 @@ def test_adjacent_ranges_not_overlap() -> None:
         date(2026, 1, 31),
         exclude_id=None,
     )
-
-
-def test_default_password_uses_phone_suffix() -> None:
-    assert _default_password('13900001234') == 'Rider@001234'
-    assert _default_password(None) == 'Rider@123456'
-    assert _default_password('123') == 'Rider@123456'
 
 
 def test_end_before_start_rejected() -> None:

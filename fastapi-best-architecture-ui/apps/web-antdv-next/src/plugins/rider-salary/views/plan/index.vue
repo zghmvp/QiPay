@@ -13,15 +13,12 @@ import {
   activatePlanVersionApi,
   copyPlanVersionApi,
   createPlanApi,
-  createPlanVersionApi,
   deletePlanApi,
   deletePlanVersionApi,
   disablePlanVersionApi,
   getPlanListApi,
   getPlanVersionListApi,
-  putPlanVersionItemsApi,
   updatePlanApi,
-  updatePlanVersionApi,
 } from '../../api/plan';
 import { getAllSubjectsApi } from '../../api/subject';
 import { buildItemsFromPreset } from '../../constants/plan-presets';
@@ -43,6 +40,7 @@ import {
   activateHint,
   canEditVersion,
   COLOR_PRESETS,
+  newPlanEditorLocation,
   PLAN_PRESET_COLORS,
   toSaveItems,
   trialLabel,
@@ -185,17 +183,12 @@ function goEditor(row: PlanVersionDetail) {
   router.push(`/rider-salary/plan/editor/${row.id}`);
 }
 
-async function createVersion() {
+function createVersion() {
   if (!selectedPlanId.value) {
     message.warning('请先选择方案');
     return;
   }
-  const created = await createPlanVersionApi({
-    mode_tag: 'custom',
-    plan_id: selectedPlanId.value,
-  });
-  message.success(`已创建空白草稿 v${created.version_no}`);
-  router.push(`/rider-salary/plan/editor/${created.id}`);
+  void router.push(newPlanEditorLocation(selectedPlanId.value));
 }
 
 function openCreateFromPreset() {
@@ -218,16 +211,14 @@ async function createVersionFromPreset(preset: PlanPreset) {
   try {
     const subjects = await getAllSubjectsApi();
     const items = buildItemsFromPreset(preset, subjects ?? []);
-    const created = await createPlanVersionApi({
-      mode_tag: preset.mode_tag,
-      plan_id: selectedPlanId.value,
+    message.success(`已载入案例「${preset.name}」，尚未保存，可直接试算`);
+    await router.push({
+      ...newPlanEditorLocation(selectedPlanId.value),
+      state: {
+        draftItemsJson: JSON.stringify(toSaveItems(items)),
+        modeTag: preset.mode_tag,
+      },
     });
-    await putPlanVersionItemsApi(created.id, toSaveItems(items));
-    if (preset.mode_tag !== created.mode_tag) {
-      await updatePlanVersionApi(created.id, { mode_tag: preset.mode_tag });
-    }
-    message.success(`已从案例「${preset.name}」创建 v${created.version_no}`);
-    router.push(`/rider-salary/plan/editor/${created.id}`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : '从案例创建失败');
   }

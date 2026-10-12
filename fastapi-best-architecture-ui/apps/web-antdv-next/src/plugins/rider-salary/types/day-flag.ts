@@ -4,6 +4,7 @@ export interface DayFlagResult {
   created_time?: null | string;
   high_temp: boolean;
   id?: null | number;
+  is_locked: boolean;
   promo: boolean;
   remark?: null | string;
   site_id: number;

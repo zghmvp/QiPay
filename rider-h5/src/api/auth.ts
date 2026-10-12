@@ -33,7 +33,7 @@ export function logout() {
 
 export function updateMyPassword(data: ResetPasswordPayload) {
   return request<unknown>({
-    url: '/api/v1/sys/users/me/password',
+    url: '/api/v1/rider-salary/me/password',
     method: 'PUT',
     data,
   })

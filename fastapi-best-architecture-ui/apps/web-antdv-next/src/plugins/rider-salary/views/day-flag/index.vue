@@ -13,6 +13,7 @@ import dayjs from 'dayjs';
 
 import { getDayFlagsApi, upsertDayFlagsApi } from '../../api/day-flag';
 import SiteSelect from '../../components/SiteSelect.vue';
+import { LIST_OPEN_CODES } from '../../constants/access';
 import {
   buildMonthMatrix,
   currentMonth,
@@ -82,7 +83,7 @@ async function load() {
       cells[key] = {
         bad_weather: Boolean(item.bad_weather),
         high_temp: Boolean(item.high_temp),
-        locked: false,
+        locked: Boolean(item.is_locked),
         promo: Boolean(item.promo),
         remark: item.remark || '',
       };
@@ -118,6 +119,10 @@ async function save() {
     }
     cursor = cursor.add(1, 'day');
   }
+  if (days.length === 0) {
+    message.warning('本月日期均已锁账，无需保存');
+    return;
+  }
   saving.value = true;
   try {
     await upsertDayFlagsApi({ days, site_id: siteId.value });
@@ -130,7 +135,7 @@ async function save() {
 </script>
 
 <template>
-  <PageContainer>
+  <PageContainer v-access:code="LIST_OPEN_CODES.dayflag">
     <div class="flex min-h-0 flex-1 flex-col overflow-auto">
     <div class="mb-4 flex flex-wrap items-center gap-3">
       <SiteSelect v-model:value="siteId" />

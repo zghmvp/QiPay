@@ -24,6 +24,7 @@ const dayNo = computed(() => String(props.date).slice(8, 10).replace(/^0/, ''));
 const orderText = computed(() => {
   if (!props.inMonth) return '';
   if (!props.item) return '—';
+  if (status.value === 'pending_recalc') return '待补算';
   if (status.value === 'not_imported' || status.value === 'no_orders') {
     return '—';
   }
@@ -32,12 +33,14 @@ const orderText = computed(() => {
 
 const subjects = computed(() => (props.item?.subjects ?? []).slice(0, 3));
 const showNet = computed(() => {
+  if (status.value === 'pending_recalc') return false;
   const n = Number(props.item?.net_adjust ?? 0);
   return Number.isFinite(n) && Math.abs(n) >= 0.005;
 });
 
 const tooltip = computed(() => {
   if (!props.inMonth) return undefined;
+  if (status.value === 'pending_recalc') return '待补算';
   if (status.value === 'not_imported') return '未导入';
   if (status.value === 'no_plan') return '无方案';
   if (status.value === 'no_orders') return '无数据';
@@ -55,7 +58,7 @@ const tooltip = computed(() => {
         'day-not-imported border border-dashed border-[#d9d9d9]':
           inMonth && status === 'not_imported',
         'bg-[#fafafa]': inMonth && status === 'no_orders',
-        'bg-[#fff7e6]': inMonth && status === 'no_plan',
+        'bg-[#fff7e6]': inMonth && (status === 'no_plan' || status === 'pending_recalc'),
         'ring-2 ring-[#1677ff]': today,
         'bg-primary/5': selected && inMonth,
       }"

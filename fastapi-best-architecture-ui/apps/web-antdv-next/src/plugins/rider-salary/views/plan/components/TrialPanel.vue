@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { TrialResult } from '../../../types/plan';
+import type { PlanItemParam, TrialResult } from '../../../types/plan';
 
 import { computed, ref } from 'vue';
 
@@ -7,7 +7,7 @@ import { useVbenDrawer } from '@vben/common-ui';
 
 import { message } from 'antdv-next';
 
-import { trialPlanVersionApi } from '../../../api/plan';
+import { trialPlanVersionApi, trialUnsavedPlanApi } from '../../../api/plan';
 import MoneyText from '../../../components/MoneyText.vue';
 import RiderSelect from '../../../components/RiderSelect.vue';
 import SiteSelect from '../../../components/SiteSelect.vue';
@@ -40,9 +40,17 @@ const [Drawer, drawerApi] = useVbenDrawer({
   },
 });
 
-const versionId = computed(
-  () => drawerApi.getData<{ versionId?: number }>()?.versionId,
+const drawerData = computed(
+  () =>
+    drawerApi.getData<{
+      items?: PlanItemParam[];
+      onSuccess?: () => void;
+      unsaved?: boolean;
+      versionId?: number;
+    }>() ?? {},
 );
+const versionId = computed(() => drawerData.value.versionId);
+const unsaved = computed(() => drawerData.value.unsaved === true);
 
 const cards = computed(() => {
   const summary = result.value?.summary;
@@ -67,7 +75,12 @@ const warnings = computed(() => [
 
 async function runTrial() {
   const pk = versionId.value;
-  if (!pk) return;
+  const draftItems = drawerData.value.items ?? [];
+  if (!unsaved.value && !pk) return;
+  if (unsaved.value && draftItems.length === 0) {
+    message.warning('请先配置方案项再试算');
+    return;
+  }
   if (!riderId.value) {
     message.warning('请选择骑手');
     return;
@@ -79,16 +92,23 @@ async function runTrial() {
   loading.value = true;
   drawerApi.lock();
   try {
-    const data = await trialPlanVersionApi(pk, {
+    const payload = {
       end_date: range.value[1],
       rider_id: riderId.value,
       start_date: range.value[0],
-    });
+    };
+    const data = unsaved.value
+      ? await trialUnsavedPlanApi({ ...payload, items: draftItems })
+      : await trialPlanVersionApi(pk!, payload);
     result.value = data;
     if (data.passed) {
-      message.success('试算通过');
-      drawerApi.getData<{ onSuccess?: () => void }>()?.onSuccess?.();
-      emit('success');
+      message.success(
+        unsaved.value ? '试算完成，结果未写入方案版本' : '试算通过',
+      );
+      if (!unsaved.value) {
+        drawerData.value.onSuccess?.();
+        emit('success');
+      }
     } else {
       message.warning('试算未通过，请查看警告');
     }
@@ -126,6 +146,12 @@ const periodColumns = [
 <template>
   <Drawer title="方案试算">
     <div class="flex flex-col gap-3">
+      <a-alert
+        v-if="unsaved"
+        type="warning"
+        show-icon
+        message="当前内容尚未保存。试算只在内存中计算，不会新增方案版本，也不会写入试算状态。"
+      />
       <a-alert
         type="info"
         show-icon

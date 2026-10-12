@@ -1,6 +1,7 @@
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment as RiderSalaryAdjustment
 from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance as RiderSalaryAdvance
 from backend.plugin.rider_salary.model.audit_log import RiderSalaryAuditLog as RiderSalaryAuditLog
+from backend.plugin.rider_salary.model.calc_job import RiderSalaryCalcJob as RiderSalaryCalcJob
 from backend.plugin.rider_salary.model.day_flag import RiderSalaryDayFlag as RiderSalaryDayFlag
 from backend.plugin.rider_salary.model.import_batch import RiderSalaryImportBatch as RiderSalaryImportBatch
 from backend.plugin.rider_salary.model.notice import RiderSalaryNotice as RiderSalaryNotice
@@ -18,6 +19,7 @@ from backend.plugin.rider_salary.model.rider_employ_history import (
 from backend.plugin.rider_salary.model.rider_plan_binding import (
     RiderSalaryRiderPlanBinding as RiderSalaryRiderPlanBinding,
 )
+from backend.plugin.rider_salary.model.role_anchor import RiderSalaryRoleAnchor as RiderSalaryRoleAnchor
 from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod as RiderSalarySettlePeriod
 from backend.plugin.rider_salary.model.site import RiderSalarySite as RiderSalarySite
 from backend.plugin.rider_salary.model.site_manager import RiderSalarySiteManager as RiderSalarySiteManager

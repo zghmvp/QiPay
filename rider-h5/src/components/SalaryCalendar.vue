@@ -36,7 +36,8 @@ function isBandStart(date: string, band: CalendarPlanBand | undefined): boolean 
   return date === monthStart && band.start < monthStart
 }
 
-function statusDot(status: string | undefined): 'gray' | 'red' | '' {
+function statusDot(status: string | undefined): 'gray' | 'red' | 'warn' | '' {
+  if (status === 'pending_recalc') return 'warn'
   if (status === 'not_imported') return 'gray'
   if (status === 'no_plan') return 'red'
   return ''
@@ -102,18 +103,26 @@ function onCell(date: string, inMonth: boolean) {
           v-if="cell.format('YYYY-MM') === month && dayMap.get(cell.format('YYYY-MM-DD'))"
           class="count display-num"
         >
-          {{ dayMap.get(cell.format('YYYY-MM-DD'))!.order_count }}
+          {{
+            dayMap.get(cell.format('YYYY-MM-DD'))?.day_status === 'pending_recalc'
+              ? '待补算'
+              : dayMap.get(cell.format('YYYY-MM-DD'))!.order_count
+          }}
         </span>
         <span class="marks">
           <i
             v-if="
+              dayMap.get(cell.format('YYYY-MM-DD'))?.day_status !== 'pending_recalc' &&
               isPositiveMoney(dayMap.get(cell.format('YYYY-MM-DD'))?.net_adjust) &&
               moneyNumber(dayMap.get(cell.format('YYYY-MM-DD'))?.net_adjust) >= 0.005
             "
             class="dot green"
           />
           <i
-            v-if="isNegativeMoney(dayMap.get(cell.format('YYYY-MM-DD'))?.net_adjust)"
+            v-if="
+              dayMap.get(cell.format('YYYY-MM-DD'))?.day_status !== 'pending_recalc' &&
+              isNegativeMoney(dayMap.get(cell.format('YYYY-MM-DD'))?.net_adjust)
+            "
             class="dot red"
           />
           <i
@@ -126,6 +135,7 @@ function onCell(date: string, inMonth: boolean) {
     </div>
     <div class="legend">
       <span><i class="dot gray" />未导入</span>
+      <span><i class="dot warn" />待补算</span>
       <span><i class="dot red" />无方案 / 扣款</span>
       <span><i class="dot green" />奖励</span>
     </div>

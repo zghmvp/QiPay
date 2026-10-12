@@ -12,7 +12,10 @@ from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.schema.advance import AdvanceActionParam, AdvanceReasonParam, GetAdvanceDetail
+from backend.plugin.rider_salary.schema.report import GetAdvanceLedger
 from backend.plugin.rider_salary.service.advance_service import advance_service
+from backend.plugin.rider_salary.service.report_service import report_service
+from backend.plugin.rider_salary.utils.permission import RequestAnyPermission
 
 router = APIRouter()
 
@@ -51,12 +54,31 @@ async def export_advances(
 
 
 @router.get(
+    '/ledger',
+    summary='预支台账',
+    description='只统计已发放预支。发放合计应等于抵扣合计加结转合计。',
+    dependencies=[
+        DependsJwtAuth,
+        Depends(RequestAnyPermission('rs:advance:view', 'rs:advance:approve')),
+        DependsRBAC,
+    ],
+)
+async def get_advance_ledger(
+    db: CurrentSession,
+    request: Request,
+    site_id: Annotated[int | None, Query(description='站点 ID')] = None,
+) -> ResponseSchemaModel[GetAdvanceLedger]:
+    data = await report_service.advance_ledger(db=db, request=request, site_id=site_id)
+    return response_base.success(data=data)
+
+
+@router.get(
     '',
     summary='分页获取预支单',
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
-        Depends(RequestPermission('rs:advance:approve')),
+        Depends(RequestAnyPermission('rs:advance:view', 'rs:advance:approve')),
         DependsRBAC,
     ],
 )
@@ -86,7 +108,7 @@ async def get_advances_paginated(
     summary='获取预支单详情',
     dependencies=[
         DependsJwtAuth,
-        Depends(RequestPermission('rs:advance:approve')),
+        Depends(RequestAnyPermission('rs:advance:view', 'rs:advance:approve')),
         DependsRBAC,
     ],
 )
@@ -102,6 +124,7 @@ async def get_advance(
 @router.post(
     '/{pk}/approve',
     summary='审核通过预支',
+    description='期望状态与当前状态不一致，或审核抢不到行时返回 409，不重复写审计',
     dependencies=[
         Depends(RequestPermission('rs:advance:approve')),
         DependsRBAC,
@@ -120,6 +143,7 @@ async def approve_advance(
 @router.post(
     '/{pk}/reject',
     summary='驳回预支',
+    description='期望状态与当前状态不一致，或驳回抢不到行时返回 409，不重复写审计',
     dependencies=[
         Depends(RequestPermission('rs:advance:reject')),
         DependsRBAC,

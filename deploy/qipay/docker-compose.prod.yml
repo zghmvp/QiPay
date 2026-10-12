@@ -1,0 +1,166 @@
+# QiPay 生产编排。只在仓库根 deploy/qipay/，不改框架目录。
+# 宿主机端口默认避开开发环境：HTTP 8080、Postgres 5433、Redis 6380。
+# 不要把 8000 / 5173 / 5174 映射出来，那三个端口是本机开发进程。
+
+name: qipay
+
+x-backend-image: &backend-image qipay-backend:prod
+x-backend-build: &backend-build
+  context: ../../fastapi-best-architecture
+  # dockerfile 相对构建上下文（fastapi-best-architecture/），不是相对本 compose 文件。
+  dockerfile: ../deploy/qipay/backend.Dockerfile
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: qipay-postgres
+    restart: unless-stopped
+    env_file:
+      - ./env.plugin.example
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - qipay_pg:/var/lib/postgresql/data
+    ports:
+      - ${QIPAY_BIND:-127.0.0.1}:${QIPAY_POSTGRES_PORT:-5433}:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    logging: &json-log
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  redis:
+    image: redis:7-alpine
+    container_name: qipay-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--bind", "0.0.0.0", "--protected-mode", "no"]
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - qipay_redis:/data
+    ports:
+      - ${QIPAY_BIND:-127.0.0.1}:${QIPAY_REDIS_PORT:-6380}:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *json-log
+
+  # ENVIRONMENT=prod 时框架把 Celery broker 固定成 rabbitmq，所以生产拓扑要有它。
+  # 不用 guest 账号：RabbitMQ 拒绝非本机连接使用 guest。
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    container_name: qipay-rabbitmq
+    restart: unless-stopped
+    env_file:
+      - ./env.plugin.example
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - qipay_rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    logging: *json-log
+
+  backend:
+    image: *backend-image
+    build: *backend-build
+    container_name: qipay-backend
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ./env.plugin.example
+    environment:
+      TZ: Asia/Shanghai
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+    volumes:
+      - ./env.plugin.example:/opt/qipay/backend/.env:ro
+      - ${QIPAY_LOG_DIR:-./logs}/backend:/opt/qipay/backend/log
+      - qipay_upload:/opt/qipay/backend/static/upload
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/metrics/"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 120s
+    logging: *json-log
+
+  # P5-01 预留：算薪改为持久作业后，仍由这个 worker 消费。当前只跑框架已有的 Celery 任务。
+  celery_worker:
+    image: *backend-image
+    build: *backend-build
+    container_name: qipay-celery
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ./env.plugin.example
+    environment:
+      TZ: Asia/Shanghai
+      QIPAY_WAIT_RABBITMQ: "1"
+      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
+    command:
+      - sh
+      - -c
+      - exec celery -A backend.app.task.celery:celery_app worker -P gevent -c ${CELERY_CONCURRENCY:-2} --loglevel=INFO
+    volumes:
+      - ./env.plugin.example:/opt/qipay/backend/.env:ro
+      - ${QIPAY_LOG_DIR:-./logs}/celery:/opt/qipay/backend/log
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    logging: *json-log
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: qipay-nginx
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - ${QIPAY_BIND:-127.0.0.1}:${QIPAY_HTTP_PORT:-8080}:80
+      # 启用 TLS 时再打开，并把上面的配置文件换成 nginx/qipay.tls.conf，同时挂载 ./certs。
+      # - ${QIPAY_BIND:-127.0.0.1}:${QIPAY_HTTPS_PORT:-8443}:443
+    volumes:
+      - ./nginx/qipay.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/snippets:/etc/nginx/qipay-snippets:ro
+      - ./www/admin:/var/www/admin:ro
+      - ./www/rider-h5:/var/www/rider-h5:ro
+      - ${QIPAY_LOG_DIR:-./logs}/nginx:/var/log/nginx
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    logging: *json-log
+
+volumes:
+  qipay_pg:
+  qipay_redis:
+  qipay_rabbitmq:
+  qipay_upload:

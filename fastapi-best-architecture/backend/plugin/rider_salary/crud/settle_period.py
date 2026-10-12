@@ -1,14 +1,44 @@
 from calendar import monthrange
 from datetime import date
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Exists
 from sqlalchemy_crud_plus import CRUDPlus
 
+from backend.plugin.rider_salary.enums import PayrollStatus
+from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod
 from backend.utils.timezone import timezone
 
 SITE_LEVEL_RIDER_ID = 0
+
+
+def split_status_query(status: str | None) -> list[str]:
+    """
+    拆开逗号分隔的周期状态
+
+    :param status: 单个状态，或英文逗号分隔的多个状态
+    :return: 去重后的状态列表，空段丢掉
+    """
+    if not status:
+        return []
+    values: list[str] = []
+    for part in status.split(','):
+        text = part.strip()
+        if text and text not in values:
+            values.append(text)
+    return values
+
+
+def stale_draft_exists() -> Exists:
+    """未删除、且标记需重算的草稿薪资单是否存在"""
+    return exists().where(
+        RiderSalaryPayroll.period_id == RiderSalarySettlePeriod.id,
+        RiderSalaryPayroll.deleted == 0,
+        RiderSalaryPayroll.status == PayrollStatus.draft.value,
+        RiderSalaryPayroll.stale.is_(True),
+    )
 
 
 class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
@@ -91,16 +121,18 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
         month_start: date | None,
         month_end: date | None,
         site_ids: set[int] | None,
+        stale: bool | None = None,
     ) -> Select:
         """
         周期列表查询
 
         :param site_id: 站点 ID
         :param rider_id: 骑手 ID
-        :param status: 状态
+        :param status: 状态，多个用英文逗号分隔
         :param month_start: 筛选月份起始
         :param month_end: 筛选月份结束
         :param site_ids: 可见站点，None 表示全部
+        :param stale: 是否存在需重算草稿；None 表示不按此项筛选
         :return:
         """
         filters: dict = {'deleted': 0}
@@ -108,8 +140,11 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
             filters['site_id'] = site_id
         if rider_id is not None:
             filters['rider_id'] = rider_id
-        if status:
-            filters['status'] = status
+        statuses = split_status_query(status)
+        if len(statuses) == 1:
+            filters['status'] = statuses[0]
+        elif statuses:
+            filters['status__in'] = statuses
         if site_ids is not None:
             filters['site_id__in'] = list(site_ids) or [-1]
         stmt = await self.select_order('start_date', 'desc', **filters)
@@ -118,6 +153,10 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
                 RiderSalarySettlePeriod.start_date <= month_end,
                 RiderSalarySettlePeriod.end_date >= month_start,
             )
+        if stale is True:
+            stmt = stmt.where(stale_draft_exists())
+        elif stale is False:
+            stmt = stmt.where(~stale_draft_exists())
         return stmt
 
     async def create(

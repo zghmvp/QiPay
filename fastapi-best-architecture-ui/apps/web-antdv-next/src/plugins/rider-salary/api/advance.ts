@@ -1,5 +1,6 @@
 import type {
   AdvanceActionParam,
+  AdvanceLedger,
   AdvanceQuery,
   AdvanceReasonParam,
   AdvanceResult,
@@ -14,6 +15,10 @@ const BASE = '/api/v1/rider-salary/advances';
 
 export async function getAdvanceListApi(params: AdvanceQuery) {
   return requestClient.get<PageResult<AdvanceResult>>(BASE, { params });
+}
+
+export async function getAdvanceLedgerApi(params?: { site_id?: number }) {
+  return requestClient.get<AdvanceLedger>(`${BASE}/ledger`, { params });
 }
 
 export async function getAdvanceApi(pk: number) {

@@ -1,9 +1,10 @@
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import date, datetime
 from typing import Any
 
 from fastapi import Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -21,8 +22,15 @@ from backend.plugin.rider_salary.schema.order import (
     order_status_label,
 )
 from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.db_errors import client_error_from_integrity
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
-from backend.plugin.rider_salary.utils.excel import write_workbook
+from backend.plugin.rider_salary.utils.excel import (
+    StreamingWorkbook,
+    append_streamed_rows,
+    assert_export_row_limit,
+    count_statement,
+    stream_scalars,
+)
 from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
@@ -211,29 +219,13 @@ class OrderService:
             import_batch_id=None,
             is_locked=None,
         )
-        orders = list((await db.scalars(stmt)).all())
-        details = await _to_details(db, orders)
-        rows: list[list] = [
-            [
-                site.code,
-                item.site_name or site.name,
-                item.rider_job_no,
-                item.rider_name,
-                item.order_no,
-                str(item.distance_km),
-                str(item.weight_jin),
-                timezone.to_str(item.order_time) if item.order_time else '',
-                timezone.to_str(item.deliver_time) if item.deliver_time else '',
-                item.status_label or item.status,
-                str(item.amount) if item.amount is not None else '',
-                item.remark or '',
-                item.source_label or item.source,
-                item.biz_date.isoformat() if item.biz_date else '',
-                '是' if item.is_locked else '否',
-            ]
-            for item in details
-        ]
-        content = write_workbook([('订单明细', ORDER_EXPORT_HEADERS, rows)])
+        total = await count_statement(db, stmt)
+        assert_export_row_limit(total)
+        riders = await _riders_for_order_export(db, stmt)
+        book = StreamingWorkbook()
+        sheet = book.add_sheet('订单明细', ORDER_EXPORT_HEADERS)
+        await append_streamed_rows(book, sheet, _iter_order_export_rows(db, stmt, site, riders))
+        content = book.to_bytes()
         from_text = date_from.isoformat() if date_from else '全部'
         to_text = date_to.isoformat() if date_to else '全部'
         filename = f'订单明细_{site.name}_{from_text}_{to_text}.xlsx'
@@ -298,7 +290,10 @@ class OrderService:
             remark=obj.remark,
         )
         db.add(order)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            raise client_error_from_integrity(exc) from exc
         await mark_stale(db, rider_ids=[rider.id], date_from=biz_date, date_to=biz_date)
         await audit_service.record(
             db,
@@ -385,7 +380,10 @@ class OrderService:
         await assert_not_locked(db, site_id=order.site_id, rider_id=order.rider_id, biz_date=order.biz_date)
         if old_rider_id != order.rider_id or old_biz_date != order.biz_date:
             await assert_not_locked(db, site_id=order.site_id, rider_id=old_rider_id, biz_date=old_biz_date)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            raise client_error_from_integrity(exc) from exc
         rider_ids = {old_rider_id, order.rider_id}
         date_from = min(old_biz_date, order.biz_date)
         date_to = max(old_biz_date, order.biz_date)
@@ -446,6 +444,46 @@ class OrderService:
             reason=reason.strip(),
             before=before,
         )
+
+
+async def _riders_for_order_export(db: AsyncSession, stmt: Any) -> dict[int, RiderSalaryRider]:
+    """只取导出范围内的骑手主数据，不把订单行装进列表。"""
+    id_stmt = stmt.order_by(None).with_only_columns(RiderSalaryOrder.rider_id, maintain_column_froms=True).distinct()
+    rider_ids = [int(item) for item in (await db.scalars(id_stmt)).all() if item]
+    if not rider_ids:
+        return {}
+    rows = await db.scalars(select(RiderSalaryRider).where(RiderSalaryRider.id.in_(rider_ids)))
+    return {row.id: row for row in rows.all()}
+
+
+async def _iter_order_export_rows(
+    db: AsyncSession,
+    stmt: Any,
+    site: RiderSalarySite,
+    riders: dict[int, RiderSalaryRider],
+) -> AsyncIterator[list[object]]:
+    """逐笔订单生成导出行。迭代器前进一步只消费一笔订单。"""
+    async for order in stream_scalars(db, stmt):
+        rider = riders.get(order.rider_id)
+        row = [
+            site.code,
+            site.name,
+            rider.job_no if rider is not None else '',
+            rider.name if rider is not None else '',
+            order.order_no,
+            str(order.distance_km),
+            str(order.weight_jin),
+            timezone.to_str(order.order_time) if order.order_time else '',
+            timezone.to_str(order.deliver_time) if order.deliver_time else '',
+            order_status_label(order.status),
+            str(order.amount) if order.amount is not None else '',
+            order.remark or '',
+            order_source_label(order.source),
+            order.biz_date.isoformat() if order.biz_date else '',
+            '是' if order.is_locked else '否',
+        ]
+        db.expunge(order)
+        yield row
 
 
 async def _get_site(db: AsyncSession, site_id: int) -> RiderSalarySite:

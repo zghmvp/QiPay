@@ -1,7 +1,13 @@
 <script lang="ts" setup>
 import type { VbenFormProps } from '@vben/common-ui';
 
-import type { RiderForm, RiderResult } from '../../types/rider';
+import type { AdvanceResult } from '../../types/advance';
+import type { MoneyValue } from '../../types/common';
+import type {
+  BatchIssuedPassword,
+  RiderForm,
+  RiderResult,
+} from '../../types/rider';
 
 import type {
   OnActionClickParams,
@@ -19,6 +25,7 @@ import { message } from 'antdv-next';
 import { useVbenForm } from '#/adapter/form';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 
+import { getAdvanceListApi } from '../../api/advance';
 import {
   createRiderApi,
   deleteRiderApi,
@@ -28,25 +35,79 @@ import {
   getRiderListApi,
   leaveRiderApi,
   openRiderAccountApi,
+  openRiderAccountsBatchApi,
   resetRiderPasswordApi,
+  resetRiderPasswordsBatchApi,
   updateRiderApi,
 } from '../../api/rider';
 import { useReasonModal } from '../../components/use-reason-modal';
+import { LIST_OPEN_CODES } from '../../constants/access';
+import { formatMoney } from '../../utils/money';
+import { parseBatchRowErrors } from '../adjustment/batch-errors';
+import { statusFromQuery, withStatusDefault } from './list-query';
+import {
+  batchOpenAccountHint,
+  batchResetPasswordHint,
+  openAccountHint,
+  resetPasswordHint,
+  specifiedPasswordMessage,
+} from './password-hint';
 import PageContainer from '../_shared/PageContainer.vue';
-import { querySchema, riderFormSchema, useColumns } from './data';
+import { batchAccountBody, formatIssuedPasswords, selectedRiderIds } from './batch-ops';
+import BatchBindingDrawer from './components/BatchBindingDrawer.vue';
+import LeaveSettlementPanel from './components/LeaveSettlementPanel.vue';
+import {
+  querySchema,
+  riderEditFormSchema,
+  riderFormSchema,
+  useColumns,
+} from './data';
 
 const router = useRouter();
 const route = useRoute();
+const initialStatus = statusFromQuery(route.query.status);
 const { ReasonModal, prompt } = useReasonModal();
+const issuedOpen = ref(false);
+const issuedJobNo = ref('');
+const issuedPassword = ref('');
+const batchIssuedOpen = ref(false);
+const batchIssued = ref<BatchIssuedPassword[]>([]);
+const batchErrorOpen = ref(false);
+const batchErrors = ref<string[]>([]);
+
+function showIssuedPassword(
+  jobNo: string,
+  password: null | string | undefined,
+  action: string,
+) {
+  if (password) {
+    issuedJobNo.value = jobNo;
+    issuedPassword.value = password;
+    issuedOpen.value = true;
+    return;
+  }
+  message.success(specifiedPasswordMessage(action));
+}
+
+async function copyIssuedPassword() {
+  try {
+    await navigator.clipboard.writeText(issuedPassword.value);
+    message.success('已复制初始密码');
+  } catch {
+    message.warning('复制失败，请手动选择密码复制');
+    return Promise.reject(new Error('复制失败'));
+  }
+}
 
 const formOptions: VbenFormProps = {
   collapsed: true,
-  schema: querySchema,
+  schema: withStatusDefault(querySchema, initialStatus),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
 };
 
 const gridOptions: VxeTableGridOptions<RiderResult> = {
+  checkboxConfig: { highlight: true },
   columns: useColumns(onActionClick),
   height: 'auto',
   proxyConfig: {
@@ -69,9 +130,71 @@ const gridOptions: VxeTableGridOptions<RiderResult> = {
 };
 
 const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
+const [BatchBindDrawer, batchBindApi] = useVbenDrawer({
+  connectedComponent: BatchBindingDrawer,
+});
 
 function onRefresh() {
   gridApi.query();
+}
+
+function currentRiders(): RiderResult[] {
+  const grid = gridApi.grid;
+  if (!grid) return [];
+  return grid.getCheckboxRecords(true) as RiderResult[];
+}
+
+function openBatchBind() {
+  const riders = currentRiders();
+  if (selectedRiderIds(riders).length === 0) {
+    message.warning('请先勾选骑手');
+    return;
+  }
+  batchBindApi.setData({ onSuccess: onRefresh, riders }).open();
+}
+
+function showBatchPasswords(items: BatchIssuedPassword[]) {
+  batchIssued.value = items;
+  batchIssuedOpen.value = true;
+}
+
+async function copyBatchPasswords() {
+  try {
+    await navigator.clipboard.writeText(formatIssuedPasswords(batchIssued.value));
+    message.success('已复制全部初始密码');
+  } catch {
+    message.warning('复制失败，请手动选择密码复制');
+    return Promise.reject(new Error('复制失败'));
+  }
+}
+
+async function runBatchAccount(kind: 'open' | 'reset') {
+  const ids = selectedRiderIds(currentRiders());
+  if (ids.length === 0) {
+    message.warning('请先勾选骑手');
+    return;
+  }
+  const opening = kind === 'open';
+  const { reason } = await prompt({
+    extraHint: opening
+      ? batchOpenAccountHint(ids.length)
+      : batchResetPasswordHint(ids.length),
+    reasonRequired: opening,
+    title: opening ? '批量开通账号' : '批量重置密码',
+  });
+  try {
+    const issued = opening
+      ? await openRiderAccountsBatchApi(batchAccountBody(ids, reason))
+      : await resetRiderPasswordsBatchApi(batchAccountBody(ids, reason));
+    showBatchPasswords(issued?.items ?? []);
+    onRefresh();
+  } catch (error: unknown) {
+    const parsed = parseBatchRowErrors(error);
+    if (parsed.length > 0) {
+      batchErrors.value = parsed.map((item) => `第 ${item.row} 名：${item.reason}`);
+      batchErrorOpen.value = true;
+    }
+  }
 }
 
 async function onActionClick({ code, row }: OnActionClickParams<RiderResult>) {
@@ -116,34 +239,43 @@ async function onActionClick({ code, row }: OnActionClickParams<RiderResult>) {
       break;
     }
     case 'leave': {
+      leavePhase.value = 'form';
+      leaveDate.value = '';
       leaveTarget.value = row;
+      leaveDrawerApi.setState({ confirmText: '确认离职' });
+      leaveDrawerApi.open();
+      break;
+    }
+    case 'leave-settlement': {
+      leavePhase.value = 'settle';
+      leaveDate.value = row.leave_date ?? '';
+      leaveTarget.value = row;
+      leaveDrawerApi.setState({ confirmText: '完成' });
       leaveDrawerApi.open();
       break;
     }
     case 'open-account': {
       const { password, reason } = await prompt({
-        extraHint: row.phone
-          ? `将开通账号，用户名为工号 ${row.job_no}，初始密码默认为手机号后 6 位。`
-          : '该骑手无手机号，请指定初始密码。',
-        password: !row.phone,
-        passwordRequired: !row.phone,
+        extraHint: openAccountHint(row.job_no),
+        password: true,
+        passwordRequired: false,
         title: '开通骑手账号',
       });
-      await openRiderAccountApi(row.id, { password, reason });
-      message.success(
-        `已开通账号，用户名为工号 ${row.job_no}，初始密码为手机号后 6 位，请提示骑手首次登录后修改密码。`,
-      );
+      const issued = await openRiderAccountApi(row.id, { password, reason });
+      showIssuedPassword(row.job_no, issued?.initial_password, '开通账号');
       onRefresh();
       break;
     }
     case 'reset-password': {
       const { password, reason } = await prompt({
+        extraHint: resetPasswordHint(),
         password: true,
+        passwordRequired: false,
         reasonRequired: false,
         title: '重置骑手密码',
       });
-      await resetRiderPasswordApi(row.id, { password, reason });
-      message.success('已重置密码');
+      const issued = await resetRiderPasswordApi(row.id, { password, reason });
+      showIssuedPassword(row.job_no, issued?.initial_password, '重置密码');
       onRefresh();
       break;
     }
@@ -181,7 +313,17 @@ const [Drawer, drawerApi] = useVbenDrawer({
     drawerApi.lock();
     try {
       if (formData.value?.id) {
-        await updateRiderApi(formData.value.id, { ...values, reason });
+        await updateRiderApi(formData.value.id, {
+          advance_limit: values.advance_limit,
+          hire_date: values.hire_date,
+          job_no: values.job_no,
+          name: values.name,
+          phone: values.phone,
+          reason,
+          remark: values.remark,
+          settle_cycle_override: values.settle_cycle_override,
+          site_id: values.site_id,
+        });
       } else {
         await createRiderApi(values);
       }
@@ -195,6 +337,10 @@ const [Drawer, drawerApi] = useVbenDrawer({
   onOpenChange(isOpen) {
     if (!isOpen) return;
     const data = drawerApi.getData<RiderResult>();
+    const editing = Boolean(data?.id);
+    formApi.setState({
+      schema: editing ? riderEditFormSchema : riderFormSchema,
+    });
     formApi.resetForm();
     if (data?.id) {
       formData.value = { id: data.id, site_id: data.site_id };
@@ -206,6 +352,53 @@ const [Drawer, drawerApi] = useVbenDrawer({
 });
 
 const leaveTarget = ref<RiderResult>();
+const leavePreview = ref<string[]>([]);
+const leavePhase = ref<'form' | 'settle'>('form');
+const leaveDate = ref('');
+
+function moneyNumber(value: MoneyValue): number {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function buildLeavePreview(items: AdvanceResult[]): string[] {
+  const hints: string[] = [];
+  const pending = items.filter((item) => item.status === 'pending').length;
+  const toPay = items.filter((item) => item.status === 'to_pay').length;
+  const outstanding = items
+    .filter((item) => item.status === 'paid')
+    .reduce(
+      (total, item) => total + Math.max(moneyNumber(item.remaining_amount), 0),
+      0,
+    );
+  if (pending > 0) {
+    hints.push('待审核的预支将在确认离职后自动驳回。');
+  }
+  if (toPay > 0) {
+    hints.push('该骑手有待发放的预支，离职后请取消，不要标记发放。');
+  }
+  if (outstanding > 0) {
+    hints.push(
+      `该骑手尚有预支待抵扣 ${formatMoney(outstanding)} 元，离职后将在未锁账周期继续抵扣。`,
+    );
+  }
+  return hints;
+}
+
+async function loadLeavePreview(riderId: number) {
+  leavePreview.value = [];
+  try {
+    const page = await getAdvanceListApi({
+      page: 1,
+      rider_id: riderId,
+      size: 100,
+    });
+    leavePreview.value = buildLeavePreview(page.items ?? []);
+  } catch {
+    leavePreview.value = [];
+  }
+}
+
 const [LeaveForm, leaveFormApi] = useVbenForm({
   layout: 'vertical',
   schema: [
@@ -225,10 +418,15 @@ const [LeaveForm, leaveFormApi] = useVbenForm({
 });
 
 const [LeaveDrawer, leaveDrawerApi] = useVbenDrawer({
-  class: 'w-[420px]',
+  class: 'w-[480px]',
   confirmText: '确认离职',
   destroyOnClose: true,
   async onConfirm() {
+    if (leavePhase.value === 'settle') {
+      await leaveDrawerApi.close();
+      onRefresh();
+      return;
+    }
     const pk = leaveTarget.value?.id;
     if (!pk) return;
     const { valid } = await leaveFormApi.validate();
@@ -237,17 +435,37 @@ const [LeaveDrawer, leaveDrawerApi] = useVbenDrawer({
     const { reason } = await prompt({ title: '离职原因' });
     leaveDrawerApi.lock();
     try {
-      await leaveRiderApi(pk, { leave_date: values.leave_date, reason });
+      const result = await leaveRiderApi(pk, {
+        leave_date: values.leave_date,
+        reason,
+      });
       message.success('已办理离职');
-      await leaveDrawerApi.close();
+      for (const hint of result?.hints ?? []) {
+        message.warning(hint);
+      }
+      leaveDate.value = values.leave_date;
+      leavePhase.value = 'settle';
+      leaveDrawerApi.setState({ confirmText: '完成' });
       onRefresh();
     } finally {
       leaveDrawerApi.unlock();
     }
   },
   onOpenChange(isOpen) {
-    if (!isOpen) return;
-    leaveFormApi.resetForm();
+    if (!isOpen) {
+      leavePreview.value = [];
+      leavePhase.value = 'form';
+      leaveDate.value = '';
+      leaveDrawerApi.setState({ confirmText: '确认离职' });
+      return;
+    }
+    if (leavePhase.value === 'form') {
+      leaveFormApi.resetForm();
+    }
+    const riderId = leaveTarget.value?.id;
+    if (riderId) {
+      void loadLeavePreview(riderId);
+    }
   },
 });
 
@@ -267,11 +485,14 @@ onMounted(() => {
       if (row) drawerApi.setData(row).open();
     });
   }
+  if (initialStatus) {
+    void gridApi.formApi.setValues({ status: initialStatus });
+  }
 });
 </script>
 
 <template>
-  <PageContainer>
+  <PageContainer v-access:code="LIST_OPEN_CODES.rider">
     <Grid>
       <template #toolbar-actions>
         <VbenButton
@@ -280,6 +501,27 @@ onMounted(() => {
         >
           <MaterialSymbolsAdd class="size-5" />
           新增骑手
+        </VbenButton>
+        <VbenButton
+          v-access:code="'rs:rider:binding'"
+          class="ml-2"
+          @click="openBatchBind"
+        >
+          批量绑定方案
+        </VbenButton>
+        <VbenButton
+          v-access:code="'rs:rider:account'"
+          class="ml-2"
+          @click="runBatchAccount('open')"
+        >
+          批量开通账号
+        </VbenButton>
+        <VbenButton
+          v-access:code="'rs:rider:account'"
+          class="ml-2"
+          @click="runBatchAccount('reset')"
+        >
+          批量重置密码
         </VbenButton>
       </template>
       <template #plan="{ row }">
@@ -296,9 +538,82 @@ onMounted(() => {
     <Drawer :title="drawerTitle">
       <Form />
     </Drawer>
-    <LeaveDrawer title="骑手离职">
-      <LeaveForm />
+    <LeaveDrawer :title="leavePhase === 'settle' ? '离职结算' : '骑手离职'">
+      <LeaveSettlementPanel
+        v-if="leavePhase === 'settle' && leaveTarget?.id && leaveDate"
+        :hints="leavePreview"
+        :leave-date="leaveDate"
+        :rider-id="leaveTarget.id"
+      />
+      <div v-else class="flex flex-col gap-3">
+        <a-alert
+          show-icon
+          type="info"
+          message="离职日当天仍计薪。若该日所在周期已锁账，将拒绝离职，请先走反冲补发。待审核预支会自动驳回；待发放预支不会自动取消。确认后可继续生成离职结算周期，单独算薪、锁账和标记发薪。"
+        />
+        <a-alert
+          v-for="(hint, index) in leavePreview"
+          :key="index"
+          show-icon
+          type="warning"
+          :message="hint"
+        />
+        <LeaveForm />
+      </div>
     </LeaveDrawer>
+    <BatchBindDrawer />
     <ReasonModal />
+    <a-modal
+      v-model:open="batchIssuedOpen"
+      title="初始密码仅展示一次"
+      width="720px"
+      ok-text="复制全部密码"
+      cancel-text="关闭"
+      @ok="copyBatchPasswords"
+    >
+      <div class="flex flex-col gap-3">
+        <p>
+          共 {{ batchIssued.length }} 人。请立即复制并告知骑手。关闭后无法再次查看。每人首次登录必须修改密码。
+        </p>
+        <a-table
+          :data-source="batchIssued"
+          :pagination="false"
+          row-key="rider_id"
+          size="small"
+        >
+          <a-table-column data-index="username" title="工号" />
+          <a-table-column data-index="name" title="姓名" />
+          <a-table-column data-index="initial_password" title="初始密码" />
+        </a-table>
+      </div>
+    </a-modal>
+    <a-modal
+      v-model:open="batchErrorOpen"
+      title="批量操作未完成"
+      :footer="null"
+    >
+      <div class="flex max-h-80 flex-col gap-2 overflow-auto">
+        <a-alert
+          v-for="(line, index) in batchErrors"
+          :key="index"
+          show-icon
+          type="error"
+          :message="line"
+        />
+      </div>
+    </a-modal>
+    <a-modal
+      v-model:open="issuedOpen"
+      title="初始密码仅展示一次"
+      ok-text="复制密码"
+      cancel-text="关闭"
+      @ok="copyIssuedPassword"
+    >
+      <div class="flex flex-col gap-3">
+        <p>用户名：{{ issuedJobNo }}</p>
+        <a-input :value="issuedPassword" readonly />
+        <p>请立即复制并告知骑手。关闭后无法再次查看。首次登录必须修改密码。</p>
+      </div>
+    </a-modal>
   </PageContainer>
 </template>

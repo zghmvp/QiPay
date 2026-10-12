@@ -36,7 +36,7 @@ onMounted(async () => {
           {{ enumLabel(PLAN_MODE_TAG_OPTIONS, item.mode_tag) }}
           ·
           {{ enumLabel(BINDING_TYPE_OPTIONS, item.binding_type) }}
-          <Tag v-if="item.is_current" size="mini" type="success">当前生效</Tag>
+          <Tag v-if="item.is_current" type="success">当前生效</Tag>
         </p>
         <p>
           生效区间 {{ item.start_date }} ~ {{ item.end_date || '长期' }}

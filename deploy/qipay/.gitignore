@@ -1,0 +1,12 @@
+logs/
+backups/
+certs/*
+!certs/.gitkeep
+env.plugin
+*.dump
+
+# 前端构建产物不入库，只保留中文占位页
+www/admin/**
+!www/admin/index.html
+www/rider-h5/**
+!www/rider-h5/index.html

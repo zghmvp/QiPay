@@ -3,7 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { Button, Empty, Field, Form, NavBar, showConfirmDialog, showToast, Step, Steps, Tag } from 'vant'
 import AppTabbar from '@/components/AppTabbar.vue'
 import MoneyText from '@/components/MoneyText.vue'
-import { cancelAdvance, createAdvance, getAdvanceLimit, getAdvances } from '@/api/me'
+import { cancelAdvance, createAdvance, getAdvanceLimit, getAdvances, getProfile } from '@/api/me'
+import { useAuthStore } from '@/stores/auth'
 import {
   ADVANCE_STATUS_OPTIONS,
   enumColor,
@@ -14,6 +15,7 @@ import { moneyNumber } from '@/utils/money'
 import { toDateTimeString } from '@/utils/date'
 import type { AdvanceDetail, AdvanceLimit } from '@/types'
 
+const auth = useAuthStore()
 const loading = ref(true)
 const submitting = ref(false)
 const limit = ref<AdvanceLimit | null>(null)
@@ -24,18 +26,23 @@ const form = reactive({
 })
 
 const available = computed(() => moneyNumber(limit.value?.available))
-const canSubmit = computed(() => available.value > 0)
+const hasInFlight = computed(() => auth.profile?.has_in_flight_advance === true)
+const readOnly = computed(() => auth.profile?.read_only === true)
+const canSubmit = computed(
+  () => !readOnly.value && available.value > 0 && auth.profile !== null && !hasInFlight.value,
+)
 
 function canCancel(item: AdvanceDetail) {
-  return item.status === 'pending' || item.status === 'draft'
+  return !readOnly.value && item.status === 'pending'
 }
 
 async function load() {
   loading.value = true
   try {
-    const [limitRes, listRes] = await Promise.all([getAdvanceLimit(), getAdvances()])
+    const [limitRes, listRes, profile] = await Promise.all([getAdvanceLimit(), getAdvances(), getProfile()])
     limit.value = limitRes
     list.value = listRes
+    auth.profile = profile
   } finally {
     loading.value = false
   }
@@ -43,6 +50,10 @@ async function load() {
 
 async function onSubmit() {
   const amount = Number(form.amount)
+  if (readOnly.value) {
+    showToast('离职后只能查看预支记录，不能提交或撤回')
+    return
+  }
   if (!Number.isFinite(amount) || amount <= 0) {
     showToast('请输入大于 0 的预支金额')
     return
@@ -93,7 +104,7 @@ onMounted(() => {
       <section v-if="limit" class="waybill">
         <p class="waybill-kicker">可申请额度</p>
         <p class="waybill-amount display-num"><MoneyText :value="limit.available" /></p>
-        <div class="metric-grid">
+        <div class="metric-grid quota-metrics">
           <div>
             <span class="label">上限</span>
             <span class="value"><MoneyText :value="limit.limit" /></span>
@@ -102,8 +113,14 @@ onMounted(() => {
             <span class="label">在途</span>
             <span class="value"><MoneyText :value="limit.used_pending_amount" /></span>
           </div>
+          <div>
+            <span class="label">未抵扣</span>
+            <span class="value"><MoneyText :value="limit.outstanding_amount" /></span>
+          </div>
         </div>
-        <p v-if="available <= 0" class="muted">当前无法预支，请联系站点</p>
+        <p v-if="readOnly" class="muted">离职后只能查看预支记录，不能提交或撤回</p>
+        <p v-else-if="hasInFlight" class="muted">您已有一笔待审核或待发放的预支，请等待处理完成后再申请</p>
+        <p v-else-if="available <= 0" class="muted">可用额度不足，已发放未抵扣的预支占用了额度</p>
       </section>
 
       <div class="section-title"><span>申请预支</span></div>
@@ -164,6 +181,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.quota-metrics {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .actions {
   padding: 12px;
 }

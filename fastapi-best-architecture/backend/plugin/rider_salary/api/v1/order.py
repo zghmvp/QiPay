@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Path, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Path, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from backend.common.pagination import DependsPagination, PageData
@@ -14,8 +14,15 @@ from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.rider_salary.enums import ImportBatchStatus
 from backend.plugin.rider_salary.schema.import_batch import GetImportBatchDetail, GetImportBatchListItem
-from backend.plugin.rider_salary.schema.order import CreateOrderParam, GetOrderDetail, ImportResult, UpdateOrderParam
+from backend.plugin.rider_salary.schema.order import (
+    CreateOrderParam,
+    DeleteOrderParam,
+    GetOrderDetail,
+    ImportResult,
+    UpdateOrderParam,
+)
 from backend.plugin.rider_salary.service.import_service import build_import_template, import_service
+from backend.plugin.rider_salary.service.month_detail_export import month_detail_export_service
 from backend.plugin.rider_salary.service.order_service import order_service
 
 router = APIRouter()
@@ -28,6 +35,7 @@ batch_router = APIRouter()
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
+        DependsRBAC,
     ],
 )
 async def get_orders_paginated(
@@ -107,6 +115,36 @@ async def export_orders(
     )
 
 
+@router.get(
+    '/month-export',
+    summary='按自然月导出明细',
+    description='一个自然月只下载一个文件。半月结的两段周期写在同一张表的周期列，不拆成两个文件。',
+    dependencies=[
+        Depends(RequestPermission('rs:period:export')),
+        DependsRBAC,
+    ],
+)
+async def export_month_orders(
+    db: CurrentSessionTransaction,
+    request: Request,
+    site_id: Annotated[int, Query(description='站点 ID')],
+    month: Annotated[str, Query(description='自然月，格式 YYYY-MM')],
+    rider_id: Annotated[int | None, Query(description='骑手 ID，不传则导出该站全部骑手')] = None,
+) -> StreamingResponse:
+    content, filename = await month_detail_export_service.export(
+        db=db,
+        request=request,
+        site_id=site_id,
+        month=month,
+        rider_id=rider_id,
+    )
+    return StreamingResponse(
+        iter([content]),
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
 @router.post(
     '/import',
     summary='导入订单明细',
@@ -118,7 +156,6 @@ async def export_orders(
 async def import_orders(
     db: CurrentSessionTransaction,
     request: Request,
-    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File(description='导入文件')],
     *,
     site_id: Annotated[int | None, Form(description='站点 ID')] = None,
@@ -132,7 +169,6 @@ async def import_orders(
         site_id=site_id,
         skip_errors=skip_errors,
         auto_recalc=auto_recalc,
-        background_tasks=background_tasks,
     )
     if result.status == ImportBatchStatus.failed:
         res = CustomResponse(code=200, msg='导入失败，未写入任何订单，请下载错误报告')
@@ -146,7 +182,7 @@ async def import_orders(
     return response_base.success(res=res, data=result)
 
 
-@router.get('/{pk}', summary='获取订单详情', dependencies=[DependsJwtAuth])
+@router.get('/{pk}', summary='获取订单详情', dependencies=[DependsJwtAuth, DependsRBAC])
 async def get_order(
     db: CurrentSession,
     request: Request,
@@ -203,9 +239,9 @@ async def delete_order(
     db: CurrentSessionTransaction,
     request: Request,
     pk: Annotated[int, Path(description='订单 ID')],
-    reason: Annotated[str, Query(description='删除原因')],
+    obj: DeleteOrderParam,
 ) -> ResponseModel:
-    await order_service.delete(db=db, request=request, pk=pk, reason=reason)
+    await order_service.delete(db=db, request=request, pk=pk, reason=obj.reason)
     return response_base.success()
 
 
@@ -215,6 +251,7 @@ async def delete_order(
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
+        DependsRBAC,
     ],
 )
 async def get_import_batches_paginated(
@@ -250,7 +287,7 @@ async def download_error_report(
     )
 
 
-@batch_router.get('/{pk}', summary='获取导入批次详情', dependencies=[DependsJwtAuth])
+@batch_router.get('/{pk}', summary='获取导入批次详情', dependencies=[DependsJwtAuth, DependsRBAC])
 async def get_import_batch(
     db: CurrentSession,
     request: Request,

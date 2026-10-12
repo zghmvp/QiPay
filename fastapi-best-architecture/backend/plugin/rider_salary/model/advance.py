@@ -15,6 +15,14 @@ class RiderSalaryAdvance(Base):
     __tablename__ = 'rs_advance'
     __table_args__ = (
         sa.Index('ix_rs_advance_rider_status', 'rider_id', 'status'),
+        # 同一骑手同时最多一笔待审核或待发放。Q-18 推荐不再实现 MySQL，
+        # postgresql_where 只在 PostgreSQL 生效；MySQL 的 init 不建等价普通唯一索引。
+        sa.Index(
+            'uq_rs_advance_one_in_flight',
+            'rider_id',
+            unique=True,
+            postgresql_where=sa.text("status IN ('pending', 'to_pay') AND deleted = 0"),
+        ),
         {'comment': '预支单表'},
     )
 

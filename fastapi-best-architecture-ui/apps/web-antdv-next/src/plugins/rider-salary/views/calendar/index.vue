@@ -12,7 +12,7 @@ import { message } from 'antdv-next';
 import dayjs from 'dayjs';
 
 import { getCalendarMonthApi } from '../../api/calendar';
-import { exportPeriodApi } from '../../api/period';
+import { exportMonthDetailApi } from '../../api/order';
 import { getRiderApi } from '../../api/rider';
 import RiderSelect from '../../components/RiderSelect.vue';
 import SalaryCalendar from '../../components/SalaryCalendar.vue';
@@ -21,6 +21,10 @@ import { currentMonth } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import DayDrawer from './components/DayDrawer.vue';
 import SummaryBar from './components/SummaryBar.vue';
+import {
+  buildCalendarMonthExport,
+  CALENDAR_MONTH_EXPORT_NEED_SCOPE,
+} from './month-export';
 
 const route = useRoute();
 const router = useRouter();
@@ -132,19 +136,19 @@ function onRiderChange(_id: null | number | undefined, row?: RiderResult) {
 }
 
 async function exportMonth() {
-  const periods = data.value?.summary.periods ?? [];
-  if (!periods.length) {
-    message.warning('本月暂无结算周期，无法导出');
+  const params = buildCalendarMonthExport({
+    month: month.value,
+    riderId: riderId.value,
+    siteId: siteId.value,
+  });
+  if (!params) {
+    message.warning(CALENDAR_MONTH_EXPORT_NEED_SCOPE);
     return;
   }
   exporting.value = true;
   try {
-    for (const period of periods) {
-      await exportPeriodApi(period.id);
-    }
-    message.success(
-      periods.length > 1 ? `已导出 ${periods.length} 个周期明细` : '已导出当月明细',
-    );
+    await exportMonthDetailApi(params);
+    message.success('已导出当月明细');
   } finally {
     exporting.value = false;
   }

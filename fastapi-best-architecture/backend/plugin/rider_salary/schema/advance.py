@@ -1,29 +1,60 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
 from pydantic import ConfigDict, Field, computed_field
 
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.enums import AdvanceStatus, DeductStatus
+from backend.plugin.rider_salary.schema.limits import (
+    LEN_ADVANCE_REASON,
+    LEN_REMARK,
+    LEN_STATUS,
+    MONEY_DIGITS,
+    MONEY_MAX,
+    MONEY_PLACES,
+    zh_money,
+    zh_str,
+)
 
 
 class AdvanceActionParam(SchemaBase):
     """预支审核备注"""
 
-    remark: str | None = Field(None, description='备注')
+    remark: Annotated[str | None, zh_str('备注', LEN_REMARK)] = Field(None, max_length=LEN_REMARK, description='备注')
+    expected_status: Annotated[str | None, zh_str('期望状态', LEN_STATUS)] = Field(
+        None,
+        max_length=LEN_STATUS,
+        description='期望的当前状态。与库中状态不一致时返回 409，不重复执行',
+    )
 
 
 class AdvanceReasonParam(SchemaBase):
     """预支驳回 / 取消"""
 
-    reason: str = Field(description='操作原因')
+    reason: Annotated[str, zh_str('操作原因', LEN_REMARK, min_length=1)] = Field(
+        min_length=1, max_length=LEN_REMARK, description='操作原因'
+    )
+    expected_status: Annotated[str | None, zh_str('期望状态', LEN_STATUS)] = Field(
+        None,
+        max_length=LEN_STATUS,
+        description='期望的当前状态。与库中状态不一致时返回 409，不重复执行',
+    )
 
 
 class CreateMeAdvanceParam(SchemaBase):
     """骑手提交预支"""
 
-    amount: Decimal = Field(description='预支金额')
-    reason: str = Field(description='申请原因')
+    amount: Annotated[Decimal, zh_money('预支金额')] = Field(
+        ge=0,
+        le=MONEY_MAX,
+        max_digits=MONEY_DIGITS,
+        decimal_places=MONEY_PLACES,
+        description='预支金额',
+    )
+    reason: Annotated[str, zh_str('申请原因', LEN_ADVANCE_REASON, min_length=1)] = Field(
+        min_length=1, max_length=LEN_ADVANCE_REASON, description='申请原因'
+    )
 
 
 class AdvanceTimelineItem(SchemaBase):

@@ -1,0 +1,21 @@
+# QiPay 生产日志轮转。
+# 安装：sudo cp deploy/qipay/logrotate/qipay /etc/logrotate.d/qipay
+# 这些路径对应 QIPAY_LOG_DIR=/var/log/qipay 。默认的 ./logs 只适合本机试跑，
+# 试跑时把下面的路径改成实际目录后再执行 logrotate -d。
+# 容器标准输出另由 compose 的 json-file（单文件 20MB、保留 5 个）轮转。
+
+/var/log/qipay/nginx/*.log
+/var/log/qipay/backend/*.log
+/var/log/qipay/celery/*.log
+/var/log/qipay/backup/*.log {
+    daily
+    rotate 14
+    maxsize 20M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    dateext
+    su root adm
+}

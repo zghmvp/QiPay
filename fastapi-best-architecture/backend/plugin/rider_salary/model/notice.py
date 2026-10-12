@@ -29,3 +29,9 @@ class RiderSalaryNotice(Base):
         index=True,
         comment='状态',
     )
+    is_top: Mapped[bool] = mapped_column(
+        sa.Boolean,
+        default=False,
+        server_default=sa.false(),
+        comment='是否置顶',
+    )

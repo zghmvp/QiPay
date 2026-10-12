@@ -12,6 +12,9 @@ import { getAllSubjectsApi } from '../../../api/subject';
 import RiderSelect from '../../../components/RiderSelect.vue';
 import SiteSelect from '../../../components/SiteSelect.vue';
 import SubjectSelect from '../../../components/SubjectSelect.vue';
+import type { BatchRowError } from '../batch-errors';
+
+import { parseBatchRowErrors } from '../batch-errors';
 
 interface BatchRow {
   amount?: number | string;
@@ -27,6 +30,7 @@ let seq = 1;
 const siteId = ref<number>();
 const rows = ref<BatchRow[]>([emptyRow()]);
 const subjects = ref<SubjectResult[]>([]);
+const batchErrors = ref<BatchRowError[]>([]);
 
 function emptyRow(): BatchRow {
   seq += 1;
@@ -60,28 +64,23 @@ const [Modal, modalApi] = useVbenModal({
       message.warning('请至少填写一行完整记录');
       return;
     }
+    const pendingKeys = rows.value
+      .filter((row) => row.rider_id && row.biz_date && row.subject_id && row.remark)
+      .map((row) => row.key);
     rows.value = rows.value.map((row) => ({ ...row, error: undefined }));
+    batchErrors.value = [];
     modalApi.lock();
     try {
       await createAdjustmentBatchApi(items);
       message.success('批量录入成功');
       await modalApi.close();
     } catch (error: unknown) {
-      const err = error as {
-        msg?: string;
-        response?: { data?: { data?: { row?: number }; msg?: string } };
-      };
-      const msg = err?.response?.data?.msg || err?.msg || '批量录入失败';
-      const rowNo = err?.response?.data?.data?.row;
-      if (rowNo) {
-        const target = items[rowNo - 1];
-        const hit = rows.value.find(
-          (row) =>
-            row.rider_id === target?.rider_id &&
-            row.biz_date === target?.biz_date &&
-            row.subject_id === target?.subject_id,
-        );
-        if (hit) hit.error = msg;
+      const parsed = parseBatchRowErrors(error);
+      batchErrors.value = parsed;
+      for (const item of parsed) {
+        const key = pendingKeys[item.row - 1];
+        const target = rows.value.find((row) => row.key === key);
+        if (target) target.error = `第 ${item.row} 行：${item.reason}`;
       }
     } finally {
       modalApi.unlock();
@@ -91,6 +90,7 @@ const [Modal, modalApi] = useVbenModal({
     if (!isOpen) return;
     siteId.value = undefined;
     seq = 1;
+    batchErrors.value = [];
     rows.value = [emptyRow()];
     subjects.value = (await getAllSubjectsApi().catch(() => [])) ?? [];
   },
@@ -124,6 +124,18 @@ function rowClassName(record: BatchRow) {
       <span>站点</span>
       <SiteSelect v-model:value="siteId" />
       <a-button type="primary" @click="addRow">新增一行</a-button>
+    </div>
+    <div
+      v-if="batchErrors.length"
+      class="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+    >
+      <div
+        v-for="item in batchErrors"
+        :key="item.row"
+        class="whitespace-pre-wrap break-all"
+      >
+        第 {{ item.row }} 行：{{ item.reason }}
+      </div>
     </div>
     <a-table
       :columns="columns"

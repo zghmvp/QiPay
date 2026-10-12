@@ -66,7 +66,10 @@ class CRUDPayroll(CRUDPlus[RiderSalaryPayroll]):
         rider_id: int,
         kind: str,
     ) -> RiderSalaryPayroll | None:
-        """取当前草稿薪资单"""
+        """取当前草稿薪资单。
+
+        部分唯一索引保证至多一行；若清理前曾有重复，保留 id 最大的一张。
+        """
         from backend.plugin.rider_salary.enums import PayrollStatus
 
         return await db.scalar(
@@ -89,7 +92,10 @@ class CRUDPayroll(CRUDPlus[RiderSalaryPayroll]):
         rider_id: int,
         kind: str,
     ) -> RiderSalaryPayroll | None:
-        """取当前未作废薪资单（同 kind 最新）"""
+        """取同类型最新未作废薪资单，包含已反冲的定稿单。
+
+        重算要覆盖的是草稿，请用 get_draft。已反冲的补发单不能当作当前可写单。
+        """
         from backend.plugin.rider_salary.enums import PayrollStatus
 
         return await db.scalar(

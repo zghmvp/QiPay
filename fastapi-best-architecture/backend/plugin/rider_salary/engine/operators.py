@@ -21,12 +21,13 @@ OP_NOT_IN_TIME = '不在时段内'
 OP_IN = '属于'
 OP_NOT_IN = '不属于'
 
+# 与产品方案 §3.2 一致。时刻比较在编译期转成分钟，日期比较用 ISO 字符串。
 OPERATORS_BY_TYPE: dict[str, tuple[str, ...]] = {
     TYPE_NUMBER: (OP_EQ, OP_NE, OP_GT, OP_GE, OP_LT, OP_LE, OP_IN_RANGE, OP_NOT_IN_RANGE),
-    TYPE_TIME: (OP_IN_TIME, OP_NOT_IN_TIME, OP_GT, OP_LT),
+    TYPE_TIME: (OP_EQ, OP_NE, OP_IN_TIME),
     TYPE_ENUM: (OP_EQ, OP_NE, OP_IN, OP_NOT_IN),
-    TYPE_BOOL: (OP_EQ,),
-    TYPE_DATE: (OP_EQ, OP_GT, OP_LT, OP_IN_RANGE),
+    TYPE_BOOL: (OP_EQ, OP_NE),
+    TYPE_DATE: (OP_EQ, OP_NE, OP_GT, OP_GE, OP_LT, OP_LE, OP_IN_RANGE),
 }
 
 COMPARE_PYTHON: dict[str, str] = {

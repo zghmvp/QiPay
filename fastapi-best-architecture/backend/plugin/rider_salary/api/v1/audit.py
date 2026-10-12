@@ -1,6 +1,8 @@
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 
 from backend.common.pagination import DependsPagination, PageData
 from backend.common.response.response_schema import ResponseSchemaModel, response_base
@@ -15,6 +17,45 @@ router = APIRouter()
 
 
 @router.get(
+    '/export',
+    summary='导出操作日志',
+    dependencies=[
+        DependsJwtAuth,
+        Depends(RequestPermission('rs:audit:export')),
+        DependsRBAC,
+    ],
+)
+async def export_audit_logs(
+    db: CurrentSession,
+    request: Request,
+    module: Annotated[str | None, Query(description='模块')] = None,
+    action: Annotated[str | None, Query(description='动作')] = None,
+    operator: Annotated[str | None, Query(description='操作人')] = None,
+    date_from: Annotated[str | None, Query(description='开始时间')] = None,
+    date_to: Annotated[str | None, Query(description='结束时间')] = None,
+    target_type: Annotated[str | None, Query(description='对象类型')] = None,
+    keyword: Annotated[str | None, Query(description='关键字')] = None,
+) -> StreamingResponse:
+    content = await audit_service.export(
+        db=db,
+        request=request,
+        module=module,
+        action=action,
+        operator=operator,
+        date_from=date_from,
+        date_to=date_to,
+        target_type=target_type,
+        keyword=keyword,
+    )
+    filename = '操作日志.xlsx'
+    return StreamingResponse(
+        iter([content]),
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
+@router.get(
     '',
     summary='分页获取操作日志',
     dependencies=[
@@ -26,6 +67,7 @@ router = APIRouter()
 )
 async def get_audit_logs_paginated(
     db: CurrentSession,
+    request: Request,
     module: Annotated[str | None, Query(description='模块')] = None,
     action: Annotated[str | None, Query(description='动作')] = None,
     operator: Annotated[str | None, Query(description='操作人')] = None,
@@ -36,6 +78,7 @@ async def get_audit_logs_paginated(
 ) -> ResponseSchemaModel[PageData[GetAuditLogDetail]]:
     page_data = await audit_service.get_list(
         db=db,
+        request=request,
         module=module,
         action=action,
         operator=operator,

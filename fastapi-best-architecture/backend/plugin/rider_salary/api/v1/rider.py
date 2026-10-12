@@ -9,7 +9,13 @@ from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
+from backend.plugin.rider_salary.schema.period import LeaveSettlementResult
 from backend.plugin.rider_salary.schema.rider import (
+    BatchBindingResult,
+    BatchIssuedPasswordResult,
+    BatchOpenAccountParam,
+    BatchPlanBindingParam,
+    BatchResetPasswordParam,
     CreateEmployHistoryParam,
     CreatePlanBindingParam,
     CreateRiderParam,
@@ -19,14 +25,18 @@ from backend.plugin.rider_salary.schema.rider import (
     GetEmployHistoryDetail,
     GetPlanBindingDetail,
     GetRiderDetail,
+    IssuedRiderPassword,
     OpenRiderAccountParam,
     ResetRiderPasswordParam,
     RiderLeaveParam,
+    RiderLeaveResult,
     UpdateEmployHistoryParam,
     UpdatePlanBindingParam,
     UpdateRiderParam,
 )
+from backend.plugin.rider_salary.service.period_service import period_service
 from backend.plugin.rider_salary.service.rider_service import rider_service
+from backend.plugin.rider_salary.utils.permission import RequestAnyPermission
 
 router = APIRouter()
 
@@ -37,7 +47,7 @@ router = APIRouter()
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
-        Depends(RequestPermission('rs:rider:add')),
+        Depends(RequestAnyPermission('rs:rider:view', 'rs:rider:add')),
         DependsRBAC,
     ],
 )
@@ -73,12 +83,66 @@ async def create_rider(db: CurrentSessionTransaction, request: Request, obj: Cre
     return response_base.success()
 
 
+@router.post(
+    '/batch/bindings',
+    summary='批量绑定方案',
+    description='一次为多名骑手绑定同一方案。每人单独校验锁账、标记重算并写审计；任一失败则整单回滚。',
+    dependencies=[
+        Depends(RequestPermission('rs:rider:binding')),
+        DependsRBAC,
+    ],
+)
+async def create_bindings_batch(
+    db: CurrentSessionTransaction,
+    request: Request,
+    obj: BatchPlanBindingParam,
+) -> ResponseSchemaModel[BatchBindingResult]:
+    data = await rider_service.create_bindings_batch(db=db, request=request, obj=obj)
+    return response_base.success(data=data)
+
+
+@router.post(
+    '/batch/open-account',
+    summary='批量开通骑手账号',
+    description='每人生成独立随机密码，仅本次返回，并要求首次登录修改。不接受统一密码。任一失败则整单回滚。',
+    dependencies=[
+        Depends(RequestPermission('rs:rider:account')),
+        DependsRBAC,
+    ],
+)
+async def open_rider_accounts_batch(
+    db: CurrentSessionTransaction,
+    request: Request,
+    obj: BatchOpenAccountParam,
+) -> ResponseSchemaModel[BatchIssuedPasswordResult]:
+    data = await rider_service.open_accounts_batch(db=db, request=request, obj=obj)
+    return response_base.success(data=data)
+
+
+@router.post(
+    '/batch/reset-password',
+    summary='批量重置骑手密码',
+    description='每人生成独立随机密码，仅本次返回，并重新要求首次登录修改。不接受统一密码。任一失败则整单回滚。',
+    dependencies=[
+        Depends(RequestPermission('rs:rider:account')),
+        DependsRBAC,
+    ],
+)
+async def reset_rider_passwords_batch(
+    db: CurrentSessionTransaction,
+    request: Request,
+    obj: BatchResetPasswordParam,
+) -> ResponseSchemaModel[BatchIssuedPasswordResult]:
+    data = await rider_service.reset_passwords_batch(db=db, request=request, obj=obj)
+    return response_base.success(data=data)
+
+
 @router.get(
     '/{pk}/employ-history',
     summary='获取用工类型历史',
     dependencies=[
         DependsJwtAuth,
-        Depends(RequestPermission('rs:rider:employ')),
+        Depends(RequestAnyPermission('rs:rider:view', 'rs:rider:employ')),
         DependsRBAC,
     ],
 )
@@ -155,7 +219,7 @@ async def delete_employ_history(
     summary='获取方案绑定',
     dependencies=[
         DependsJwtAuth,
-        Depends(RequestPermission('rs:rider:binding')),
+        Depends(RequestAnyPermission('rs:rider:view', 'rs:rider:binding')),
         DependsRBAC,
     ],
 )
@@ -232,7 +296,7 @@ async def delete_binding(
     summary='获取生效方案区间',
     dependencies=[
         DependsJwtAuth,
-        Depends(RequestPermission('rs:rider:binding')),
+        Depends(RequestAnyPermission('rs:rider:view', 'rs:rider:binding')),
         DependsRBAC,
     ],
 )
@@ -250,6 +314,7 @@ async def get_effective_plans(
 @router.put(
     '/{pk}/leave',
     summary='骑手离职',
+    description='待审核预支自动驳回；待发放预支不自动取消，并在返回提示中说明。离职日所在周期已锁账时拒绝。',
     dependencies=[
         Depends(RequestPermission('rs:rider:edit')),
         DependsRBAC,
@@ -260,11 +325,27 @@ async def leave_rider(
     request: Request,
     pk: Annotated[int, Path(description='骑手 ID')],
     obj: RiderLeaveParam,
-) -> ResponseModel:
-    count = await rider_service.leave(db=db, request=request, pk=pk, obj=obj)
-    if count > 0:
-        return response_base.success()
-    return response_base.fail()
+) -> ResponseSchemaModel[RiderLeaveResult]:
+    data = await rider_service.leave(db=db, request=request, pk=pk, obj=obj)
+    return response_base.success(data=data)
+
+
+@router.post(
+    '/{pk}/leave-settlement',
+    summary='生成离职结算周期',
+    description='为已离职骑手生成骑手级结算周期，可单独算薪、锁账和标记发薪。碰到站点级周期时整段覆盖，结束日可能晚于离职日。重复调用返回已有周期。',
+    dependencies=[
+        Depends(RequestPermission('rs:period:generate')),
+        DependsRBAC,
+    ],
+)
+async def create_leave_settlement(
+    db: CurrentSessionTransaction,
+    request: Request,
+    pk: Annotated[int, Path(description='骑手 ID')],
+) -> ResponseSchemaModel[LeaveSettlementResult]:
+    data = await period_service.create_leave_settlement(db=db, request=request, pk=pk)
+    return response_base.success(data=data)
 
 
 @router.post(
@@ -280,9 +361,9 @@ async def open_rider_account(
     request: Request,
     pk: Annotated[int, Path(description='骑手 ID')],
     obj: OpenRiderAccountParam,
-) -> ResponseModel:
-    await rider_service.open_account(db=db, request=request, pk=pk, obj=obj)
-    return response_base.success()
+) -> ResponseSchemaModel[IssuedRiderPassword]:
+    data = await rider_service.open_account(db=db, request=request, pk=pk, obj=obj)
+    return response_base.success(data=data)
 
 
 @router.post(
@@ -298,9 +379,9 @@ async def reset_rider_password(
     request: Request,
     pk: Annotated[int, Path(description='骑手 ID')],
     obj: ResetRiderPasswordParam,
-) -> ResponseModel:
-    await rider_service.reset_password(db=db, request=request, pk=pk, obj=obj)
-    return response_base.success()
+) -> ResponseSchemaModel[IssuedRiderPassword]:
+    data = await rider_service.reset_password(db=db, request=request, pk=pk, obj=obj)
+    return response_base.success(data=data)
 
 
 @router.post(
@@ -344,7 +425,7 @@ async def enable_rider_account(
     summary='获取骑手详情',
     dependencies=[
         DependsJwtAuth,
-        Depends(RequestPermission('rs:rider:add')),
+        Depends(RequestAnyPermission('rs:rider:view', 'rs:rider:add')),
         DependsRBAC,
     ],
 )

@@ -1,9 +1,9 @@
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from fastapi import BackgroundTasks, Request, UploadFile
+from fastapi import Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,12 +25,13 @@ from backend.plugin.rider_salary.schema.import_batch import (
     import_batch_status_label,
 )
 from backend.plugin.rider_salary.schema.order import ImportErrorItem, ImportResult
+from backend.plugin.rider_salary.service.audit_service import snapshot
 from backend.plugin.rider_salary.service.order_service import (
     compute_biz_date,
     map_order_status,
     rider_employment_error,
 )
-from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.audit import audit_service, operator_display_name
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import (
     TEMPLATE_HEADERS,
@@ -39,13 +40,26 @@ from backend.plugin.rider_salary.utils.excel import (
     read_rows,
     write_workbook,
 )
-from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
+from backend.plugin.rider_salary.utils.lock_check import assert_not_locked, locked_dates_in_range
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
 from backend.utils.timezone import timezone
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_ERROR_RETURN = 100
+_BATCH_FIELDS = (
+    'id',
+    'site_id',
+    'file_name',
+    'operator_id',
+    'total_rows',
+    'success_rows',
+    'failed_rows',
+    'status',
+    'date_from',
+    'date_to',
+    'remark',
+)
 
 
 def build_import_template() -> bytes:
@@ -172,6 +186,16 @@ def _max_import_rows() -> int:
     return int(getattr(settings, 'RIDER_SALARY_IMPORT_MAX_ROWS', 20000))
 
 
+def load_upload_rows(file_bytes: bytes, filename: str) -> list[dict[str, Any]]:
+    """上传校验入口：魔数、解压体积、列数和单元格长度。不合法时抛出 HTTP 400。"""
+    if len(file_bytes) > MAX_FILE_BYTES:
+        raise errors.RequestError(msg=_too_large_msg())
+    try:
+        return read_rows(file_bytes, filename)
+    except ExcelReadError as exc:
+        raise errors.RequestError(msg=exc.msg) from None
+
+
 class ImportService:
     """订单导入服务"""
 
@@ -184,7 +208,6 @@ class ImportService:
         site_id: int | None,
         skip_errors: bool = False,
         auto_recalc: bool = False,
-        background_tasks: BackgroundTasks,
     ) -> ImportResult:
         """
         导入订单文件
@@ -194,8 +217,7 @@ class ImportService:
         :param file: 上传文件
         :param site_id: 指定站点（可选）
         :param skip_errors: 是否跳过错误行
-        :param auto_recalc: 成功后是否后台重算
-        :param background_tasks: 后台任务
+        :param auto_recalc: 成功后是否在导入事务提交后重算
         :return:
         """
         visible = await get_visible_site_ids(request, db)
@@ -211,12 +233,7 @@ class ImportService:
         if file.size is not None and file.size > MAX_FILE_BYTES:
             raise errors.RequestError(msg=_too_large_msg())
         file_bytes = await file.read()
-        if len(file_bytes) > MAX_FILE_BYTES:
-            raise errors.RequestError(msg=_too_large_msg())
-        try:
-            rows = read_rows(file_bytes, filename)
-        except ExcelReadError as exc:
-            raise errors.RequestError(msg=exc.msg) from None
+        rows = load_upload_rows(file_bytes, filename)
         max_rows = _max_import_rows()
         if len(rows) > max_rows:
             raise errors.RequestError(msg=_too_large_msg())
@@ -244,6 +261,16 @@ class ImportService:
 
         file_seen: dict[str, int] = {}
         lock_cache: dict[tuple[int, int, date], bool] = {}
+        await _prefetch_import_locks(
+            db=db,
+            rows=rows,
+            visible=visible,
+            form_site=form_site,
+            sites=sites,
+            riders=riders,
+            existing_nos=existing_nos,
+            lock_cache=lock_cache,
+        )
         error_items: list[dict[str, Any]] = []
         prepared: list[dict[str, Any]] = []
 
@@ -332,16 +359,42 @@ class ImportService:
             target_type='import_batch',
             target_id=batch.id,
             target_label=f'站点{site_name}',
+            before={'exists': False, 'site_id': batch_site_id, 'file_name': filename},
+            after=snapshot(batch, _BATCH_FIELDS),
             description=(
-                f'{_operator_name(request)} 于 {_now_str()} 对 站点{site_name} 执行了导入订单，'
+                f'{operator_display_name(request)} 于 {_now_str()} 对 站点{site_name} 执行了导入订单，'
                 f'文件{filename}，成功{success_rows}行，失败{failed_rows}行'
             ),
         )
+        if inserted:
+            date_from_text = date_from.isoformat() if date_from is not None else None
+            date_to_text = date_to.isoformat() if date_to is not None else None
+            await audit_service.record(
+                db,
+                request,
+                module='订单明细',
+                action='导入订单',
+                target_type='order',
+                target_id=None,
+                target_label=f'站点{site_name}',
+                site_id=batch_site_id,
+                before={'exists': False, 'count': 0},
+                after={
+                    'count': success_rows,
+                    'date_from': date_from_text,
+                    'date_to': date_to_text,
+                    'rider_count': len(rider_ids),
+                },
+                description=(
+                    f'{operator_display_name(request)} 于 {_now_str()} 对 站点{site_name} 写入订单，'
+                    f'成功{success_rows}条，业务日期{date_from_text}至{date_to_text}'
+                ),
+            )
         if auto_recalc and inserted and date_from is not None and date_to is not None:
-            # 先提交导入事务，避免后台重算与请求事务互相回滚
-            await db.commit()
-            background_tasks.add_task(
-                recalc_imported_periods,
+            from backend.plugin.rider_salary.service.calc_job_service import schedule_import_recalc
+
+            await schedule_import_recalc(
+                db,
                 site_id=batch_site_id,
                 rider_ids=list(rider_ids),
                 date_from=date_from,
@@ -424,6 +477,87 @@ class ImportService:
         return write_workbook([('错误报告', ['行号', '订单号', '原因'], rows)])
 
 
+def _import_recalc_period_stmt(
+    *,
+    site_id: int,
+    rider_ids: list[int],
+    date_from: date,
+    date_to: date,
+) -> Any:
+    """导入区间内、这些骑手会碰到的周期（含已锁账、已发薪）。"""
+    return select(RiderSalarySettlePeriod).where(
+        RiderSalarySettlePeriod.site_id == site_id,
+        RiderSalarySettlePeriod.status.in_([
+            PeriodStatus.open,
+            PeriodStatus.reopened,
+            PeriodStatus.locked,
+            PeriodStatus.paid,
+        ]),
+        RiderSalarySettlePeriod.start_date <= date_to,
+        RiderSalarySettlePeriod.end_date >= date_from,
+        RiderSalarySettlePeriod.deleted == 0,
+        RiderSalarySettlePeriod.rider_id.in_([*rider_ids, 0]),
+    )
+
+
+async def _recalc_one_imported_period(
+    db: AsyncSession,
+    *,
+    period: RiderSalarySettlePeriod,
+    rider_ids: list[int],
+) -> bool:
+    """重算一个周期。失败只回滚这个周期的保存点，并把原因写成可见告警。
+
+    :return: 没有抛错时为真
+    """
+    from backend.common.log import log
+    from backend.plugin.rider_salary.service.calc_service import append_period_calc_warning, calculate_period
+
+    try:
+        async with db.begin_nested():
+            await calculate_period(db, period_id=period.id, rider_ids=rider_ids, operator=None)
+    except Exception as exc:
+        log.exception('导入后自动重算失败 period_id=%s', period.id)
+        await append_period_calc_warning(period.id, f'导入后自动重算失败：{exc}')
+        return False
+    return True
+
+
+async def recalc_imported_periods_on(
+    db: AsyncSession,
+    *,
+    site_id: int,
+    rider_ids: list[int],
+    date_from: date,
+    date_to: date,
+    operator_id: int,
+) -> None:
+    """在调用方会话里重算导入涉及的周期。
+
+    :param db: 数据库会话
+    :param site_id: 站点 ID
+    :param rider_ids: 骑手 ID
+    :param date_from: 业务日起
+    :param date_to: 业务日止
+    :param operator_id: 操作人 ID
+    """
+    _ = operator_id
+    periods = list(
+        (
+            await db.scalars(
+                _import_recalc_period_stmt(
+                    site_id=site_id,
+                    rider_ids=rider_ids,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            )
+        ).all()
+    )
+    for period in periods:
+        await _recalc_period_under_job(db, period=period, rider_ids=rider_ids, operator_id=operator_id)
+
+
 async def recalc_imported_periods(
     *,
     site_id: int,
@@ -432,33 +566,181 @@ async def recalc_imported_periods(
     date_to: date,
     operator_id: int,
 ) -> None:
-    """导入后后台重算涉及的开放周期；失败不影响已入库订单。"""
+    """导入后后台重算涉及的周期。已锁账的跳过且留下告警；失败不影响已入库订单。
+
+    每个周期先提交一条计算中作业，锁账能看见它，再重算，最后提交终态。
+    """
     from backend.common.log import log
 
-    _ = operator_id
-    try:
-        from backend.plugin.rider_salary.service.calc_service import calculate_period
-    except ImportError:
-        log.warning('自动重算跳过：未找到 calculate_period')
-        return
     try:
         async with async_db_session.begin() as db:
-            periods = (
-                await db.scalars(
-                    select(RiderSalarySettlePeriod).where(
-                        RiderSalarySettlePeriod.site_id == site_id,
-                        RiderSalarySettlePeriod.status.in_([PeriodStatus.open, PeriodStatus.reopened]),
-                        RiderSalarySettlePeriod.start_date <= date_to,
-                        RiderSalarySettlePeriod.end_date >= date_from,
-                        RiderSalarySettlePeriod.deleted == 0,
-                        RiderSalarySettlePeriod.rider_id.in_([*rider_ids, 0]),
+            period_ids = [
+                int(row.id)
+                for row in (
+                    await db.scalars(
+                        _import_recalc_period_stmt(
+                            site_id=site_id,
+                            rider_ids=rider_ids,
+                            date_from=date_from,
+                            date_to=date_to,
+                        )
                     )
-                )
-            ).all()
-            for period in periods:
-                await calculate_period(db, period_id=period.id, rider_ids=rider_ids, operator=None)
-    except Exception:
+                ).all()
+            ]
+        for period_id in period_ids:
+            await _recalc_committed_period_job(period_id, rider_ids, operator_id)
+    except Exception as exc:
         log.exception('导入后自动重算失败 site_id=%s rider_ids=%s', site_id, rider_ids)
+        await _warn_import_recalc_failure(
+            site_id=site_id,
+            rider_ids=rider_ids,
+            date_from=date_from,
+            date_to=date_to,
+            exc=exc,
+        )
+
+
+async def _recalc_period_under_job(
+    db: AsyncSession,
+    *,
+    period: RiderSalarySettlePeriod,
+    rider_ids: list[int],
+    operator_id: int,
+) -> None:
+    """在当前事务里挂上计算中作业，算完后写成终态。"""
+    from sqlalchemy.exc import IntegrityError
+
+    from backend.plugin.rider_salary.enums import CalcJobStatus
+    from backend.plugin.rider_salary.model.calc_job import RiderSalaryCalcJob
+    from backend.plugin.rider_salary.service.calc_job_service import period_has_active_job
+    from backend.plugin.rider_salary.service.calc_service import PERIOD_CALCULATING_LOCK_MSG, append_period_calc_warning
+    from backend.utils.timezone import timezone
+
+    if await period_has_active_job(db, period.id):
+        await append_period_calc_warning(period.id, PERIOD_CALCULATING_LOCK_MSG)
+        return
+    job = RiderSalaryCalcJob(
+        period_id=period.id,
+        site_id=period.site_id,
+        status=CalcJobStatus.running.value,
+        operator_id=operator_id or None,
+    )
+    try:
+        async with db.begin_nested():
+            db.add(job)
+            await db.flush()
+    except IntegrityError:
+        await append_period_calc_warning(period.id, PERIOD_CALCULATING_LOCK_MSG)
+        return
+    ok = await _recalc_one_imported_period(db, period=period, rider_ids=rider_ids)
+    job.status = CalcJobStatus.succeeded.value if ok else CalcJobStatus.failed.value
+    job.finished_time = timezone.now()
+    if not ok:
+        job.error_message = '导入后自动重算失败'
+    await db.flush()
+
+
+async def _recalc_committed_period_job(period_id: int, rider_ids: list[int], operator_id: int) -> None:
+    """先提交计算中作业，再重算，最后提交终态。锁账在重算期间会看到这条作业。"""
+    from backend.common.log import log
+    from backend.plugin.rider_salary.service.calc_service import append_period_calc_warning
+
+    job_id = await _open_running_import_job(period_id, operator_id)
+    if job_id is None:
+        return
+    try:
+        ok = await _recalc_loaded_period(period_id, rider_ids)
+    except Exception as exc:
+        log.exception('导入后自动重算失败 period_id=%s', period_id)
+        await append_period_calc_warning(period_id, f'导入后自动重算失败：{exc}')
+        await _close_import_job(job_id, ok=False, message=str(exc)[:500])
+        return
+    message = None if ok else '导入后自动重算失败'
+    await _close_import_job(job_id, ok=ok, message=message)
+
+
+async def _open_running_import_job(period_id: int, operator_id: int) -> int | None:
+    """提交一条计算中作业。已有活动作业时不新建。"""
+    from backend.plugin.rider_salary.enums import CalcJobStatus
+    from backend.plugin.rider_salary.model.calc_job import RiderSalaryCalcJob
+    from backend.plugin.rider_salary.service.calc_job_service import period_has_active_job
+    from backend.plugin.rider_salary.service.calc_service import PERIOD_CALCULATING_LOCK_MSG, append_period_calc_warning
+
+    async with async_db_session.begin() as db:
+        period = await db.get(RiderSalarySettlePeriod, period_id)
+        if period is None or period.deleted:
+            return None
+        if await period_has_active_job(db, period.id):
+            await append_period_calc_warning(period.id, PERIOD_CALCULATING_LOCK_MSG)
+            return None
+        job = RiderSalaryCalcJob(
+            period_id=period.id,
+            site_id=period.site_id,
+            status=CalcJobStatus.running.value,
+            operator_id=operator_id or None,
+        )
+        db.add(job)
+        await db.flush()
+        return int(job.id)
+
+
+async def _recalc_loaded_period(period_id: int, rider_ids: list[int]) -> bool:
+    async with async_db_session.begin() as db:
+        period = await db.get(RiderSalarySettlePeriod, period_id)
+        if period is None or period.deleted:
+            return False
+        return await _recalc_one_imported_period(db, period=period, rider_ids=rider_ids)
+
+
+async def _close_import_job(job_id: int, *, ok: bool, message: str | None) -> None:
+    from backend.common.log import log
+    from backend.plugin.rider_salary.enums import CalcJobStatus
+    from backend.plugin.rider_salary.model.calc_job import RiderSalaryCalcJob
+    from backend.utils.timezone import timezone
+
+    try:
+        async with async_db_session.begin() as db:
+            stored = await db.get(RiderSalaryCalcJob, job_id)
+            if stored is None or stored.status != CalcJobStatus.running.value:
+                return
+            stored.status = CalcJobStatus.succeeded.value if ok else CalcJobStatus.failed.value
+            stored.finished_time = timezone.now()
+            if message:
+                stored.error_message = message
+    except Exception:
+        log.exception('回写导入重算作业失败 job_id=%s', job_id)
+
+
+async def _warn_import_recalc_failure(
+    *,
+    site_id: int,
+    rider_ids: list[int],
+    date_from: date,
+    date_to: date,
+    exc: Exception,
+) -> None:
+    """整段重算没能进事务时，另开一次会话把失败写到相关周期上。"""
+    from backend.common.log import log
+    from backend.plugin.rider_salary.service.calc_service import append_period_calc_warning
+
+    try:
+        async with async_db_session.begin() as db:
+            periods = list(
+                (
+                    await db.scalars(
+                        _import_recalc_period_stmt(
+                            site_id=site_id,
+                            rider_ids=rider_ids,
+                            date_from=date_from,
+                            date_to=date_to,
+                        )
+                    )
+                ).all()
+            )
+            for period in periods:
+                await append_period_calc_warning(period.id, f'导入后自动重算失败：{exc}')
+    except Exception:
+        log.exception('导入后自动重算失败且告警未能写入 site_id=%s', site_id)
 
 
 async def _validate_import_row(  # ruff:ignore[complex-structure]
@@ -595,6 +877,81 @@ def _result_payload(
     }
 
 
+def _import_lock_target(
+    *,
+    row: dict[str, Any],
+    visible: set[int] | None,
+    form_site: RiderSalarySite | None,
+    sites: dict[str, RiderSalarySite],
+    riders: dict[str, RiderSalaryRider],
+    existing_nos: set[str],
+) -> tuple[int, int, date] | None:
+    """与逐行校验到达锁账之前的判断对齐。到不了锁账的行不预取。"""
+    if validate_row_format(row):
+        return None
+    site = sites.get(cell_text(row.get('site_code')))
+    if site is None:
+        return None
+    if visible is not None and site.id not in visible:
+        return None
+    if form_site is not None and site.id != form_site.id:
+        return None
+    rider = riders.get(cell_text(row.get('job_no')))
+    if rider is None or rider.site_id != site.id:
+        return None
+    if cell_text(row.get('order_no')) in existing_nos:
+        return None
+    order_time = parse_cell_datetime(row.get('order_time'))
+    deliver_raw = row.get('deliver_time')
+    deliver_time = None if _is_blank(deliver_raw) else parse_cell_datetime(deliver_raw)
+    biz_date = compute_biz_date(order_time, deliver_time)
+    if rider_employment_error(rider, biz_date):
+        return None
+    return site.id, rider.id, biz_date
+
+
+async def _prefetch_import_locks(
+    *,
+    db: AsyncSession,
+    rows: list[dict[str, Any]],
+    visible: set[int] | None,
+    form_site: RiderSalarySite | None,
+    sites: dict[str, RiderSalarySite],
+    riders: dict[str, RiderSalaryRider],
+    existing_nos: set[str],
+    lock_cache: dict[tuple[int, int, date], bool],
+) -> None:
+    """按骑手一次取出区间内锁账日期，写入逐行缓存。查询次数等于涉及的站点+骑手组合数。"""
+    spans: dict[tuple[int, int], list[date]] = {}
+    for row in rows:
+        target = _import_lock_target(
+            row=row,
+            visible=visible,
+            form_site=form_site,
+            sites=sites,
+            riders=riders,
+            existing_nos=existing_nos,
+        )
+        if target is None:
+            continue
+        site_id, rider_id, biz_date = target
+        spans.setdefault((site_id, rider_id), []).append(biz_date)
+    for (site_id, rider_id), days in spans.items():
+        date_from = min(days)
+        date_to = max(days)
+        locked = await locked_dates_in_range(
+            db,
+            site_id=site_id,
+            rider_id=rider_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        current = date_from
+        while current <= date_to:
+            lock_cache[site_id, rider_id, current] = current in locked
+            current += timedelta(days=1)
+
+
 async def _is_locked(
     db: AsyncSession,
     site_id: int,
@@ -613,11 +970,6 @@ async def _is_locked(
         return True
     cache[key] = False
     return False
-
-
-def _operator_name(request: Request) -> str:
-    user = getattr(request, 'user', None)
-    return str(getattr(user, 'nickname', None) or getattr(user, 'username', None) or '未知')
 
 
 def _now_str() -> str:

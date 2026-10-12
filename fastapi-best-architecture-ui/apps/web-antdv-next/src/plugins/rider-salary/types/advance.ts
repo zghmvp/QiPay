@@ -37,6 +37,14 @@ export interface AdvanceResult {
   updated_time?: null | string;
 }
 
+export interface AdvanceLedger {
+  balanced: boolean;
+  carried: MoneyValue;
+  deducted: MoneyValue;
+  gap: MoneyValue;
+  issued: MoneyValue;
+}
+
 export interface AdvanceQuery extends PageParams {
   date_from?: string;
   date_to?: string;

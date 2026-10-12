@@ -17,6 +17,7 @@ from backend.plugin.rider_salary.schema.adjustment import (
     UpdateAdjustmentParam,
 )
 from backend.plugin.rider_salary.service.adjustment_service import adjustment_service
+from backend.plugin.rider_salary.utils.permission import RequestAnyPermission
 
 router = APIRouter()
 
@@ -27,7 +28,7 @@ router = APIRouter()
     dependencies=[
         DependsJwtAuth,
         DependsPagination,
-        Depends(RequestPermission('rs:adjustment:add')),
+        Depends(RequestAnyPermission('rs:adjustment:view', 'rs:adjustment:add')),
         DependsRBAC,
     ],
 )
@@ -76,7 +77,7 @@ async def create_adjustments_batch(
     summary='获取奖惩记录详情',
     dependencies=[
         DependsJwtAuth,
-        Depends(RequestPermission('rs:adjustment:add')),
+        Depends(RequestAnyPermission('rs:adjustment:view', 'rs:adjustment:add')),
         DependsRBAC,
     ],
 )

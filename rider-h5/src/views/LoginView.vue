@@ -3,6 +3,8 @@ import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Field, Form, showToast } from 'vant'
 import { getCaptcha, login } from '@/api/auth'
+import { isMustChangePasswordError } from '@/api/must-change'
+import { isRiderOnlyError } from '@/api/rider-only'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -16,6 +18,7 @@ const form = reactive({
 const uuid = ref('')
 const imageSrc = ref('')
 const loading = ref(false)
+const riderOnlyDenied = ref(false)
 let timer: ReturnType<typeof setTimeout> | null = null
 
 async function refreshCaptcha() {
@@ -37,6 +40,7 @@ async function onSubmit() {
     return
   }
   loading.value = true
+  riderOnlyDenied.value = false
   try {
     const res = await login({
       username: form.username.trim(),
@@ -45,7 +49,16 @@ async function onSubmit() {
       uuid: uuid.value,
     })
     auth.saveToken(res.access_token)
-    await auth.loadProfile()
+    try {
+      await auth.loadProfile()
+    } catch (error) {
+      if (isMustChangePasswordError(error)) {
+        await router.replace('/change-password')
+        return
+      }
+      riderOnlyDenied.value = isRiderOnlyError(error)
+      throw error
+    }
     showToast('登录成功')
     await router.replace('/home')
   } catch {
@@ -68,11 +81,13 @@ onUnmounted(() => {
 <template>
   <div class="login">
     <header class="hero">
-      <p class="waybill-kicker">RIDER PAY STUB</p>
+      <p class="waybill-kicker">骑手工资条</p>
       <h1>骑手薪资</h1>
-      <p>账号由站点开通，用户名为工号</p>
+      <p class="hero-note">账号由站点开通，用户名为工号</p>
+      <p class="scope-note">仅骑手可用，管理员请使用管理端</p>
     </header>
     <Form class="card-block form" @submit="onSubmit">
+      <p v-if="riderOnlyDenied" class="form-alert" role="alert">仅骑手可用</p>
       <Field
         v-model="form.username"
         name="username"
@@ -124,9 +139,21 @@ onUnmounted(() => {
   letter-spacing: 0.08em;
 }
 
-.hero p:last-child {
+.hero-note,
+.scope-note {
   opacity: 0.72;
   font-size: 13px;
+}
+
+.scope-note {
+  margin: 8px 0 0;
+}
+
+.form-alert {
+  margin: 12px 12px 0;
+  color: var(--danger, #c44536);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .form {

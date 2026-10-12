@@ -35,7 +35,7 @@ export async function updateOrderApi(
 }
 
 export async function deleteOrderApi(pk: number, reason: string) {
-  return requestClient.delete(`${BASE}/${pk}`, { params: { reason } });
+  return requestClient.delete(`${BASE}/${pk}`, { data: { reason } });
 }
 
 export async function importOrdersApi(data: {
@@ -56,6 +56,31 @@ export async function importOrdersApi(data: {
 
 export async function downloadImportTemplateApi() {
   return downloadNamedBlob(`${BASE}/import-template`, '订单导入模板.xlsx');
+}
+
+export async function exportOrdersApi(params: {
+  date_from?: string;
+  date_to?: string;
+  rider_id?: number;
+  site_id: number;
+}) {
+  const from = params.date_from || '全部';
+  const to = params.date_to || '全部';
+  return downloadNamedBlob(`${BASE}/export`, `订单明细_${from}_${to}.xlsx`, {
+    params,
+  });
+}
+
+export async function exportMonthDetailApi(params: {
+  month: string;
+  rider_id?: number;
+  site_id: number;
+}) {
+  return downloadNamedBlob(
+    `${BASE}/month-export`,
+    `当月明细-${params.month}.xlsx`,
+    { params },
+  );
 }
 
 export async function getImportBatchListApi(params: ImportBatchQuery) {

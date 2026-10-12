@@ -55,7 +55,15 @@ _EMPLOY_OPTIONS: tuple[dict[str, str | int], ...] = (
 
 _ALL_STAGES = (STAGE_PER_ORDER, STAGE_DAILY, STAGE_PERIOD)
 _ORDER_DAY = (STAGE_PER_ORDER, STAGE_DAILY)
-_DAY_PERIOD = (STAGE_DAILY, STAGE_PERIOD)
+_DAILY_ONLY = (STAGE_DAILY,)
+
+# 周期没有「某一天」。这些字段留在周期阶段时，日期条件恒为假，日单量恒为 0。
+PERIOD_STAGE_BANNED_FIELDS: frozenset[str] = frozenset({
+    '日期',
+    '日单量',
+    '日总单量',
+    '日有效单量',
+})
 
 
 FIELDS: tuple[FieldSpec, ...] = (
@@ -66,17 +74,19 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec('送达时刻', TYPE_TIME, (STAGE_PER_ORDER,), None, '送达时间的时分；无送达则条件视为假'),
     FieldSpec('配送时长', TYPE_NUMBER, (STAGE_PER_ORDER,), '分钟', '送达时间减下单时间；缺送达按 0 并记 warning'),
     FieldSpec('订单状态', TYPE_ENUM, (STAGE_PER_ORDER,), None, '订单状态', _ORDER_STATUS_OPTIONS),
-    FieldSpec('日期', TYPE_DATE, _ALL_STAGES, None, '业务日期'),
+    FieldSpec('日期', TYPE_DATE, _ORDER_DAY, None, '业务日期，仅逐单和按日阶段可用'),
     FieldSpec('星期', TYPE_ENUM, _ORDER_DAY, None, '周一=1 … 周日=7', _WEEKDAY_OPTIONS),
     FieldSpec('是否节假日', TYPE_BOOL, _ORDER_DAY, None, '中国法定节假日（chinese-calendar，含调休判定）'),
     FieldSpec('是否周末', TYPE_BOOL, _ORDER_DAY, None, '星期六或星期日'),
     FieldSpec('是否恶劣天气', TYPE_BOOL, _ORDER_DAY, None, '来自站点日标记，无记录为否'),
     FieldSpec('是否高温', TYPE_BOOL, _ORDER_DAY, None, '来自站点日标记，无记录为否'),
     FieldSpec('是否大促', TYPE_BOOL, _ORDER_DAY, None, '来自站点日标记，无记录为否'),
-    FieldSpec('用工类型', TYPE_ENUM, _ALL_STAGES, None, '按日取自用工类型历史', _EMPLOY_OPTIONS),
-    FieldSpec('日单量', TYPE_NUMBER, _DAY_PERIOD, '单', '当日已完成订单数（决策补遗#10）'),
-    FieldSpec('日总单量', TYPE_NUMBER, _DAY_PERIOD, '单', '当日全部状态订单数'),
-    FieldSpec('日有效单量', TYPE_NUMBER, _DAY_PERIOD, '单', '日单量的别名，当日已完成订单数'),
+    FieldSpec(
+        '用工类型', TYPE_ENUM, _ALL_STAGES, None, '逐单和按日取当天，周期取段末；均来自用工历史', _EMPLOY_OPTIONS
+    ),
+    FieldSpec('日单量', TYPE_NUMBER, _DAILY_ONLY, '单', '当日已完成订单数，仅按日阶段可用（决策补遗#10）'),
+    FieldSpec('日总单量', TYPE_NUMBER, _DAILY_ONLY, '单', '当日全部状态订单数，仅按日阶段可用'),
+    FieldSpec('日有效单量', TYPE_NUMBER, _DAILY_ONLY, '单', '日单量的别名，当日已完成订单数，仅按日阶段可用'),
     FieldSpec('日逐单金额', TYPE_NUMBER, (STAGE_DAILY,), '元', '当日逐单项进应发合计'),
     FieldSpec('周期单量', TYPE_NUMBER, (STAGE_PERIOD,), '单', '整个结算周期已完成订单数（跨方案段）'),
     FieldSpec('周期总单量', TYPE_NUMBER, (STAGE_PERIOD,), '单', '整个结算周期全部状态订单数'),
@@ -85,7 +95,7 @@ FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec('周期天数', TYPE_NUMBER, (STAGE_PERIOD,), '天', '周期结束日减开始日加 1'),
     FieldSpec('方案生效天数', TYPE_NUMBER, (STAGE_PERIOD,), '天', '本段日历天数'),
     FieldSpec('出勤天数', TYPE_NUMBER, (STAGE_PERIOD,), '天', '周期内有有效单的天数'),
-    FieldSpec('本期已计金额', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本薪资单中排序在前且进应发的明细之和'),
+    FieldSpec('本期已计金额', TYPE_NUMBER, (STAGE_PERIOD,), '元', '排序在前且进应发的公式明细之和，不含手工奖惩'),
     FieldSpec('本期逐单金额', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本薪资单已产生的逐单项进应发合计'),
     FieldSpec('本期手工奖', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本周期手工奖进应发合计'),
     FieldSpec('本期手工惩', TYPE_NUMBER, (STAGE_PERIOD,), '元', '本周期手工惩进应发合计（带符号）'),
@@ -96,6 +106,33 @@ FIELDS: tuple[FieldSpec, ...] = (
 FIELD_MAP: dict[str, FieldSpec] = {item.name: item for item in FIELDS}
 
 NUMBER_FIELDS: frozenset[str] = frozenset(item.name for item in FIELDS if item.type == TYPE_NUMBER)
+# 金额、距离、重量、时长、已计金额：连续量，求值用 Decimal。
+DECIMAL_FIELDS: frozenset[str] = frozenset({
+    '配送距离',
+    '商品重量',
+    '订单金额',
+    '配送时长',
+    '日逐单金额',
+    '本期已计金额',
+    '本期逐单金额',
+    '本期手工奖',
+    '本期手工惩',
+})
+# 单量、天数、工龄：计数，求值用 int。时刻不在这里，见 TIME_FIELDS。
+COUNT_FIELDS: frozenset[str] = frozenset({
+    '日单量',
+    '日总单量',
+    '日有效单量',
+    '周期单量',
+    '周期总单量',
+    '周期有效单量',
+    '方案期内单量',
+    '周期天数',
+    '方案生效天数',
+    '出勤天数',
+    '工龄月数',
+    '入职天数',
+})
 TIME_FIELDS: frozenset[str] = frozenset(item.name for item in FIELDS if item.type == TYPE_TIME)
 ENUM_FIELDS: frozenset[str] = frozenset(item.name for item in FIELDS if item.type == TYPE_ENUM)
 BOOL_FIELDS: frozenset[str] = frozenset(item.name for item in FIELDS if item.type == TYPE_BOOL)

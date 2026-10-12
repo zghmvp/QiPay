@@ -52,6 +52,11 @@ export interface MeProfile {
   employ_type: string
   employ_type_label: string
   hire_date: string
+  status: string
+  status_label: string
+  leave_date: string | null
+  read_only: boolean
+  read_until: string | null
   current_plan: MeCurrentPlan | null
   advance_limit: MoneyValue
   has_in_flight_advance: boolean
@@ -239,6 +244,7 @@ export interface NoticeDetail {
 export interface AdvanceLimit {
   limit: MoneyValue
   used_pending_amount: MoneyValue
+  outstanding_amount: MoneyValue
   available: MoneyValue
 }
 
@@ -277,6 +283,38 @@ export interface AdvanceDetail {
   timeline: AdvanceTimelineItem[]
   created_time: string | null
   updated_time: string | null
+}
+
+export interface MePayslipItem {
+  id: number
+  period_id: number
+  period_range: string
+  period_status: string
+  period_status_label: string
+  kind: string
+  kind_label: string
+  status: string
+  status_label: string
+  order_count: number
+  gross: MoneyValue
+  deduction_total: MoneyValue
+  advance_deduction: MoneyValue
+  net: MoneyValue
+  calc_time: string | null
+}
+
+export interface MePayslipLine {
+  stage: string
+  stage_label: string
+  subject_name: string
+  source: string
+  source_label: string
+  amount: MoneyValue
+  line_count: number
+}
+
+export interface MePayslipDetail extends MePayslipItem {
+  lines: MePayslipLine[]
 }
 
 export interface CreateAdvancePayload {

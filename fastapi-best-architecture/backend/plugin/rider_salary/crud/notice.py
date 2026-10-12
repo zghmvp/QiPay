@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,23 @@ from sqlalchemy_crud_plus import CRUDPlus
 from backend.plugin.rider_salary.model.notice import RiderSalaryNotice
 from backend.plugin.rider_salary.schema.notice import CreateNoticeParam, UpdateNoticeParam
 from backend.utils.timezone import timezone
+
+
+def notice_list_order_by() -> tuple[Any, ...]:
+    """置顶优先，再按发布时间倒序。发布时间为空的排在同组末尾。"""
+    return (
+        RiderSalaryNotice.is_top.desc(),
+        RiderSalaryNotice.publish_time.desc().nulls_last(),
+        RiderSalaryNotice.id.desc(),
+    )
+
+
+def notice_sort_key(row: Any) -> tuple[int, float, int]:
+    """与 ``notice_list_order_by`` 相同的排序键：置顶在前，发布时间倒序，空发布时间在后。"""
+    pinned = 0 if bool(getattr(row, 'is_top', False)) else 1
+    publish = getattr(row, 'publish_time', None)
+    publish_rank = float('inf') if publish is None else -publish.timestamp()
+    return pinned, publish_rank, -int(getattr(row, 'id', 0) or 0)
 
 
 class CRUDNotice(CRUDPlus[RiderSalaryNotice]):
@@ -47,7 +65,8 @@ class CRUDNotice(CRUDPlus[RiderSalaryNotice]):
             filters['site_id'] = site_id
         elif site_ids is not None:
             filters['site_id__in'] = list(site_ids) or [-1]
-        return await self.select_order('created_time', 'desc', **filters)
+        stmt = await self.select_order('id', 'desc', **filters)
+        return stmt.order_by(None).order_by(*notice_list_order_by())
 
     async def get_all(self, db: AsyncSession) -> Sequence[RiderSalaryNotice]:
         """

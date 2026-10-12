@@ -108,6 +108,12 @@ const routes: RouteRecordRaw[] = [
         name: 'RiderSalaryAudit',
         path: '/rider-salary/audit',
       },
+      {
+        component: () => import('../views/report/index.vue'),
+        meta: { icon: 'lucide:pie-chart', title: '成本报表' },
+        name: 'RiderSalaryReport',
+        path: '/rider-salary/report',
+      },
     ],
   },
 ];

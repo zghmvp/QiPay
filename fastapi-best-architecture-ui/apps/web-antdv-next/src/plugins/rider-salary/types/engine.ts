@@ -13,10 +13,19 @@ export interface EngineFunction {
   signature: string;
 }
 
+export interface FormulaPlaceholder {
+  description?: string;
+  example?: number | string;
+  kind?: string;
+  label: string;
+  token: string;
+}
+
 export interface EngineFormulaTemplate {
   compiled_example?: string;
   description: string;
   name: string;
+  placeholders?: FormulaPlaceholder[];
   skeleton: Record<string, unknown>;
   type: string;
 }

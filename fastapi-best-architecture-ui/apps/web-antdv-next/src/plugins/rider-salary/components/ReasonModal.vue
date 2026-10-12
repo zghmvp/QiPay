@@ -79,7 +79,7 @@ const [Modal, modalApi] = useVbenModal({
       <a-input-password
         v-if="needPassword"
         v-model:value="password"
-        :placeholder="passwordRequired ? '请输入密码' : '密码（可选，不填则按规则生成）'"
+        :placeholder="passwordRequired ? '请输入密码' : '密码（可选，不填则生成随机密码，仅展示一次）'"
       />
     </div>
   </Modal>

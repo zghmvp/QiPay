@@ -37,11 +37,22 @@ export function buildMonthMatrix(month: string): Dayjs[][] {
 
 export const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
+const YEAR_MONTH = /^\d{4}-(?:0[1-9]|1[0-2])$/
+
+function strictMonth(month: string): Dayjs | undefined {
+  if (!YEAR_MONTH.test(month)) return undefined
+  const d = dayjs(`${month}-01`)
+  if (!d.isValid() || d.format('YYYY-MM') !== month) return undefined
+  return d
+}
+
 export function shiftMonth(month: string, delta: number): string {
-  return dayjs(`${month}-01`).add(delta, 'month').format('YYYY-MM')
+  const d = strictMonth(month)
+  if (!d) return month
+  return d.add(delta, 'month').format('YYYY-MM')
 }
 
 export function formatMonthTitle(month: string): string {
-  const d = dayjs(`${month}-01`)
-  return d.isValid() ? d.format('YYYY年M月') : month
+  const d = strictMonth(month)
+  return d ? d.format('YYYY年M月') : month
 }

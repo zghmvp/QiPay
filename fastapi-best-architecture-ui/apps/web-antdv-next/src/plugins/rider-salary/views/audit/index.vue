@@ -5,9 +5,11 @@ import type { AuditLogResult } from '../../types/audit';
 
 import type { VxeTableGridOptions } from '#/adapter/vxe-table';
 
+import { VbenButton } from '@vben/common-ui';
+
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 
-import { getAuditLogListApi } from '../../api/audit';
+import { exportAuditLogsApi, getAuditLogListApi } from '../../api/audit';
 import PageContainer from '../_shared/PageContainer.vue';
 import { querySchema, useColumns } from './data';
 
@@ -46,7 +48,19 @@ const gridOptions: VxeTableGridOptions<AuditLogResult> = {
   },
 };
 
-const [Grid] = useVbenVxeGrid({ formOptions, gridOptions });
+const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
+
+async function onExport() {
+  const values = (await gridApi.formApi.getValues()) as {
+    date_range?: [string, string];
+  } & Record<string, unknown>;
+  const { date_range, ...rest } = values;
+  await exportAuditLogsApi({
+    date_from: date_range?.[0],
+    date_to: date_range?.[1],
+    ...rest,
+  });
+}
 
 function pretty(value: null | Record<string, unknown> | undefined) {
   if (!value) return '（无）';
@@ -61,6 +75,11 @@ function pretty(value: null | Record<string, unknown> | undefined) {
 <template>
   <PageContainer>
     <Grid>
+      <template #toolbar-actions>
+        <VbenButton v-access:code="'rs:audit:export'" @click="onExport">
+          导出操作日志
+        </VbenButton>
+      </template>
       <template #expandContent="{ row }">
         <div class="p-3">
           <div v-if="row.reason" class="mb-2 text-sm">

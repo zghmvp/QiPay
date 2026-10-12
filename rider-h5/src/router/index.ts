@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '@/utils/storage'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',
@@ -55,6 +55,24 @@ const router = createRouter({
       name: 'me',
       component: () => import('@/views/MeView.vue'),
       meta: { tab: 'me', title: '我的' },
+    },
+    {
+      path: '/change-password',
+      name: 'change-password',
+      component: () => import('@/views/ChangePasswordView.vue'),
+      meta: { title: '修改初始密码' },
+    },
+    {
+      path: '/payslips',
+      name: 'payslips',
+      component: () => import('@/views/PayslipsView.vue'),
+      meta: { title: '往期工资' },
+    },
+    {
+      path: '/payslips/:id',
+      name: 'payslip',
+      component: () => import('@/views/PayslipDetailView.vue'),
+      meta: { title: '工资条明细' },
     },
     {
       path: '/:pathMatch(.*)*',

@@ -18,7 +18,8 @@ values
 (91012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 12, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91013, '站点公告', 'RiderSalaryNotice', '/rider-salary/notice', 13, 'lucide:megaphone', 1, '/plugins/rider-salary/views/notice/index', null, 1, 1, 1, '', null, 91000, now(), null),
 (91014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 14, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 91000, now(), null),
-(91015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 91000, now(), null);
+(91015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 91000, now(), null),
+(91016, '成本报表', 'RiderSalaryReport', '/rider-salary/report', 16, 'lucide:pie-chart', 1, '/plugins/rider-salary/views/report/index', null, 1, 1, 1, '', null, 91000, now(), null);
 
 insert into sys_menu (id, title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
 values
@@ -70,7 +71,15 @@ values
 (91146, '修改公告', 'RiderSalaryNoticeEdit', null, 0, null, 2, null, 'rs:notice:edit', 1, 0, 1, '', null, 91013, now(), null),
 (91147, '删除公告', 'RiderSalaryNoticeDel', null, 0, null, 2, null, 'rs:notice:del', 1, 0, 1, '', null, 91013, now(), null),
 (91148, '查看日志', 'RiderSalaryAuditView', null, 0, null, 2, null, 'rs:audit:view', 1, 0, 1, '', null, 91014, now(), null),
-(91149, '删除周期', 'RiderSalaryPeriodDelete', null, 0, null, 2, null, 'rs:period:delete', 1, 0, 1, '', null, 91010, now(), null);
+(91149, '删除周期', 'RiderSalaryPeriodDelete', null, 0, null, 2, null, 'rs:period:delete', 1, 0, 1, '', null, 91010, now(), null),
+(91150, '全站范围', 'RiderSalaryScopeAll', null, 0, null, 2, null, 'rs:scope:all', 1, 0, 1, '', null, 91002, now(), null),
+(91151, '查看骑手', 'RiderSalaryRiderView', null, 0, null, 2, null, 'rs:rider:view', 1, 0, 1, '', null, 91003, now(), null),
+(91152, '查看奖惩', 'RiderSalaryAdjustmentView', null, 0, null, 2, null, 'rs:adjustment:view', 1, 0, 1, '', null, 91008, now(), null),
+(91153, '查看日标记', 'RiderSalaryDayFlagView', null, 0, null, 2, null, 'rs:dayflag:view', 1, 0, 1, '', null, 91009, now(), null),
+(91154, '查看预支', 'RiderSalaryAdvanceView', null, 0, null, 2, null, 'rs:advance:view', 1, 0, 1, '', null, 91012, now(), null),
+(91155, '查看公告', 'RiderSalaryNoticeView', null, 0, null, 2, null, 'rs:notice:view', 1, 0, 1, '', null, 91013, now(), null),
+(91156, '导出日志', 'RiderSalaryAuditExport', null, 0, null, 2, null, 'rs:audit:export', 1, 0, 1, '', null, 91014, now(), null),
+(91157, '查看成本', 'RiderSalaryReportView', null, 0, null, 2, null, 'rs:report:view', 1, 0, 1, '', null, 91016, now(), null);
 
 insert into sys_role (id, name, status, is_filter_scopes, remark, created_time, updated_time)
 values
@@ -236,7 +245,32 @@ values
 (93153, 92003, 91149),
 (93154, 92001, 91015),
 (93155, 92002, 91015),
-(93156, 92003, 91015);
+(93156, 92003, 91015),
+(93157, 92001, 91150),
+(93158, 92001, 91151),
+(93159, 92001, 91152),
+(93160, 92001, 91153),
+(93161, 92001, 91154),
+(93162, 92001, 91155),
+(93163, 92002, 91151),
+(93164, 92002, 91152),
+(93165, 92002, 91153),
+(93166, 92002, 91154),
+(93167, 92002, 91155),
+(93168, 92003, 91151),
+(93169, 92003, 91152),
+(93170, 92003, 91153),
+(93171, 92003, 91154),
+(93172, 92003, 91155),
+(93173, 92001, 91016),
+(93174, 92002, 91016),
+(93175, 92003, 91016),
+(93176, 92001, 91156),
+(93177, 92002, 91156),
+(93178, 92003, 91156),
+(93179, 92001, 91157),
+(93180, 92002, 91157),
+(93181, 92003, 91157);
 
 insert into rs_subject (id, code, name, direction, fee_mode, fixed_amount, include_in_gross, entry_granularity, scope_sites, scope_employ_types, is_builtin, status, sort_order, remark, created_time, updated_time)
 values
@@ -273,3 +307,21 @@ values
 (94031, 'BASE_SALARY', '底薪', 'bonus', 'fixed', null, 1, 'period', '[]', '[]', 1, 'enable', 31, null, now(), null),
 (94032, 'GUARANTEE_TOPUP', '保底补足', 'bonus', 'formula', null, 1, 'period', '[]', '[]', 1, 'enable', 32, null, now(), null),
 (94033, 'COMMISSION', '提成', 'bonus', 'formula', null, 1, 'period', '[]', '[]', 1, 'enable', 33, null, now(), null);
+
+insert into rs_role_anchor (id, role_key, role_id, created_time, updated_time)
+values
+(95001, 'rs-role:rider', 92004, now(), null);
+
+do 'Q-18 推荐方案：不再以 MySQL 为实现目标，此处不建草稿部分唯一索引。PostgreSQL 索引名为 uq_rs_payroll_one_draft，列是 period_id、rider_id、kind，条件是 status 为 draft 且 deleted 为 0。MySQL 没有带 WHERE 的部分唯一索引，若改成普通唯一索引会拒绝同周期同骑手的反冲单和补发单。';
+
+do 'Q-18 推荐方案：不再以 MySQL 为实现目标，此处不建账号和负责人的部分唯一索引。PostgreSQL 索引名是 uq_rs_rider_one_user 与 uq_rs_site_manager_one_owner。前者列是 user_id，条件是 user_id 非空且 deleted 为 0；后者列是 site_id，条件是 role 为 owner 且 deleted 为 0。MySQL 没有带 WHERE 的部分唯一索引，若改成普通唯一索引会拒绝未开户骑手，或让一个站点只能有一名管理人员。';
+
+do 'Q-18 推荐方案：不再以 MySQL 为实现目标，此处不建在途预支部分唯一索引。PostgreSQL 索引名为 uq_rs_advance_one_in_flight，列是 rider_id，条件是 status 为 pending 或 to_pay 且 deleted 为 0。MySQL 没有带 WHERE 的部分唯一索引，若改成普通唯一索引会让一名骑手只能有一张预支单。';
+
+do 'Q-18 推荐方案：不再以 MySQL 为实现目标，此处不建复合索引。PostgreSQL 索引名是 ix_rs_order_site_biz_date（列 site_id、biz_date）、ix_rs_import_batch_site_dates（列 site_id、date_from、date_to）、ix_rs_audit_log_operate_time（列 operate_time）、ix_rs_payroll_detail_plan_version_id（列 plan_version_id）。现网由 sql/patch/012_composite_indexes.sql 用 create index concurrently if not exists 创建。';
+
+do 'Q-18 推荐方案：不再以 MySQL 为实现目标，此处不补 rs_rider.must_change_password。PostgreSQL 增加布尔列，默认 false，注释为是否必须修改密码。存量骑手保持 false，开户和重置密码时由应用置为 true。';
+
+do 'Q-18 推荐方案：不再以 MySQL 为实现目标，此处不补 rs_notice.is_top。PostgreSQL 增加布尔列，默认 false，注释为是否置顶。列表按置顶优先、再按发布时间倒序。';
+
+do 'Q-18 推荐方案：不再以 MySQL 为实现目标，此处不建算薪作业表 rs_calc_job。PostgreSQL 由 sql/patch/014_calc_job.sql 创建，状态为 queued、running、succeeded、failed、partial，并有部分唯一索引 uq_rs_calc_job_one_active，保证同一周期同时只有一条未删除的排队中或计算中作业。MySQL 没有带 WHERE 的部分唯一索引，若改成普通唯一索引会让一个周期只能有一条作业。';

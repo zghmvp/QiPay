@@ -26,4 +26,5 @@ class GetAuditLogDetail(SchemaBase):
     description: str | None = Field(None, description='自然语言描述')
     ip: str | None = Field(None, description='IP')
     trace_id: str | None = Field(None, description='追踪 ID')
+    site_id: int | None = Field(None, description='站点 ID')
     created_time: datetime = Field(description='创建时间')

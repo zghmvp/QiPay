@@ -9,6 +9,8 @@ delete from sys_menu where name like 'RiderSalary%';
 
 delete from sys_role where name in ('薪资管理员', '站点负责人', '站点副负责人', '骑手');
 
+drop table if exists rs_calc_job;
+drop table if exists rs_role_anchor;
 drop table if exists rs_payroll_detail;
 drop table if exists rs_payroll_daily;
 drop table if exists rs_payroll;

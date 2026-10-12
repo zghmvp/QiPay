@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type {
   EngineField,
+  EngineFormulaTemplate,
   EngineFunction,
   EngineValidateResult,
 } from '../../../types/engine';
@@ -11,7 +12,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { confirm } from '@vben/common-ui';
 
 import { validateEngineApi } from '../../../api/engine';
-import { defaultFormula, formulaKindOf } from '../helpers';
+import {
+  applyBaseSalaryTemplate,
+  defaultFormula,
+  formulaKindOf,
+  itemReferencesAccrued,
+  unreplacedPlaceholderLabels,
+} from '../helpers';
 import ExpressionBuilder from './ExpressionBuilder.vue';
 import LadderEditor from './LadderEditor.vue';
 
@@ -21,9 +28,10 @@ const props = withDefaults(
     fields: EngineField[];
     functions: EngineFunction[];
     stage: string;
+    templates?: EngineFormulaTemplate[];
     value?: null | Record<string, unknown>;
   }>(),
-  { disabled: false, value: () => ({}) },
+  { disabled: false, templates: () => [], value: () => ({}) },
 );
 
 const emit = defineEmits<{
@@ -45,6 +53,9 @@ const numberFields = computed(() =>
   props.fields.filter(
     (item) => item.type === 'number' && item.stages.includes(props.stage),
   ),
+);
+const mentionsAccrued = computed(() =>
+  itemReferencesAccrued({ formula_json: props.value ?? {} }),
 );
 
 function formula(): Record<string, unknown> {
@@ -71,9 +82,12 @@ async function onKindChange(next: string) {
 }
 
 function applyBaseSalary() {
+  if (baseSalary.value == null || Number.isNaN(Number(baseSalary.value))) return;
+  const expr = applyBaseSalaryTemplate(baseSalary.value, props.templates);
+  if (unreplacedPlaceholderLabels({ 表达式: expr }, props.templates).length > 0) return;
   patch({
     类型: '表达式',
-    表达式: `${baseSalary.value} * 方案生效天数 / 周期天数`,
+    表达式: expr,
   });
 }
 
@@ -173,7 +187,7 @@ onBeforeUnmount(() => {
         />
       </div>
       <div class="text-muted-foreground w-full text-xs">
-        金额 = max(0, (字段 − 起算值) × 单价)
+        金额 = max(0, (字段 − 起算值)) × 单价
       </div>
     </div>
 
@@ -198,6 +212,7 @@ onBeforeUnmount(() => {
           <a-input-number v-model:value="guarantee" :disabled="disabled" :precision="2" />
         </div>
         <a-button :disabled="disabled" @click="applyGuarantee">保底</a-button>
+        <span class="text-muted-foreground pb-1 text-xs">保底不含手工奖惩</span>
       </div>
       <ExpressionBuilder
         :disabled="disabled"
@@ -207,6 +222,13 @@ onBeforeUnmount(() => {
         :value="String(formula().表达式 || '')"
         @update:value="(v) => patch({ 类型: '表达式', 表达式: v })"
       />
+    </div>
+
+    <div
+      v-if="kind !== '表达式' && mentionsAccrued"
+      class="text-muted-foreground text-xs"
+    >
+      保底不含手工奖惩
     </div>
 
     <div class="bg-muted/50 rounded px-3 py-2 text-sm">

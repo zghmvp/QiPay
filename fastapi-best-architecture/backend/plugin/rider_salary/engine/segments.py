@@ -1,10 +1,11 @@
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.exception import errors
 from backend.plugin.rider_salary.model.plan_item import RiderSalaryPlanItem
 from backend.plugin.rider_salary.model.plan_version import RiderSalaryPlanVersion
 from backend.plugin.rider_salary.model.subject import RiderSalarySubject
@@ -37,6 +38,96 @@ class Segment:
     end_date: date
     plan_version: Any | None = None
     items: list[PlanItemView] = field(default_factory=list)
+
+
+def _employ_code(value: Any, default: str) -> str:
+    """用工类型收成字符串。空值回退到默认快照。"""
+    raw = getattr(value, 'value', value)
+    if not raw:
+        return default
+    return str(raw)
+
+
+def employ_type_on(history: list[Any], default: str, day: date) -> str:
+    """某日的用工类型。
+
+    取覆盖该日的用工历史；多段重叠时用开始日最晚的一段。
+    没有任何一段覆盖时，回退到 default（骑手当前快照）。
+
+    :param history: 用工历史，需有 start_date、end_date、employ_type
+    :param default: 没有覆盖记录时的回退值
+    :param day: 业务日
+    :return: 用工类型编码
+    """
+    matched = [
+        row
+        for row in history
+        if getattr(row, 'start_date', day) <= day and (getattr(row, 'end_date', None) is None or day <= row.end_date)
+    ]
+    if not matched:
+        return default
+    matched.sort(key=lambda row: getattr(row, 'start_date', day), reverse=True)
+    return _employ_code(getattr(matched[0], 'employ_type', None), default)
+
+
+def _employ_runs(
+    start: date,
+    end: date,
+    history: list[Any],
+    default: str,
+) -> list[tuple[date, date, str]]:
+    """闭区间内按连续相同用工类型切成若干段。"""
+    runs: list[tuple[date, date, str]] = []
+    current = start
+    kind = employ_type_on(history, default, current)
+    run_start = current
+    while current < end:
+        nxt = current + timedelta(days=1)
+        nxt_kind = employ_type_on(history, default, nxt)
+        if nxt_kind != kind:
+            runs.append((run_start, current, kind))
+            run_start = nxt
+            kind = nxt_kind
+        current = nxt
+    runs.append((run_start, current, kind))
+    return runs
+
+
+def split_segments_by_employ(
+    segments: list[Segment],
+    history: list[Any],
+    default: str,
+) -> list[Segment]:
+    """用工类型在段内变化时，按连续相同类型切开。
+
+    类型整天不变的段原样返回。切出的子段共用原方案项，方案版本不变。
+    只按日历上的解析结果切，不按在职区间裁剪；在职裁剪仍由算薪流水线负责。
+
+    :param segments: 方案版本段
+    :param history: 用工历史
+    :param default: 历史未覆盖某日时回退的用工类型
+    :return: 切段后的方案段
+    """
+    result: list[Segment] = []
+    for segment in segments:
+        if segment.end_date < segment.start_date:
+            result.append(segment)
+            continue
+        runs = _employ_runs(segment.start_date, segment.end_date, history, default)
+        if len(runs) <= 1:
+            result.append(segment)
+            continue
+        for start, end, _kind in runs:
+            result.append(
+                Segment(
+                    plan_version_id=segment.plan_version_id,
+                    start_date=start,
+                    end_date=end,
+                    plan_version=segment.plan_version,
+                    items=list(segment.items),
+                )
+            )
+    return result
 
 
 def segments_from_d2(d2_segments: list[Any]) -> list[Segment]:
@@ -86,6 +177,8 @@ async def load_plan_item_views(db: AsyncSession, plan_version_id: int) -> list[P
     views: list[PlanItemView] = []
     for item in items:
         subject = subjects.get(item.subject_id)
+        if subject is None:
+            raise errors.RequestError(msg=f'方案项「{item.name}」引用的科目不存在')
         views.append(
             PlanItemView(
                 id=item.id,
@@ -98,8 +191,8 @@ async def load_plan_item_views(db: AsyncSession, plan_version_id: int) -> list[P
                 condition_expr=item.condition_expr or 'True',
                 formula_expr=item.formula_expr or '0',
                 enabled=bool(item.enabled),
-                direction=subject.direction if subject is not None else 'bonus',
-                include_in_gross=bool(subject.include_in_gross) if subject is not None else True,
+                direction=subject.direction,
+                include_in_gross=bool(subject.include_in_gross),
             )
         )
     return views

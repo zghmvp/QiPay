@@ -7,7 +7,9 @@ import type {
   RiderResult,
 } from '../../../types/rider';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
+
+import { confirm, useVbenDrawer } from '@vben/common-ui';
 
 import { message } from 'antdv-next';
 import dayjs from 'dayjs';
@@ -20,10 +22,17 @@ import {
   deleteRiderBindingApi,
   getRiderBindingsApi,
   getRiderEffectivePlansApi,
+  updateRiderBindingApi,
 } from '../../../api/rider';
 import StatusTag from '../../../components/StatusTag.vue';
 import { BINDING_TYPE_OPTIONS } from '../../../constants/enums';
 import { bindingFormSchema } from '../data';
+import {
+  BINDING_WRITE_PERM,
+  bindingRemoveContent,
+  mergePlanVersionOptions,
+  toBindingUpdate,
+} from '../history-actions';
 import EffectivePlanBar from './EffectivePlanBar.vue';
 
 const props = defineProps<{
@@ -39,8 +48,15 @@ const segmentLoading = ref(false);
 const bindings = ref<PlanBindingResult[]>([]);
 const segments = ref<EffectivePlanSegment[]>([]);
 const versions = ref<ActivePlanVersion[]>([]);
+const editing = ref<PlanBindingResult>();
 
 const [Form, formApi] = useVbenForm({
+  layout: 'vertical',
+  schema: bindingFormSchema,
+  showDefaultActions: false,
+});
+
+const [EditForm, editFormApi] = useVbenForm({
   layout: 'vertical',
   schema: bindingFormSchema,
   showDefaultActions: false,
@@ -57,6 +73,33 @@ const segmentRange = computed(() => {
   const end = dayjs().add(2, 'month').endOf('month').format('YYYY-MM-DD');
   return { end, start };
 });
+
+function versionOptions(current?: PlanBindingResult) {
+  return mergePlanVersionOptions(
+    versions.value.map((item) => ({
+      label: `${item.plan_name} · ${item.short_name} v${item.version_no}`,
+      value: item.id,
+    })),
+    current,
+  );
+}
+
+function applyVersionSchema(
+  api: { updateSchema: (items: object[]) => void },
+  current?: PlanBindingResult,
+) {
+  const options = versionOptions(current);
+  api.updateSchema([
+    {
+      componentProps: {
+        notFoundContent: '暂无启用版本',
+        options,
+        placeholder: options.length ? '请选择启用版本' : '暂无启用版本',
+      },
+      fieldName: 'plan_version_id',
+    },
+  ]);
+}
 
 async function loadBindings() {
   loading.value = true;
@@ -87,20 +130,7 @@ async function loadSegments() {
 
 async function loadVersions() {
   versions.value = (await getActivePlanVersionsApi()) ?? [];
-  const options = versions.value.map((item) => ({
-    label: `${item.plan_name} · ${item.short_name} v${item.version_no}`,
-    value: item.id,
-  }));
-  formApi.updateSchema([
-    {
-      componentProps: {
-        notFoundContent: '暂无启用版本',
-        options,
-        placeholder: options.length ? '请选择启用版本' : '暂无启用版本',
-      },
-      fieldName: 'plan_version_id',
-    },
-  ]);
+  applyVersionSchema(formApi);
 }
 
 async function reload() {
@@ -122,16 +152,75 @@ async function submit() {
   await reload();
 }
 
+function fillEditForm(row: PlanBindingResult) {
+  applyVersionSchema(editFormApi, row);
+  editFormApi.setValues({
+    binding_type: row.binding_type,
+    end_date: row.end_date || undefined,
+    plan_version_id: row.plan_version_id,
+    remark: row.remark ?? '',
+    start_date: row.start_date,
+  });
+}
+
+function openEdit(row: PlanBindingResult) {
+  editing.value = row;
+  editDrawerApi.setData(row).open();
+}
+
+async function saveEdit() {
+  const row = editing.value;
+  if (!row) return;
+  const { valid } = await editFormApi.validate();
+  if (!valid) return;
+  const values = await editFormApi.getValues<PlanBindingForm>();
+  editDrawerApi.lock();
+  try {
+    await updateRiderBindingApi(props.rider.id, row.id, toBindingUpdate(values));
+    message.success('已保存绑定，发生变化的日期已标记需重算');
+    await editDrawerApi.close();
+    await reload();
+  } finally {
+    editDrawerApi.unlock();
+  }
+}
+
 async function removeBinding(row: PlanBindingResult) {
+  try {
+    await confirm({
+      content: bindingRemoveContent(row),
+      icon: 'warning',
+    });
+  } catch {
+    return;
+  }
   await deleteRiderBindingApi(props.rider.id, row.id);
-  message.success('已解除绑定');
+  message.success('已解除绑定，该区间的薪资已标记需重算');
   await reload();
 }
+
+const [EditDrawer, editDrawerApi] = useVbenDrawer({
+  cancelText: '取消',
+  class: 'w-[480px]',
+  confirmText: '保存',
+  destroyOnClose: true,
+  onConfirm: saveEdit,
+  onOpenChange(isOpen) {
+    if (!isOpen) return;
+    const row = editDrawerApi.getData<PlanBindingResult>() ?? editing.value;
+    if (!row) return;
+    editing.value = row;
+    void nextTick(() => fillEditForm(row));
+  },
+  title: '编辑方案绑定',
+  zIndex: 1200,
+});
 
 watch(
   () => props.rider.id,
   () => {
     formApi.resetForm();
+    editDrawerApi.close();
     void reload();
   },
 );
@@ -193,19 +282,39 @@ defineExpose({ reload });
                 </div>
                 <div v-if="item.remark" class="mt-1 text-xs">{{ item.remark }}</div>
               </div>
-              <a-button danger size="small" type="link" @click="removeBinding(item)">
-                解除
-              </a-button>
+              <div v-access:code="BINDING_WRITE_PERM" class="flex shrink-0">
+                <a-button size="small" type="link" @click="openEdit(item)">
+                  编辑
+                </a-button>
+                <a-button
+                  danger
+                  size="small"
+                  type="link"
+                  @click="removeBinding(item)"
+                >
+                  解除
+                </a-button>
+              </div>
             </div>
           </a-timeline-item>
         </a-timeline>
       </div>
     </a-spin>
 
-    <div v-access:code="'rs:rider:binding'" class="rounded border p-3">
+    <div v-access:code="BINDING_WRITE_PERM" class="rounded border p-3">
       <div class="mb-2 font-medium">新增绑定</div>
       <Form />
       <a-button class="mt-2" type="primary" @click="submit">保存绑定</a-button>
     </div>
+
+    <EditDrawer>
+      <a-alert class="mb-3" show-icon type="warning">
+        <template #message>保存后，发生变化的日期会标记需重算</template>
+        <template #description>
+          只改备注不会改算薪区间。若区间落在已锁账或已发薪周期，将显示后端返回的错误，本次不会保存。
+        </template>
+      </a-alert>
+      <EditForm />
+    </EditDrawer>
   </div>
 </template>

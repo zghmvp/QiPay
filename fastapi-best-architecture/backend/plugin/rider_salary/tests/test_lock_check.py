@@ -1,6 +1,8 @@
+from datetime import date
+
 from backend.plugin.rider_salary.enums import PeriodStatus
 from backend.plugin.rider_salary.schema.day_flag import GetDayFlagDetail
-from backend.plugin.rider_salary.utils.lock_check import is_status_locked
+from backend.plugin.rider_salary.utils.lock_check import _pick_period, is_status_locked
 
 
 def test_locked_statuses() -> None:
@@ -11,6 +13,26 @@ def test_locked_statuses() -> None:
     assert not is_status_locked(PeriodStatus.open)
     assert not is_status_locked('reopened')
     assert not is_status_locked(None)
+
+
+class _Period:
+    def __init__(self, period_id: int, start: date, end: date) -> None:
+        self.id = period_id
+        self.start_date = start
+        self.end_date = end
+
+
+def test_pick_period_prefers_rider_then_lowest_id() -> None:
+    day = date(2026, 9, 10)
+    start, end = date(2026, 9, 1), date(2026, 9, 30)
+    rider_later = _Period(20, start, end)
+    rider_earlier = _Period(5, start, end)
+    site_later = _Period(3, start, end)
+    site_earlier = _Period(1, start, end)
+    picked = _pick_period(day, [rider_later, rider_earlier], [site_later, site_earlier])
+    assert picked is rider_earlier
+    site_only = _pick_period(day, [], [site_later, site_earlier])
+    assert site_only is site_earlier
 
 
 def test_day_flag_detail_has_is_locked() -> None:

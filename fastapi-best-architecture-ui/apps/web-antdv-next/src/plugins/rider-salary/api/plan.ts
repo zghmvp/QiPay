@@ -12,6 +12,7 @@ import type {
   RollbackPreviewResult,
   TrialParam,
   TrialResult,
+  TrialUnsavedParam,
   UpdatePlanVersionParam,
 } from '../types/plan';
 
@@ -117,6 +118,10 @@ export async function trialPlanVersionApi(pk: number, data: TrialParam) {
   return requestClient.post<TrialResult>(`${VERSION_BASE}/${pk}/trial`, data);
 }
 
+export async function trialUnsavedPlanApi(data: TrialUnsavedParam) {
+  return requestClient.post<TrialResult>(`${VERSION_BASE}/trial`, data);
+}
+
 export async function activatePlanVersionApi(pk: number) {
   return requestClient.post(`${VERSION_BASE}/${pk}/activate`);
 }
@@ -151,5 +156,8 @@ export async function getRollbackPreviewApi(pk: number) {
 }
 
 export async function rollbackPlanVersionApi(pk: number, data: RollbackParam) {
-  return requestClient.post(`${VERSION_BASE}/${pk}/rollback`, data);
+  return requestClient.post<PlanVersionDetail>(
+    `${VERSION_BASE}/${pk}/rollback`,
+    data,
+  );
 }

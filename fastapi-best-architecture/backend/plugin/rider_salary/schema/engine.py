@@ -1,9 +1,10 @@
-from typing import Any
+from typing import Any, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from backend.common.schema import SchemaBase
 from backend.plugin.rider_salary.enums import CalcStage
+from backend.plugin.rider_salary.schema.limits import assert_formula_bounds
 
 
 class EngineValidateParam(SchemaBase):
@@ -12,6 +13,12 @@ class EngineValidateParam(SchemaBase):
     stage: CalcStage = Field(description='计算阶段')
     condition_json: dict[str, Any] | None = Field(None, description='触发条件')
     formula_json: dict[str, Any] | None = Field(None, description='计算公式')
+
+    @model_validator(mode='after')
+    def check_formula_bounds(self) -> Self:
+        """限制公式节点数和阶梯档数"""
+        assert_formula_bounds(self.condition_json, self.formula_json)
+        return self
 
 
 class EngineValidateResult(SchemaBase):
