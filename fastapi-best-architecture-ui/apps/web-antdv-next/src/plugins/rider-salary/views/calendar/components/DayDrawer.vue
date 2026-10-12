@@ -226,7 +226,13 @@ function onKey(e: KeyboardEvent) {
         </a-descriptions>
 
         <a-alert
-          v-if="detail.day_status === 'no_plan'"
+          v-if="detail.day_status === 'pending_recalc'"
+          show-icon
+          type="warning"
+          message="本周期已反冲，日合计待补算，不是当日工资。"
+        />
+        <a-alert
+          v-else-if="detail.day_status === 'no_plan'"
           show-icon
           type="warning"
           message="当日无生效方案，订单未计薪。"

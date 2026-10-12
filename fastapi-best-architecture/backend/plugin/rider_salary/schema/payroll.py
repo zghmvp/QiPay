@@ -23,7 +23,7 @@ class GetPayrollDailyDetail(SchemaBase):
     manual_bonus: Decimal = Field(description='手工奖')
     manual_penalty: Decimal = Field(description='手工惩')
     net_adjust: Decimal = Field(description='手工奖惩净额')
-    day_status: str = Field(description='日状态')
+    day_status: str = Field(description='日状态：有数据、无数据、未导入、无方案、待补算')
 
 
 class GetPayrollDetailItem(SchemaBase):

@@ -576,6 +576,7 @@ class DashboardService:
                     RiderSalaryPayrollDaily.biz_date >= start,
                     RiderSalaryPayrollDaily.biz_date <= today,
                     RiderSalaryPayrollDaily.deleted == 0,
+                    RiderSalaryPayrollDaily.day_status != DayStatus.pending_recalc.value,
                     RiderSalaryPayrollDaily.rider_id.in_(rider_ids_stmt),
                 )
                 .group_by(RiderSalaryPayrollDaily.biz_date)

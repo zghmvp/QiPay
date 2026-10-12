@@ -13,6 +13,7 @@ from backend.common.exception import errors
 from backend.common.pagination import paging_data
 from backend.database.db import async_db_session
 from backend.plugin.rider_salary.crud.payroll import payroll_dao
+from backend.plugin.rider_salary.crud.payroll_daily import payroll_daily_dao
 from backend.plugin.rider_salary.crud.payroll_detail import payroll_detail_dao
 from backend.plugin.rider_salary.crud.settle_period import SITE_LEVEL_RIDER_ID, settle_period_dao
 from backend.plugin.rider_salary.crud.site import site_dao
@@ -1884,11 +1885,12 @@ class PeriodService:
             reversal = await payroll_service.create_reversal(db, payroll, request, reason)
             reversal_net += q2(reversal.net)
         await self.set_locked_flags(db, period, locked=False)
+        await payroll_daily_dao.mark_period_pending_recalc(db, int(period.id))
         await db.flush()
         count = len(targets)
         desc = (
             f'{_operator_name(request)} 于 {_now_str()} 对 {_period_label(site, period)} 执行了反冲补发，'
-            f'原因：{reason}；反冲单{count}张，金额合计{reversal_net}'
+            f'原因：{reason}；反冲单{count}张，金额合计{reversal_net}；日汇总已标为待补算'
         )
         await audit_service.record(
             db,

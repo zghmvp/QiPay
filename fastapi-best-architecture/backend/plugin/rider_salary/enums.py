@@ -346,6 +346,7 @@ class DayStatus(LabeledStrEnum):
     no_orders = 'no_orders'
     not_imported = 'not_imported'
     no_plan = 'no_plan'
+    pending_recalc = 'pending_recalc'
 
 
 _bind_labels(
@@ -355,6 +356,7 @@ _bind_labels(
         DayStatus.no_orders: '无数据',
         DayStatus.not_imported: '未导入',
         DayStatus.no_plan: '无方案',
+        DayStatus.pending_recalc: '待补算',
     },
 )
 

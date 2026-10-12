@@ -85,6 +85,9 @@ watch(
           ·
           {{ enumLabel(DAY_STATUS_OPTIONS, detail.day_status) }}
         </p>
+        <p v-if="detail.day_status === 'pending_recalc'" class="muted">
+          本周期已反冲，日合计待补算，不是当日工资。
+        </p>
         <p>
           当日净额
           <MoneyText :value="detail.totals.net" signed />

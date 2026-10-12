@@ -1,9 +1,10 @@
 from datetime import date
 
 from backend.plugin.rider_salary.enums import BindingType, DayStatus
-from backend.plugin.rider_salary.service.calendar_service import clip_plan_bands, resolve_day_status, summarize_subjects
+from backend.plugin.rider_salary.service.calendar_service import clip_plan_bands, summarize_subjects
 from backend.plugin.rider_salary.service.rider_service import Segment, resolve_effective_plans_from_bindings
 from backend.plugin.rider_salary.tests.test_master_data import _binding
+from backend.plugin.rider_salary.utils.day_status import resolve_day_status
 
 
 def test_plan_bands_clip_month_and_split_on_switch() -> None:

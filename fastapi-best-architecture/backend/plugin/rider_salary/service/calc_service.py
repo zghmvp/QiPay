@@ -66,7 +66,7 @@ from backend.plugin.rider_salary.service.payroll_service import (
     payroll_service,
 )
 from backend.plugin.rider_salary.utils.audit import audit_service
-from backend.plugin.rider_salary.utils.day_status import resolve_day_status
+from backend.plugin.rider_salary.utils.day_status import day_status_for, employed_on
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
 
@@ -250,9 +250,7 @@ def _after_leave(leave_date: date | None, day: date) -> bool:
 
 def _employed_on(hire_date: date | None, leave_date: date | None, day: date) -> bool:
     """日期是否落在在职闭区间内。入职日、离职日为空表示该端不限制。"""
-    if hire_date is not None and day < hire_date:
-        return False
-    return not _after_leave(leave_date, day)
+    return employed_on(hire_date, leave_date, day)
 
 
 def _leave_unpaid_order_warning(leave_date: date, biz_date: date) -> str:
@@ -794,10 +792,11 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             )
         )
         imported = day in data.covered_dates or day in data.site_order_dates
-        status = resolve_day_status(
-            has_plan=day in covered and day not in no_plan_days,
+        status = day_status_for(
+            plan_version_id=covered.get(day),
             order_count=len(day_orders),
-            valid_order_count=len(completed),
+            completed_order_count=sum(1 for row in day_orders if _is_completed(row)),
+            employed=_employed_on(data.hire_date, data.leave_date, day),
             imported=imported,
         )
         dailies.append(

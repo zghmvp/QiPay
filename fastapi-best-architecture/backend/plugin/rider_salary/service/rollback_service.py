@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
+from backend.plugin.rider_salary.crud.payroll_daily import payroll_daily_dao
 from backend.plugin.rider_salary.crud.plan import plan_dao
 from backend.plugin.rider_salary.crud.plan_item import plan_item_dao
 from backend.plugin.rider_salary.crud.plan_version import plan_version_dao
@@ -265,6 +266,7 @@ class RollbackService:
             period.reopened_time = timezone.now()
             period.reopened_by = operator_id
             await period_service.set_locked_flags(db, period, locked=False)
+            await payroll_daily_dao.mark_period_pending_recalc(db, int(period.id))
 
         copied = await self._copy_draft(db, version)
         plan = await plan_dao.get(db, version.plan_id)

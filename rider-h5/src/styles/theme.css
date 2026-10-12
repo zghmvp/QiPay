@@ -186,6 +186,10 @@ body {
   background: #9aa3ad;
 }
 
+.dot.warn {
+  background: #d48806;
+}
+
 .dot.red {
   background: var(--danger);
 }

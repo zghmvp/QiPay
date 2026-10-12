@@ -21,6 +21,7 @@ from backend.plugin.rider_salary.crud.site import site_dao
 from backend.plugin.rider_salary.engine.context import iter_dates
 from backend.plugin.rider_salary.enums import (
     CalcStage,
+    DayStatus,
     DetailSource,
     OrderStatus,
     PeriodStatus,
@@ -58,7 +59,7 @@ from backend.plugin.rider_salary.service.payroll_view import (
     pick_effective_payroll,
 )
 from backend.plugin.rider_salary.service.rider_service import Segment, resolve_effective_plans
-from backend.plugin.rider_salary.utils.day_status import resolve_day_status
+from backend.plugin.rider_salary.utils.day_status import day_status_for, employed_on
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.excel import assert_export_row_limit, stream_rows
 from backend.plugin.rider_salary.utils.money import q2
@@ -580,7 +581,8 @@ class CalendarService:
             cache = dailies.get(day)
             plan_vid = plan_by_day.get(day)
             imported = _day_imported(day, site_by_day[day], coverage)
-            if cache is not None:
+            pending = _is_pending_daily(cache)
+            if cache is not None and not pending:
                 order_count = cache.order_count
                 valid_count = cache.valid_order_count
                 net_adjust = q2(cache.net_adjust)
@@ -589,15 +591,22 @@ class CalendarService:
                 period_id = cache.period_id
             else:
                 order_count = order_fold.count_by_day.get(day, 0)
-                valid_count = order_fold.valid_by_day.get(day, 0)
+                completed_count = order_fold.valid_by_day.get(day, 0)
+                on_job = employed_on(getattr(rider, 'hire_date', None), getattr(rider, 'leave_date', None), day)
+                valid_count = completed_count if on_job else 0
                 net_adjust = q2(adjustment_fold.net_by_day.get(day, ZERO))
-                day_status = resolve_day_status(
-                    has_plan=plan_vid is not None,
-                    order_count=order_count,
-                    valid_order_count=valid_count,
-                    imported=imported,
-                )
-                period_id = None
+                if pending:
+                    day_status = DayStatus.pending_recalc.value
+                    period_id = cache.period_id if cache is not None else None
+                else:
+                    day_status = day_status_for(
+                        plan_version_id=plan_vid,
+                        order_count=order_count,
+                        completed_order_count=completed_count,
+                        employed=on_job,
+                        imported=imported,
+                    )
+                    period_id = None
             period = period_by_day.get(day)
             if period is not None:
                 period_id = period.id
@@ -755,7 +764,8 @@ class CalendarService:
                 CalcStage.daily.value,
             }:
                 formula_amount += q2(row.amount)
-        if cache is not None:
+        pending = _is_pending_daily(cache)
+        if cache is not None and not pending:
             formula_amount = q2(cache.formula_amount)
         order_models: list[CalendarDayOrder] = []
         for order in orders:
@@ -802,20 +812,25 @@ class CalendarService:
                     remark=adj.remark,
                 )
             )
-        if cache is not None:
+        if cache is not None and not pending:
             manual_bonus = q2(cache.manual_bonus)
             manual_penalty = q2(cache.manual_penalty)
         covered, site_order_dates = await _import_coverage(db, day_site_id, biz_date, biz_date)
         imported = biz_date in covered or biz_date in site_order_dates
         completed = [row for row in orders if row.status == OrderStatus.completed.value]
-        if cache is not None:
+        on_job = employed_on(getattr(rider, 'hire_date', None), getattr(rider, 'leave_date', None), biz_date)
+        if pending:
+            day_status = DayStatus.pending_recalc.value
+            order_count = len(orders)
+        elif cache is not None:
             day_status = cache.day_status
             order_count = cache.order_count
         else:
-            day_status = resolve_day_status(
-                has_plan=plan_vid is not None,
+            day_status = day_status_for(
+                plan_version_id=plan_vid,
                 order_count=len(orders),
-                valid_order_count=len(completed),
+                completed_order_count=len(completed),
+                employed=on_job,
                 imported=imported,
             )
             order_count = len(orders)
@@ -837,6 +852,11 @@ class CalendarService:
                 net=net,
             ),
         )
+
+
+def _is_pending_daily(cache: object | None) -> bool:
+    """反冲后的日汇总只表示待补算，不再提供反冲前的金额。"""
+    return cache is not None and getattr(cache, 'day_status', None) == DayStatus.pending_recalc.value
 
 
 def _plan_by_day(segments: Sequence[Segment], start: date, end: date) -> dict[date, int | None]:

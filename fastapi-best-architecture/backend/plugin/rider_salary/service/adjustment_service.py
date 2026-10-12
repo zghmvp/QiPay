@@ -13,6 +13,7 @@ from backend.plugin.rider_salary.crud.adjustment import adjustment_dao
 from backend.plugin.rider_salary.crud.rider import rider_dao
 from backend.plugin.rider_salary.crud.rider_employ_history import rider_employ_history_dao
 from backend.plugin.rider_salary.crud.subject import subject_dao
+from backend.plugin.rider_salary.engine.segments import employ_type_on
 from backend.plugin.rider_salary.enums import EnableStatus, EntryGranularity, RiderStatus, SubjectDirection
 from backend.plugin.rider_salary.model.subject import RiderSalarySubject
 from backend.plugin.rider_salary.schema.adjustment import CreateAdjustmentParam, UpdateAdjustmentParam
@@ -102,12 +103,6 @@ class AdjustmentService:
     """奖惩记录服务"""
 
     @staticmethod
-    def _employ_type_on(histories: list, biz_date: date, fallback: str) -> str:
-        from backend.plugin.rider_salary.engine.segments import employ_type_on
-
-        return employ_type_on(histories, fallback, biz_date)
-
-    @staticmethod
     def _validate_amount(subject: RiderSalarySubject, amount: Decimal) -> None:
         if subject.code in _PREV_DIFF_CODES:
             if amount == 0:
@@ -137,7 +132,7 @@ class AdjustmentService:
         if subject.status != EnableStatus.enable:
             raise errors.RequestError(msg='科目未启用')
         histories = list(await rider_employ_history_dao.get_by_rider(db, rider_id))
-        employ_type = AdjustmentService._employ_type_on(histories, biz_date, rider.employ_type)
+        employ_type = employ_type_on(histories, rider.employ_type, biz_date)
         if not _scope_allows(subject.scope_sites, rider.site_id):
             raise errors.RequestError(msg='科目不适用于该站点')
         if not _scope_allows(subject.scope_employ_types, employ_type):

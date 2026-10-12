@@ -129,6 +129,7 @@ export const DAY_STATUS_OPTIONS = opts([
   ['no_orders', '无数据', 'default'],
   ['not_imported', '未导入', 'warning'],
   ['no_plan', '无方案', 'orange'],
+  ['pending_recalc', '待补算', 'warning'],
 ]);
 
 export const ADVANCE_STATUS_OPTIONS = opts([

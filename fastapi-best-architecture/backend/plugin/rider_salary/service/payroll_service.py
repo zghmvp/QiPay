@@ -332,7 +332,7 @@ class PayrollService:
     ) -> RiderSalaryPayroll:
         """
         生成反冲单：明细取负、kind=reversal、status=finalized；回滚预支抵扣。
-        rs_payroll_daily 不变。
+        日汇总不在这里改。结算周期反冲和方案回退会把该周期的日汇总标成待补算。
         """
         if payroll.kind == PayrollKind.reversal.value:
             raise errors.RequestError(msg='反冲单不能再次反冲')
