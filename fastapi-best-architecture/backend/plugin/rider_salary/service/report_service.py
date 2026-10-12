@@ -4,7 +4,8 @@
 结转取 ``remaining_amount``（空值按 0）。三者对平的充要条件是
 发放 − 抵扣 − 结转 = 0，与 ``ADVANCE_LEDGER_CONSISTENCY_SQL`` 同一口径。
 
-成本按结算周期开始日所在月份和站点汇总。应发、实发、预支抵扣只加总
+成本按自然月和站点汇总。跨月结算周期只按与该月重叠的天数拆开展示，
+不改薪资单金额。应发、实发、预支抵扣只加总
 ``payroll_view.build_rider_views`` 挑出的有效单，不另写一套取有效单的逻辑。
 """
 
@@ -37,6 +38,7 @@ from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visi
 from backend.plugin.rider_salary.utils.money import q2
 
 ZERO = Decimal('0.00')
+COST_DISPLAY_ALLOCATION_NOTE = '按与自然月重叠的天数展示分摊，不是改工资。薪资单金额仍按结算周期。'
 
 # 已发放且未删除的预支：发放、抵扣、结转与差额。
 # remaining_amount 为空时 SUM 会跳过，与内存里按 0 计入一致。
@@ -141,13 +143,54 @@ class SiteMonthCost:
     advance_deduction: Decimal
 
 
+def _period_span(period: Any) -> tuple[date, date] | None:
+    """结算周期的闭区间。没有结束日时视为只落在开始日，避免把整笔算进错误的月。"""
+    start = getattr(period, 'start_date', None)
+    if not isinstance(start, date):
+        return None
+    end = getattr(period, 'end_date', None)
+    if not isinstance(end, date) or end < start:
+        end = start
+    return start, end
+
+
+def month_slices(start: date, end: date) -> list[tuple[str, int, int]]:
+    """自然月与结算周期的重叠天数。返回月份、重叠天数、周期天数。"""
+    period_days = (end - start).days + 1
+    slices: list[tuple[str, int, int]] = []
+    year, month = start.year, start.month
+    while True:
+        month_start = date(year, month, 1)
+        month_end = date(year, month, monthrange(year, month)[1])
+        overlap_start = max(start, month_start)
+        overlap_end = min(end, month_end)
+        if overlap_start <= overlap_end:
+            days = (overlap_end - overlap_start).days + 1
+            slices.append((f'{year:04d}-{month:02d}', days, period_days))
+        if month_end >= end:
+            break
+        if month == 12:
+            year, month = year + 1, 1
+        else:
+            month += 1
+    return slices
+
+
+def _share(amount: Decimal, overlap_days: int, period_days: int) -> Decimal:
+    """按重叠天数分摊一笔展示金额。周期天数无效时保持原额。"""
+    if period_days <= 0:
+        return q2(amount)
+    return q2(amount * Decimal(overlap_days) / Decimal(period_days))
+
+
 def summarize_site_month_cost(periods: Sequence[Any], payrolls: Sequence[Any]) -> list[SiteMonthCost]:
     """
-    按站点、月份汇总有效薪资单
+    按站点、自然月汇总有效薪资单的展示成本
 
-    月份取结算周期 ``start_date`` 的 ``YYYY-MM``。同一站点同一月份的多个周期
-    （例如两段半月结）合并。有效单由 ``build_rider_views`` 决定：作废、反冲、
-    已被反冲的单不计入；反冲后尚未补发的组没有成本。
+    薪资单金额仍按结算周期，这里只按与自然月重叠的天数拆开展示。
+    同一站点同一月份的多个周期合并。有效单由 ``build_rider_views`` 决定：
+    作废、反冲、已被反冲的单不计入；反冲后尚未补发的组没有成本。
+    没有结束日的周期整笔计入开始日所在月。
 
     :param periods: 结算周期
     :param payrolls: 这些周期上的薪资单，可含作废和反冲
@@ -168,16 +211,20 @@ def summarize_site_month_cost(periods: Sequence[Any], payrolls: Sequence[Any]) -
         period = period_by_id.get(view.period_id)
         if period is None:
             continue
-        start = getattr(period, 'start_date', None)
-        if not isinstance(start, date):
+        span = _period_span(period)
+        if span is None:
             continue
-        month = f'{start.year:04d}-{start.month:02d}'
+        start, end = span
         site_id = int(getattr(period, 'site_id', 0) or 0)
-        slot = buckets[site_id, month]
-        slot[0] = int(slot[0]) + 1
-        slot[1] = q2(slot[1]) + q2(getattr(payroll, 'gross', ZERO) or ZERO)
-        slot[2] = q2(slot[2]) + q2(view.final_net)
-        slot[3] = q2(slot[3]) + q2(getattr(payroll, 'advance_deduction', ZERO) or ZERO)
+        gross = q2(getattr(payroll, 'gross', ZERO) or ZERO)
+        net = q2(view.final_net)
+        advance = q2(getattr(payroll, 'advance_deduction', ZERO) or ZERO)
+        for month, overlap_days, period_days in month_slices(start, end):
+            slot = buckets[site_id, month]
+            slot[0] = int(slot[0]) + 1
+            slot[1] = q2(Decimal(slot[1]) + _share(gross, overlap_days, period_days))
+            slot[2] = q2(Decimal(slot[2]) + _share(net, overlap_days, period_days))
+            slot[3] = q2(Decimal(slot[3]) + _share(advance, overlap_days, period_days))
     rows = [
         SiteMonthCost(
             site_id=site_id,
@@ -275,7 +322,9 @@ class ReportService:
         month: str | None,
     ) -> GetCostSummary:
         """
-        按站点和月份汇总有效薪资成本
+        按站点和自然月汇总有效薪资成本的展示分摊
+
+        薪资单金额不改。跨月周期在每个重叠的自然月各出一行，金额按重叠天数占比。
 
         :param db: 数据库会话
         :param request: 请求对象
@@ -296,8 +345,8 @@ class ReportService:
         )
         if start is not None and end is not None:
             period_stmt = period_stmt.where(
-                RiderSalarySettlePeriod.start_date >= start,
                 RiderSalarySettlePeriod.start_date <= end,
+                RiderSalarySettlePeriod.end_date >= start,
             )
         periods = list((await db.scalars(period_stmt)).all())
         if not periods:
@@ -314,6 +363,8 @@ class ReportService:
             ).all()
         )
         costs = summarize_site_month_cost(periods, payrolls)
+        if month_key is not None:
+            costs = [item for item in costs if item.month == month_key]
         names = await _site_labels(db, {item.site_id for item in costs})
         rows = [
             SiteMonthCostRow(
@@ -330,6 +381,7 @@ class ReportService:
         ]
         return GetCostSummary(
             month=month_key,
+            allocation_note=COST_DISPLAY_ALLOCATION_NOTE,
             rows=rows,
             slip_count=sum(item.slip_count for item in rows),
             gross=q2(sum((item.gross for item in rows), ZERO)),
@@ -341,6 +393,7 @@ class ReportService:
 def _empty_cost(month: str | None) -> GetCostSummary:
     return GetCostSummary(
         month=month,
+        allocation_note=COST_DISPLAY_ALLOCATION_NOTE,
         rows=[],
         slip_count=0,
         gross=ZERO,

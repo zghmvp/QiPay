@@ -623,3 +623,16 @@ def test_menu_components_have_vue_files() -> None:
 
 def test_site_owner_cannot_reverse_or_open_account() -> None:
     assert_site_owner_lacks_forbidden_perms()
+
+
+def test_audit_export_and_cost_report_scope_in_seed() -> None:
+    """薪资管理员看全部站点；负责人和副负责人有审计导出与成本权限，但没有全站可见。"""
+    for path in _init_sql_files():
+        text = path.read_text(encoding='utf-8')
+        admin = _role_permissions(text, '薪资管理员')
+        assert {'rs:scope:all', 'rs:audit:export', 'rs:report:view'} <= admin
+        for role_name in _OWNER_ROLES:
+            perms = _role_permissions(text, role_name)
+            assert 'rs:audit:export' in perms
+            assert 'rs:report:view' in perms
+            assert 'rs:scope:all' not in perms

@@ -57,6 +57,12 @@ void load();
         <VbenButton class="mt-2" @click="load">重试</VbenButton>
       </a-empty>
       <a-spin v-else :spinning="loading">
+        <p
+          v-if="summary?.allocation_note"
+          class="mb-3 text-sm text-neutral-600"
+        >
+          {{ summary.allocation_note }}
+        </p>
         <a-empty
           v-if="!summary?.rows.length"
           description="该月份暂无成本数据"

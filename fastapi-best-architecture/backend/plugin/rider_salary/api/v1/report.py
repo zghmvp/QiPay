@@ -16,7 +16,7 @@ router = APIRouter()
 @router.get(
     '/costs',
     summary='按站点和月份汇总成本',
-    description='只加总有效薪资单。月份取结算周期开始日，作废、反冲和已被反冲的单不计入。',
+    description='只加总有效薪资单。跨月周期按与自然月重叠的天数拆开展示，不改薪资单金额。作废、反冲和已被反冲的单不计入。',
     dependencies=[
         DependsJwtAuth,
         Depends(RequestPermission('rs:report:view')),

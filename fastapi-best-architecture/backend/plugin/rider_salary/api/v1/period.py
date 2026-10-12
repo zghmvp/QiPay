@@ -286,7 +286,7 @@ async def mark_paid_period(
 @router.post(
     '/{pk}/reverse',
     summary='反冲补发',
-    description='期望状态与当前状态不一致时返回 409。周期已在补发中时沿用原错误，不会生成第二张反冲单',
+    description='期望状态不一致，或周期已在补发中再次反冲，都返回 409，说明状态已变化，不生成第二张反冲单',
     dependencies=[
         Depends(RequestPermission('rs:period:reverse')),
         DependsRBAC,

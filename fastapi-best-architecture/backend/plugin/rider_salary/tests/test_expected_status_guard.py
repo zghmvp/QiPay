@@ -224,8 +224,8 @@ def test_reverse_expected_status_mismatch_does_not_create_reversal() -> None:
     anyio.run(_case)
 
 
-def test_repeat_reverse_without_expected_status_stays_400() -> None:
-    """不带期望状态时，补发中再次反冲仍是 400，且不会去生成反冲单。"""
+def test_repeat_reverse_without_expected_status_returns_409() -> None:
+    """不带期望状态时，补发中再次反冲返回 409，说明状态已变化，且不会生成第二张反冲单。"""
     period = _period(status=PeriodStatus.reopened.value)
     select_models = AsyncMock(side_effect=AssertionError('不应查询薪资单'))
 
@@ -239,9 +239,11 @@ def test_repeat_reverse_without_expected_status_stays_400() -> None:
                 AsyncMock(side_effect=AssertionError('不应生成反冲单')),
             ),
         ):
-            with pytest.raises(errors.RequestError, match='不允许执行反冲补发'):
+            with pytest.raises(errors.ConflictError, match=PERIOD_STATUS_CHANGED_MSG) as caught:
                 await period_service.reverse(db=AsyncMock(), request=_request(), pk=9, reason='再反冲一次')
+            assert caught.value.code == 409
         select_models.assert_not_awaited()
+        assert period.status == PeriodStatus.reopened.value
 
     anyio.run(_case)
 

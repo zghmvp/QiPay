@@ -403,6 +403,25 @@ def _remember_eval_warning(
         warnings.append(message)
 
 
+def _condition_absent(condition: Any) -> bool:
+    """没有字段、也没有子条件时，视为不带触发条件。"""
+    if condition is None or condition == {}:
+        return True
+    if not isinstance(condition, dict) or condition.get('字段'):
+        return False
+    return not condition.get('条件')
+
+
+def unconditional_period_fixed(item: PlanItemView) -> bool:
+    """周期阶段的固定金额，且没有触发条件。表达式模板和带条件的项不算。"""
+    if item.stage != CalcStage.period.value:
+        return False
+    formula = item.formula_json or {}
+    if not isinstance(formula, dict) or formula.get('类型') != '固定金额':
+        return False
+    return _condition_absent(item.condition_json)
+
+
 def _eval_item(
     item: PlanItemView,
     names: dict[str, Any],
@@ -411,11 +430,18 @@ def _eval_item(
     order_no: str | None = None,
     job_no: str = '',
     rider_name: str = '',
+    prorate_period_fixed: bool = False,
 ) -> tuple[bool, Decimal, dict[str, Any]]:
-    """求值一个方案项。失败时金额按 0，并留下可去重的告警。"""
+    """求值一个方案项。失败时金额按 0，并留下可去重的告警。
+
+    周期阶段调用方可要求把不带条件的固定金额按「金额 × 本段生效天数 / 周期天数」分摊。
+    已写成该表达式的底薪模板、以及带条件的项，保持原公式。
+    """
     condition_expr = item.condition_expr or 'True'
     formula_text = (item.formula_expr or '').strip()
     formula_expr = formula_text or '0'
+    if prorate_period_fixed and formula_text and unconditional_period_fixed(item):
+        formula_expr = f'({formula_text}) * 方案生效天数 / 周期天数'
     try:
         hit = evaluate_condition(condition_expr, names)
     except EvalError:
@@ -603,6 +629,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                 warnings,
                 job_no=data.rider_job_no,
                 rider_name=data.rider_name,
+                prorate_period_fixed=True,
             )
             if not hit:
                 continue

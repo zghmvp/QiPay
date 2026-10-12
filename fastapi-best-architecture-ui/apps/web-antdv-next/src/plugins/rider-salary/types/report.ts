@@ -13,6 +13,7 @@ export interface CostSummaryRow {
 
 export interface CostSummary {
   advance_deduction: MoneyValue;
+  allocation_note?: string;
   gross: MoneyValue;
   month?: null | string;
   net: MoneyValue;

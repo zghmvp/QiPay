@@ -8,6 +8,7 @@
 成本只加总 payroll_view 挑出的有效单。
 """
 
+import inspect
 import sqlite3
 
 from datetime import UTC, date, datetime
@@ -20,9 +21,10 @@ from sqlalchemy.dialects import postgresql
 
 from backend.plugin.rider_salary.crud.notice import notice_dao, notice_sort_key
 from backend.plugin.rider_salary.enums import AdvanceStatus, PayrollKind, PayrollStatus
-from backend.plugin.rider_salary.service.audit_service import AUDIT_EXPORT_HEADERS, audit_export_cells
+from backend.plugin.rider_salary.service.audit_service import AUDIT_EXPORT_HEADERS, AuditService, audit_export_cells
 from backend.plugin.rider_salary.service.report_service import (
     ADVANCE_LEDGER_CONSISTENCY_SQL,
+    ReportService,
     summarize_advance_ledger,
     summarize_site_month_cost,
 )
@@ -237,6 +239,35 @@ def test_cost_summary_uses_effective_payroll_only() -> None:
     ]
 
 
+def test_cross_month_cost_is_display_allocation_only() -> None:
+    """跨月周期按重叠天数拆开展示，两段相加仍等于薪资单原额。"""
+    periods = [
+        SimpleNamespace(
+            id=1,
+            site_id=10,
+            start_date=date(2026, 8, 26),
+            end_date=date(2026, 9, 25),
+            deleted=0,
+        ),
+    ]
+    payrolls = [
+        _slip(
+            id=1,
+            period_id=1,
+            rider_id=2,
+            gross=Decimal('3100.00'),
+            net=Decimal('3100.00'),
+            advance_deduction=Decimal('0.00'),
+        ),
+    ]
+    rows = summarize_site_month_cost(periods, payrolls)
+    assert [(row.month, row.slip_count, row.gross, row.net) for row in rows] == [
+        ('2026-09', 1, Decimal('2500.00'), Decimal('2500.00')),
+        ('2026-08', 1, Decimal('600.00'), Decimal('600.00')),
+    ]
+    assert sum((row.gross for row in rows), Decimal(0)) == Decimal('3100.00')
+
+
 def test_pinned_notice_sorts_first() -> None:
     """置顶优先，同组内发布时间倒序，未发布的排在后面。"""
     early = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
@@ -287,3 +318,10 @@ def test_audit_export_headers_and_phone_mask() -> None:
     assert cells[9] == '联系 138****8000'
     assert '138****8000' in cells[11]
     assert '13812348000' not in cells[11]
+
+
+def test_cost_and_audit_export_keep_visible_site_filter() -> None:
+    """成本报表和审计导出继续按可见站点过滤。全站角色返回空集合表示全部。"""
+    assert 'get_visible_site_ids' in inspect.getsource(ReportService.cost_summary)
+    assert 'get_visible_site_ids' in inspect.getsource(AuditService.export)
+    assert 'get_visible_site_ids' in inspect.getsource(AuditService.get_list)

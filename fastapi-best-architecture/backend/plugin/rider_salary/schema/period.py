@@ -87,7 +87,7 @@ class ReversePeriodParam(SchemaBase):
     expected_status: Annotated[str | None, zh_str('期望状态', LEN_STATUS)] = Field(
         None,
         max_length=LEN_STATUS,
-        description='期望的当前状态。与库中状态不一致时返回 409，不生成反冲单',
+        description='期望的当前状态。与库中状态不一致时返回 409，不生成反冲单。未传且周期已在补发中时同样返回 409',
     )
 
 

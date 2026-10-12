@@ -112,7 +112,7 @@ def test_repeat_mark_paid_returns_409_without_second_audit(client: ApiClient, ad
 
 
 def test_repeat_reverse_keeps_single_reversal(client: ApiClient, admin_token: dict[str, str]) -> None:
-    """再次反冲不生成第二张反冲单。不带期望状态仍是 400；带过期期望状态是 409。"""
+    """再次反冲不生成第二张反冲单。不带期望状态和带过期期望状态都是 409。"""
     token = uuid.uuid4().hex[:8]
     site_name = f'幂等反冲站{token}'
     ready = provision_c01_month(
@@ -143,7 +143,7 @@ def test_repeat_reverse_keeps_single_reversal(client: ApiClient, admin_token: di
         headers=admin_token,
         json={'reason': f'幂等反冲重复{token}'},
     )
-    assert '不允许执行反冲补发' in expect_error(bare, 400)
+    assert expect_error(bare, 409) == PERIOD_STATUS_CHANGED_MSG
 
     stale = client.post(
         f'/rider-salary/periods/{period_id}/reverse',

@@ -390,3 +390,50 @@ def test_compiled_stage_fields_exist_and_mean_something_at_runtime() -> None:
     assert period_vars['入职天数'] == tenure_days(date(2025, 3, 1), DAY)
     for name in PERIOD_STAGE_BANNED_FIELDS:
         assert name not in period_vars
+
+
+def test_unconditional_period_fixed_prorates_by_segment_days() -> None:
+    """不带条件的周期固定金额按生效天数分摊；带条件的固定金额和已写分摊表达式保持原样。"""
+    segment = Segment(
+        plan_version_id=8,
+        start_date=MONTH_START,
+        end_date=MONTH_END,
+        items=[
+            _item(1, '底薪', PERIOD, {}, {'类型': '固定金额', '金额': 3000}),
+            _item(
+                2,
+                '兼职补贴',
+                PERIOD,
+                {'字段': '用工类型', '运算符': '=', '值': 'part_time'},
+                {'类型': '固定金额', '金额': 80},
+            ),
+            _item(
+                3,
+                '已写分摊',
+                PERIOD,
+                {},
+                {'类型': '表达式', '表达式': '2000 * 方案生效天数 / 周期天数'},
+            ),
+        ],
+    )
+    result = _pipeline(
+        employ_type='part_time',
+        segments=[segment],
+        employ_history=[
+            _history('part_time', MONTH_START, date(2026, 9, 10)),
+            _history('full_time', date(2026, 9, 11), None),
+        ],
+    )
+    bases = [row for row in result.details if row.name == '底薪']
+    by_days = {row.calc_trace['变量']['方案生效天数']: row.amount for row in bases}
+    assert by_days == {10: Decimal('1000.00'), 20: Decimal('2000.00')}
+    assert sum((row.amount for row in bases), Decimal(0)) == Decimal('3000.00')
+    subsidy = [row for row in result.details if row.name == '兼职补贴']
+    assert len(subsidy) == 1
+    assert subsidy[0].amount == Decimal('80.00')
+    assert subsidy[0].calc_trace['公式'] == '80'
+    written = [row for row in result.details if row.name == '已写分摊']
+    written_by_days = {row.calc_trace['变量']['方案生效天数']: row.amount for row in written}
+    assert written_by_days == {10: Decimal('666.67'), 20: Decimal('1333.33')}
+    assert bases[0].calc_trace['公式'] == '(3000) * 方案生效天数 / 周期天数'
+    assert written[0].calc_trace['公式'] == '2000 * 方案生效天数 / 周期天数'

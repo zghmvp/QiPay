@@ -33,7 +33,7 @@ class SiteMonthCostRow(SchemaBase):
     site_id: int = Field(description='站点 ID')
     site_code: str = Field(description='站点编码')
     site_name: str = Field(description='站点名称')
-    month: str = Field(description='月份，格式 YYYY-MM，取结算周期开始日')
+    month: str = Field(description='自然月，格式 YYYY-MM。跨月周期按重叠天数拆开展示')
     slip_count: int = Field(description='有效薪资单张数')
     gross: Decimal = Field(description='应发合计')
     net: Decimal = Field(description='实发合计')
@@ -41,9 +41,12 @@ class SiteMonthCostRow(SchemaBase):
 
 
 class GetCostSummary(SchemaBase):
-    """按站点和月份的成本汇总"""
+    """按站点和自然月的成本汇总。金额是展示分摊，不是改过的工资。"""
 
     month: str | None = Field(None, description='筛选月份，空表示全部月份')
+    allocation_note: str = Field(
+        description='展示口径。按自然月重叠天数分摊，不是改工资',
+    )
     rows: list[SiteMonthCostRow] = Field(description='站点月份明细')
     slip_count: int = Field(description='有效薪资单张数合计')
     gross: Decimal = Field(description='应发合计')

@@ -1861,7 +1861,8 @@ class PeriodService:
         反冲补发：生成反冲单并解除锁账
 
         期望状态与当前状态不一致时返回 409，不生成反冲单、不写审计。
-        周期已经处于补发中时，仍由状态机返回 400，避免改掉「已被反冲」的既有拒绝。
+        周期已经处于补发中时同样返回 409，说明状态已变化，不得生成第二张反冲单。
+        开放等其余非法状态仍由状态机返回 400。
 
         :param db: 数据库会话
         :param request: 请求对象
@@ -1872,6 +1873,8 @@ class PeriodService:
         """
         period, site, _rider = await self._load_visible(db, request, pk)
         assert_expected_period_status(period.status, expected_status)
+        if period.status == PeriodStatus.reopened.value:
+            raise errors.ConflictError(msg=PERIOD_STATUS_CHANGED_MSG)
         before = snapshot(period, _PERIOD_FIELDS)
         self.transition(period, PeriodStatus.reopened.value, request, reason)
         payrolls = list(await payroll_dao.select_models(db, period_id=period.id, deleted=0))
