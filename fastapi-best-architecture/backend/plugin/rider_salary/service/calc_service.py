@@ -772,7 +772,8 @@ async def _load_calc_input(
             if seg.plan_version is not None and seg.plan_version.status == PlanVersionStatus.voided.value
         ]
         load_warnings.extend(
-            f'{seg.start_date}~{seg.end_date} 绑定的方案版本 v{seg.plan_version.version_no} 已作废，该段未计薪，请重新绑定方案'
+            f'{seg.start_date}~{seg.end_date} 绑定的方案版本 v{seg.plan_version.version_no} 已作废，'
+            '该段未计薪，请重新绑定方案'
             for seg in voided
         )
         voided_ids = {id(seg) for seg in voided}
