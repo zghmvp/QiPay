@@ -136,7 +136,7 @@ class CRUDRider(CRUDPlus[RiderSalaryRider]):
         :param obj: 更新参数
         :return:
         """
-        payload = obj.model_dump(exclude_unset=True, exclude={'reason'})
+        payload = obj.model_dump(exclude_unset=True, exclude={'reason', 'transfer_date'})
         payload.update(kwargs)
         return await self.update_model_by_column(db, payload, id=pk, deleted=0)
 

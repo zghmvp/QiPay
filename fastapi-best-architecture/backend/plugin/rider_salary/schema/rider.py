@@ -45,6 +45,7 @@ class UpdateRiderParam(SchemaBase):
     cycle_config_override: dict[str, Any] | None = Field(None, description='周期配置覆盖')
     remark: str | None = Field(None, description='备注')
     reason: str | None = Field(None, description='操作原因（更换站点时必填）')
+    transfer_date: date | None = Field(None, description='调岗生效日期（更换站点时使用，缺省为当天）')
 
 
 class GetRiderDetail(RiderSchemaBase):

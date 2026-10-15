@@ -289,3 +289,50 @@ def test_b11_voided_plan_version_is_not_paid() -> None:
         assert any('已作废' in text for text in row.warnings or [])
 
     run_db(_case)
+
+
+def test_c2_late_order_for_old_site_after_transfer() -> None:
+    from datetime import datetime
+
+    from backend.plugin.rider_salary.schema.order import CreateOrderParam
+    from backend.plugin.rider_salary.schema.rider import UpdateRiderParam
+    from backend.plugin.rider_salary.service.order_service import order_service
+    from backend.plugin.rider_salary.service.rider_service import rider_service
+    from backend.utils.timezone import timezone
+
+    async def _case(db: AsyncSession) -> None:
+        seed = Seed(db)
+        req = admin_request()
+        old_site = await seed.site()
+        new_site = await seed.site()
+        rider = await seed.rider(old_site)
+        await rider_service.update(
+            db=db,
+            request=req,
+            pk=rider.id,
+            obj=UpdateRiderParam(site_id=new_site.id, reason='调岗', transfer_date=date(2026, 9, 16)),
+        )
+
+        def _param(day: date, no: str, site_id: int) -> CreateOrderParam:
+            moment = datetime(day.year, day.month, day.day, 12, 0, tzinfo=timezone.tz_info)
+            return CreateOrderParam(
+                order_no=no,
+                site_id=site_id,
+                rider_id=rider.id,
+                distance_km=Decimal(1),
+                weight_jin=Decimal(1),
+                order_time=moment,
+                deliver_time=moment,
+                status='completed',
+            )
+
+        # 调岗前的迟到订单仍归属旧站点
+        created = await order_service.create(db=db, request=req, obj=_param(date(2026, 9, 10), 'OLD-1', old_site.id))
+        assert created.site_id == old_site.id
+        # 调岗当天起归属新站点
+        created = await order_service.create(db=db, request=req, obj=_param(date(2026, 9, 16), 'NEW-1', new_site.id))
+        assert created.site_id == new_site.id
+        with pytest.raises(errors.RequestError, match='不属于当前站点'):
+            await order_service.create(db=db, request=req, obj=_param(date(2026, 9, 16), 'BAD-1', old_site.id))
+
+    run_db(_case)

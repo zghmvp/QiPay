@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, Request, UploadFile
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -44,6 +45,7 @@ from backend.plugin.rider_salary.utils.excel import (
 from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
+from backend.plugin.rider_salary.utils.site_history import rider_at_site
 from backend.utils.timezone import timezone
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -108,7 +110,7 @@ def validate_row_format(row: dict[str, Any]) -> str | None:  # ruff:ignore[compl
     if not cell_text(row.get('order_time')) and not isinstance(row.get('order_time'), (datetime, date, int, float)):
         return '下单时间不能为空'
     try:
-        order_time = parse_cell_datetime(row.get('order_time'))
+        parse_cell_datetime(row.get('order_time'))
     except ValueError:
         return '下单时间格式不正确'
     deliver_raw = row.get('deliver_time')
@@ -320,7 +322,11 @@ class ImportService:
             for order in inserted:
                 order.import_batch_id = batch.id
             db.add_all(inserted)
-            await db.flush()
+            try:
+                async with db.begin_nested():
+                    await db.flush()
+            except IntegrityError:
+                raise errors.RequestError(msg='订单号已存在，请重新导入') from None
             if date_from is not None and date_to is not None:
                 await mark_stale(db, rider_ids=rider_ids, date_from=date_from, date_to=date_to)
         await audit_service.record(
@@ -488,8 +494,6 @@ async def _validate_import_row(  # ruff:ignore[complex-structure]
     rider = riders.get(job_no)
     if rider is None:
         return '工号不存在'
-    if rider.site_id != site.id:
-        return f'骑手 {job_no} 不属于站点 {site_code}'
     first_row = file_seen.get(order_no)
     if first_row is not None:
         return f'订单号 {order_no} 在本文件中重复'
@@ -499,6 +503,8 @@ async def _validate_import_row(  # ruff:ignore[complex-structure]
     order_time = parse_cell_datetime(row.get('order_time'))
     deliver_time = None if _is_blank(row.get('deliver_time')) else parse_cell_datetime(row.get('deliver_time'))
     biz_date = compute_biz_date(order_time, deliver_time)
+    if not await rider_at_site(db, rider, site.id, biz_date):
+        return f'骑手 {job_no} 在 {biz_date} 不属于站点 {site_code}'
     emp_error = rider_employment_error(rider, biz_date)
     if emp_error:
         return emp_error

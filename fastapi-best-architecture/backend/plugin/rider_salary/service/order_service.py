@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -26,6 +27,7 @@ from backend.plugin.rider_salary.utils.excel import write_workbook
 from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
+from backend.plugin.rider_salary.utils.site_history import rider_at_site
 from backend.utils.timezone import timezone
 
 ORDER_EXPORT_HEADERS = [
@@ -289,8 +291,6 @@ class OrderService:
         assert_site_visible(visible, obj.site_id)
         site = await _get_site(db, obj.site_id)
         rider = await _get_rider(db, obj.rider_id)
-        if rider.site_id != site.id:
-            raise errors.RequestError(msg='骑手不属于当前站点')
         mapped = map_order_status(obj.status)
         if mapped is None:
             raise errors.RequestError(msg=STATUS_INVALID_MSG)
@@ -304,6 +304,8 @@ class OrderService:
         if obj.amount is not None and obj.amount < 0:
             raise errors.RequestError(msg='订单金额不能为负数')
         biz_date = compute_biz_date(obj.order_time, obj.deliver_time)
+        if not await rider_at_site(db, rider, site.id, biz_date):
+            raise errors.RequestError(msg=f'骑手在 {biz_date} 不属于当前站点')
         emp_error = rider_employment_error(rider, biz_date)
         if emp_error:
             raise errors.RequestError(msg=emp_error)
@@ -326,7 +328,11 @@ class OrderService:
             remark=obj.remark,
         )
         db.add(order)
-        await db.flush()
+        try:
+            async with db.begin_nested():
+                await db.flush()
+        except IntegrityError:
+            raise errors.RequestError(msg='订单号已存在') from None
         await mark_stale(db, rider_ids=[rider.id], date_from=biz_date, date_to=biz_date)
         await audit_service.record(
             db,
@@ -405,16 +411,20 @@ class OrderService:
             raise errors.RequestError(msg=mismatch)
         site = await _get_site(db, order.site_id)
         rider = await _get_rider(db, order.rider_id)
-        if rider.site_id != site.id:
-            raise errors.RequestError(msg='骑手不属于当前站点')
         order.biz_date = compute_biz_date(order.order_time, order.deliver_time)
+        if not await rider_at_site(db, rider, site.id, order.biz_date):
+            raise errors.RequestError(msg=f'骑手在 {order.biz_date} 不属于当前站点')
         emp_error = rider_employment_error(rider, order.biz_date)
         if emp_error:
             raise errors.RequestError(msg=emp_error)
         await assert_not_locked(db, site_id=order.site_id, rider_id=order.rider_id, biz_date=order.biz_date)
         if old_rider_id != order.rider_id or old_biz_date != order.biz_date:
             await assert_not_locked(db, site_id=order.site_id, rider_id=old_rider_id, biz_date=old_biz_date)
-        await db.flush()
+        try:
+            async with db.begin_nested():
+                await db.flush()
+        except IntegrityError:
+            raise errors.RequestError(msg='订单号已存在') from None
         rider_ids = {old_rider_id, order.rider_id}
         date_from = min(old_biz_date, order.biz_date)
         date_to = max(old_biz_date, order.biz_date)

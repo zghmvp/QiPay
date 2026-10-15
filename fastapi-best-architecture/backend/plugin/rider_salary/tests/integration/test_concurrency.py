@@ -125,3 +125,55 @@ def test_b5_concurrent_advance_submits_allow_only_one_in_flight() -> None:
             await second.close()
 
     run_db(_case)
+
+
+def test_c1_concurrent_same_order_no_returns_chinese_error() -> None:
+    from datetime import datetime
+    from decimal import Decimal
+
+    from backend.plugin.rider_salary.schema.order import CreateOrderParam
+    from backend.plugin.rider_salary.service.order_service import order_service
+    from backend.utils.timezone import timezone
+
+    async def _case(db: AsyncSession) -> None:
+        seed = Seed(db)
+        req = admin_request()
+        site = await seed.site()
+        rider = await seed.rider(site)
+        await db.commit()
+
+        now = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.tz_info)
+        param = CreateOrderParam(
+            order_no='DUP-1',
+            site_id=site.id,
+            rider_id=rider.id,
+            distance_km=Decimal(1),
+            weight_jin=Decimal(1),
+            order_time=now,
+            deliver_time=now,
+            status='completed',
+        )
+        first = AsyncSession(db.bind, expire_on_commit=False)
+        second = AsyncSession(db.bind, expire_on_commit=False)
+        outcome: dict[str, object] = {}
+        try:
+            await order_service.create(db=first, request=req, obj=param)
+
+            async def _second() -> None:
+                try:
+                    await order_service.create(db=second, request=req, obj=param)
+                    outcome['second'] = 'ok'
+                except errors.RequestError as exc:
+                    outcome['second'] = exc.msg
+
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(_second)
+                await anyio.sleep(0.5)
+                await first.commit()
+            assert outcome['second'] == '订单号已存在'
+        finally:
+            await second.rollback()
+            await first.close()
+            await second.close()
+
+    run_db(_case)

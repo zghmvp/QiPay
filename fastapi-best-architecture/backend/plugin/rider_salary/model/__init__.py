@@ -20,6 +20,9 @@ from backend.plugin.rider_salary.model.rider_employ_history import (
 from backend.plugin.rider_salary.model.rider_plan_binding import (
     RiderSalaryRiderPlanBinding as RiderSalaryRiderPlanBinding,
 )
+from backend.plugin.rider_salary.model.rider_site_history import (
+    RiderSalaryRiderSiteHistory as RiderSalaryRiderSiteHistory,
+)
 from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod as RiderSalarySettlePeriod
 from backend.plugin.rider_salary.model.site import RiderSalarySite as RiderSalarySite
 from backend.plugin.rider_salary.model.site_manager import RiderSalarySiteManager as RiderSalarySiteManager

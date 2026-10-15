@@ -37,6 +37,7 @@ from backend.plugin.rider_salary.model.plan import RiderSalaryPlan
 from backend.plugin.rider_salary.model.plan_version import RiderSalaryPlanVersion
 from backend.plugin.rider_salary.model.rider_employ_history import RiderSalaryRiderEmployHistory
 from backend.plugin.rider_salary.model.rider_plan_binding import RiderSalaryRiderPlanBinding
+from backend.plugin.rider_salary.model.rider_site_history import RiderSalaryRiderSiteHistory
 from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod
 from backend.plugin.rider_salary.schema.rider import (
     CreateEmployHistoryParam,
@@ -458,6 +459,42 @@ class RiderService:
         return page
 
     @staticmethod
+    async def _record_site_transfer(
+        db: AsyncSession, *, rider_id: int, old_site_id: int, new_site_id: int, transfer_on: date
+    ) -> None:
+        """调岗写入站点履历：当天起归属新站点，旧段收到前一天"""
+        open_rows = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryRiderSiteHistory).where(
+                        RiderSalaryRiderSiteHistory.rider_id == rider_id,
+                        RiderSalaryRiderSiteHistory.end_date.is_(None),
+                        RiderSalaryRiderSiteHistory.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        for row in open_rows:
+            if row.start_date >= transfer_on:
+                raise errors.RequestError(msg='调岗日期与已有站点履历冲突')
+            row.end_date = transfer_on - timedelta(days=1)
+        if not open_rows:
+            # 历史数据没有履历：入职到调岗前一天补记旧站点
+            rider = await rider_dao.get(db, rider_id)
+            start = rider.hire_date if rider and rider.hire_date else date(1970, 1, 1)
+            if start < transfer_on:
+                db.add(
+                    RiderSalaryRiderSiteHistory(
+                        rider_id=rider_id,
+                        site_id=old_site_id,
+                        start_date=start,
+                        end_date=transfer_on - timedelta(days=1),
+                    )
+                )
+        db.add(RiderSalaryRiderSiteHistory(rider_id=rider_id, site_id=new_site_id, start_date=transfer_on))
+        await db.flush()
+
+    @staticmethod
     async def create(*, db: AsyncSession, request: Request, obj: CreateRiderParam) -> None:
         """
         创建骑手并写入首条用工类型历史
@@ -480,6 +517,10 @@ class RiderService:
             rider.id,
             CreateEmployHistoryParam(employ_type=obj.employ_type, start_date=obj.hire_date, end_date=None),
         )
+        db.add(
+            RiderSalaryRiderSiteHistory(rider_id=rider.id, site_id=rider.site_id, start_date=obj.hire_date)
+        )
+        await db.flush()
         await audit_service.record(
             db,
             request,
@@ -505,6 +546,7 @@ class RiderService:
         rider = await RiderService._get_visible_rider(db=db, request=request, pk=pk)
         if obj.job_no and obj.job_no != rider.job_no and await rider_dao.get_by_job_no(db, obj.job_no):
             raise errors.ConflictError(msg='工号已存在')
+        transfer_on = None
         if obj.site_id is not None and obj.site_id != rider.site_id:
             if not (obj.reason and obj.reason.strip()):
                 raise errors.RequestError(msg='请填写操作原因')
@@ -512,6 +554,12 @@ class RiderService:
             assert_site_visible(visible, obj.site_id)
             if not await site_dao.get(db, obj.site_id):
                 raise errors.NotFoundError(msg='站点不存在')
+            transfer_on = obj.transfer_date or timezone.now().date()
+            if rider.hire_date is not None and transfer_on < rider.hire_date:
+                raise errors.RequestError(msg='调岗日期不能早于入职日期')
+            await RiderService._record_site_transfer(
+                db, rider_id=pk, old_site_id=rider.site_id, new_site_id=obj.site_id, transfer_on=transfer_on
+            )
         leave_from = None
         if _param_changed(obj, 'leave_date', rider.leave_date):
             leave_from = _earlier_date(rider.leave_date, obj.leave_date)
