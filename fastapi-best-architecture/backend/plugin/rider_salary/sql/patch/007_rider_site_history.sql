@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS rs_rider_site_history (
     end_date DATE,
     created_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     updated_time TIMESTAMP WITH TIME ZONE,
-    deleted INTEGER NOT NULL DEFAULT 0,
+    deleted BIGINT NOT NULL DEFAULT 0,
     deleted_time TIMESTAMP WITH TIME ZONE
 );
 CREATE INDEX IF NOT EXISTS ix_rs_rider_site_history_rider_date ON rs_rider_site_history (rider_id, start_date);

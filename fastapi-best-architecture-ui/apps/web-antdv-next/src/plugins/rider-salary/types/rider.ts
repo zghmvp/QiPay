@@ -40,6 +40,7 @@ export interface RiderForm {
   settle_cycle_override?: null | string;
   site_id: number;
   status?: string;
+  transfer_date?: null | string;
 }
 
 export interface RiderQuery {

@@ -176,21 +176,30 @@ const [Drawer, drawerApi] = useVbenDrawer({
     if (!valid) return;
     const values = await formApi.getValues<RiderForm>();
     let reason: string | undefined;
+    let transferDate: string | undefined;
     if (
       formData.value?.id &&
       formData.value.site_id &&
       values.site_id !== formData.value.site_id
     ) {
       const result = await prompt({
-        extraHint: '更换站点不会改写历史订单。请检查方案绑定与进行中的预支。',
-        title: '更换站点原因',
+        dateLabel: '调岗生效日期',
+        extraHint:
+          '生效日期当天起归属新站点，此前的订单仍归旧站点。请检查方案绑定与进行中的预支。',
+        title: '更换站点',
+        withDate: true,
       });
       reason = result.reason;
+      transferDate = result.date;
     }
     drawerApi.lock();
     try {
       if (formData.value?.id) {
-        await updateRiderApi(formData.value.id, { ...values, reason });
+        await updateRiderApi(formData.value.id, {
+          ...values,
+          reason,
+          transfer_date: transferDate,
+        });
       } else {
         await createRiderApi(values);
       }
