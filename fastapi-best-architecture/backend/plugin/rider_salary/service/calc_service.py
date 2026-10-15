@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -51,6 +51,7 @@ from backend.plugin.rider_salary.service.payroll_service import (
     payroll_service,
 )
 from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.lock_check import rider_level_covered_dates
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
 
@@ -144,6 +145,8 @@ class CalcInput:
     site_order_dates: set[date]
     persist_advance: bool = False
     period_id: int | None = None
+    # 站点级周期中已被骑手级周期覆盖的日期：不取数、不计薪
+    excluded_dates: set[date] = field(default_factory=set)
 
 
 def _json_safe(value: Any) -> Any:
@@ -279,7 +282,12 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
     period_total = ZERO
     covered: dict[date, int] = {}
     for segment in data.segments:
-        for day in iter_dates(segment.start_date, segment.end_date):
+        segment_dates = [
+            day for day in iter_dates(segment.start_date, segment.end_date) if day not in data.excluded_dates
+        ]
+        if not segment_dates:
+            continue
+        for day in segment_dates:
             covered[day] = segment.plan_version_id
             employ = _employ_on(data.employ_history, data.employ_type, day)
             day_ctx = build_day_context(data.site_id, day, data.day_flags.get(day), employ)
@@ -348,7 +356,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                     accrued += amount
                     daily_total += amount
         plan_orders = [row for row in completed_all if segment.start_date <= row.biz_date <= segment.end_date]
-        segment_days = (segment.end_date - segment.start_date).days + 1
+        segment_days = len(segment_dates)
         seg_ctx = build_segment_context(
             period_ctx,
             plan_order_count=len(plan_orders),
@@ -383,7 +391,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
 
     no_plan_days: set[date] = set()
     for day in iter_dates(data.period_start, data.period_end):
-        if day in covered:
+        if day in covered or day in data.excluded_dates:
             continue
         day_completed = [
             row
@@ -623,8 +631,10 @@ async def _load_calc_input(
     period: RiderSalarySettlePeriod,
     forced_plan_version: RiderSalaryPlanVersion | None,
     persist_advance: bool,
+    excluded_dates: set[date] | None = None,
 ) -> CalcInput:
     start, end = period.start_date, period.end_date
+    excluded = set(excluded_dates or ())
     site_id = period.site_id
     segments = await resolve_segments(db, rider.id, start, end, forced=forced_plan_version)
     orders = list(
@@ -675,6 +685,9 @@ async def _load_calc_input(
             )
         ).all()
     )
+    if excluded:
+        orders = [row for row in orders if row.biz_date not in excluded]
+        adjustments = [row for row in adjustments if row.biz_date not in excluded]
     subject_ids = {row.subject_id for row in adjustments}
     subjects: dict[int, RiderSalarySubject] = {}
     if subject_ids:
@@ -738,6 +751,7 @@ async def _load_calc_input(
         site_order_dates=set(site_dates),
         persist_advance=persist_advance,
         period_id=period.id,
+        excluded_dates=excluded,
     )
 
 
@@ -881,12 +895,23 @@ async def _calculate_rider_period_inner(
 ) -> CalcResult:
     if persist:
         await _restore_draft_advances(db, rider_id=rider.id, period=period)
+    excluded: set[date] = set()
+    if not period.rider_id or period.rider_id == SITE_LEVEL_RIDER_ID:
+        covered = await rider_level_covered_dates(
+            db,
+            site_id=period.site_id,
+            date_from=period.start_date,
+            date_to=period.end_date,
+            rider_ids=[rider.id],
+        )
+        excluded = covered.get(rider.id, set())
     data = await _load_calc_input(
         db,
         rider=rider,
         period=period,
         forced_plan_version=forced_plan_version,
         persist_advance=persist,
+        excluded_dates=excluded,
     )
     result = run_calc_pipeline(data)
     if persist:
@@ -979,12 +1004,14 @@ async def _riders_for_period(
         if rider_ids is not None and period.rider_id not in rider_ids:
             return []
         return [period.rider_id]
+    # 期初前已离职、本期又无订单/奖惩的骑手不再进入算薪
     current = set(
         (
             await db.scalars(
                 select(RiderSalaryRider.id).where(
                     RiderSalaryRider.site_id == period.site_id,
                     RiderSalaryRider.deleted == 0,
+                    or_(RiderSalaryRider.leave_date.is_(None), RiderSalaryRider.leave_date >= period.start_date),
                 )
             )
         ).all()
@@ -1016,17 +1043,9 @@ async def _riders_for_period(
     ids = current | from_orders | from_adj
     if rider_ids is not None:
         ids &= set(rider_ids)
-    covered = set(
-        (
-            await db.scalars(
-                select(RiderSalarySettlePeriod.rider_id).where(
-                    RiderSalarySettlePeriod.site_id == period.site_id,
-                    RiderSalarySettlePeriod.rider_id != SITE_LEVEL_RIDER_ID,
-                    RiderSalarySettlePeriod.start_date <= period.end_date,
-                    RiderSalarySettlePeriod.end_date >= period.start_date,
-                    RiderSalarySettlePeriod.deleted == 0,
-                )
-            )
-        ).all()
+    # 只排除整期都被骑手级周期覆盖的骑手；部分覆盖的骑手由站点级周期结算剩余日期
+    covered = await rider_level_covered_dates(
+        db, site_id=period.site_id, date_from=period.start_date, date_to=period.end_date
     )
-    return sorted(rid for rid in ids if rid not in covered)
+    period_days = (period.end_date - period.start_date).days + 1
+    return sorted(rid for rid in ids if len(covered.get(rid, ())) < period_days)

@@ -146,3 +146,36 @@ def _pick_period(
         if row.start_date <= biz_date <= row.end_date:
             return row
     return None
+
+
+async def rider_level_covered_dates(
+    db: AsyncSession,
+    *,
+    site_id: int,
+    date_from: date,
+    date_to: date,
+    rider_ids: list[int] | None = None,
+) -> dict[int, set[date]]:
+    """
+    区间内被骑手级周期覆盖的日期（按骑手）
+
+    站点级周期据此按日期（而不是按整人）让出骑手级周期覆盖的天数，用于算薪取数与锁账标记
+    """
+    stmt = select(RiderSalarySettlePeriod).where(
+        RiderSalarySettlePeriod.site_id == site_id,
+        RiderSalarySettlePeriod.rider_id != _SITE_LEVEL_RIDER_ID,
+        RiderSalarySettlePeriod.start_date <= date_to,
+        RiderSalarySettlePeriod.end_date >= date_from,
+        RiderSalarySettlePeriod.deleted == 0,
+    )
+    if rider_ids is not None:
+        stmt = stmt.where(RiderSalarySettlePeriod.rider_id.in_(rider_ids))
+    covered: dict[int, set[date]] = {}
+    for row in (await db.scalars(stmt)).all():
+        current = max(row.start_date, date_from)
+        last = min(row.end_date, date_to)
+        days = covered.setdefault(int(row.rider_id), set())
+        while current <= last:
+            days.add(current)
+            current += timedelta(days=1)
+    return covered

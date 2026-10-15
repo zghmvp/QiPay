@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import BackgroundTasks, Request
-from sqlalchemy import case, func, select, update
+from sqlalchemy import and_, case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,7 @@ from backend.plugin.rider_salary.utils.audit import require_reason
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.periods import compute_period_range
+from backend.plugin.rider_salary.utils.recalc import mark_stale
 from backend.utils.timezone import timezone
 
 CALC_SYNC_LIMIT = 200
@@ -157,14 +158,28 @@ def stale_lock_message(job_nos: list[str]) -> str:
     return f'存在需重算的薪资结果：工号 {"、".join(job_nos)}，请先重算'
 
 
-def site_level_lock_excluded_rider_ids(overlapping_periods: list[Any]) -> set[int]:
-    """站点级锁账/解锁时，跳过已被骑手级周期覆盖的骑手"""
-    excluded: set[int] = set()
-    for row in overlapping_periods:
-        rider_id = int(getattr(row, 'rider_id', 0) or 0)
-        if rider_id and rider_id != SITE_LEVEL_RIDER_ID:
-            excluded.add(rider_id)
-    return excluded
+def uncovered_runs(start_date: date, end_date: date, covered: list[tuple[date, date]]) -> list[tuple[date, date]]:
+    """区间内未被任何已有区间覆盖的连续日期段"""
+    taken: set[date] = set()
+    for row_start, row_end in covered:
+        current = max(row_start, start_date)
+        while current <= min(row_end, end_date):
+            taken.add(current)
+            current += timedelta(days=1)
+    runs: list[tuple[date, date]] = []
+    run_start: date | None = None
+    current = start_date
+    while current <= end_date:
+        if current in taken:
+            if run_start is not None:
+                runs.append((run_start, current - timedelta(days=1)))
+                run_start = None
+        elif run_start is None:
+            run_start = current
+        current += timedelta(days=1)
+    if run_start is not None:
+        runs.append((run_start, end_date))
+    return runs
 
 
 def reversible_payrolls(payrolls: list[Any]) -> list[Any]:
@@ -257,7 +272,7 @@ class PeriodService:
             start, end = compute_period_range(cycle_type, cycle_config, any_date)
         except ValueError as exc:
             raise errors.RequestError(msg=str(exc)) from exc
-        return await self._create_if_absent(
+        created = await self._create_runs(
             db,
             site_id=site_id,
             rider_id=period_rider_id,
@@ -265,6 +280,16 @@ class PeriodService:
             start_date=start,
             end_date=end,
         )
+        for period, _ in created:
+            if period.start_date <= any_date <= period.end_date:
+                return period
+        # 骑手级口径下该日已由站点级周期结算完毕，沿用站点级周期
+        settled = await settle_period_dao.get_covering(
+            db, site_id=site_id, rider_id=SITE_LEVEL_RIDER_ID, any_date=any_date
+        )
+        if settled is None:
+            raise errors.RequestError(msg='无法确定该日期所属结算周期')
+        return settled
 
     @staticmethod
     def _resolve_cycle(
@@ -526,7 +551,7 @@ class PeriodService:
         items: list[GetGeneratedPeriodItem] = []
         site_ranges = covering_period_ranges(site.settle_cycle, site.cycle_config, year, month)
         for start, end in site_ranges:
-            item = await self._ensure_listed(
+            listed = await self._ensure_listed(
                 db,
                 site_id=site.id,
                 rider_id=SITE_LEVEL_RIDER_ID,
@@ -534,7 +559,7 @@ class PeriodService:
                 start_date=start,
                 end_date=end,
             )
-            items.append(item)
+            items.extend(listed)
         riders = list(
             (
                 await db.scalars(
@@ -556,7 +581,7 @@ class PeriodService:
                 month,
             )
             for start, end in rider_ranges:
-                item = await self._ensure_listed(
+                listed = await self._ensure_listed(
                     db,
                     site_id=site.id,
                     rider_id=rider.id,
@@ -564,7 +589,7 @@ class PeriodService:
                     start_date=start,
                     end_date=end,
                 )
-                items.append(item)
+                items.extend(listed)
         created_count = sum(1 for item in items if item.created)
         skipped_count = len(items) - created_count
         await audit_service.record(
@@ -598,9 +623,8 @@ class PeriodService:
         cycle_type: str,
         start_date: date,
         end_date: date,
-    ) -> GetGeneratedPeriodItem:
-        before = await settle_period_dao.get_by_unique(db, site_id=site_id, rider_id=rider_id, start_date=start_date)
-        period = await self._create_if_absent(
+    ) -> list[GetGeneratedPeriodItem]:
+        rows = await self._create_runs(
             db,
             site_id=site_id,
             rider_id=rider_id,
@@ -608,16 +632,91 @@ class PeriodService:
             start_date=start_date,
             end_date=end_date,
         )
-        return GetGeneratedPeriodItem(
-            id=period.id,
-            site_id=period.site_id,
-            rider_id=period.rider_id,
-            cycle_type=period.cycle_type,
-            start_date=period.start_date,
-            end_date=period.end_date,
-            status=period.status,
-            created=before is None,
+        return [
+            GetGeneratedPeriodItem(
+                id=period.id,
+                site_id=period.site_id,
+                rider_id=period.rider_id,
+                cycle_type=period.cycle_type,
+                start_date=period.start_date,
+                end_date=period.end_date,
+                status=period.status,
+                created=created,
+            )
+            for period, created in rows
+        ]
+
+    async def _create_runs(
+        self,
+        db: AsyncSession,
+        *,
+        site_id: int,
+        rider_id: int,
+        cycle_type: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[tuple[RiderSalarySettlePeriod, bool]]:
+        """
+        只为区间内尚未被覆盖的日期建周期，保证同一口径的周期互不重叠
+
+        改周期配置后，新配置自然从最后一个已有周期的次日起生效（纲要 §10 #35）。
+        骑手级还要让出站点级已定稿/已发薪的日期，否则同一天会结算两次。
+        """
+        existing = list(
+            (
+                await db.scalars(
+                    select(RiderSalarySettlePeriod)
+                    .where(
+                        RiderSalarySettlePeriod.site_id == site_id,
+                        RiderSalarySettlePeriod.rider_id == rider_id,
+                        RiderSalarySettlePeriod.start_date <= end_date,
+                        RiderSalarySettlePeriod.end_date >= start_date,
+                        RiderSalarySettlePeriod.deleted == 0,
+                    )
+                    .order_by(RiderSalarySettlePeriod.start_date)
+                )
+            ).all()
         )
+        blocked = list(existing)
+        if rider_id != SITE_LEVEL_RIDER_ID:
+            settled_period_ids = select(RiderSalaryPayroll.period_id).where(
+                RiderSalaryPayroll.rider_id == rider_id,
+                RiderSalaryPayroll.status.in_([PayrollStatus.finalized.value, PayrollStatus.paid.value]),
+                RiderSalaryPayroll.kind != PayrollKind.reversal.value,
+                RiderSalaryPayroll.reversed.is_(False),
+                RiderSalaryPayroll.deleted == 0,
+            )
+            blocked.extend(
+                (
+                    await db.scalars(
+                        select(RiderSalarySettlePeriod).where(
+                            RiderSalarySettlePeriod.site_id == site_id,
+                            RiderSalarySettlePeriod.rider_id == SITE_LEVEL_RIDER_ID,
+                            RiderSalarySettlePeriod.start_date <= end_date,
+                            RiderSalarySettlePeriod.end_date >= start_date,
+                            RiderSalarySettlePeriod.deleted == 0,
+                            RiderSalarySettlePeriod.id.in_(settled_period_ids),
+                        )
+                    )
+                ).all()
+            )
+        runs = uncovered_runs(start_date, end_date, [(row.start_date, row.end_date) for row in blocked])
+        result: list[tuple[RiderSalarySettlePeriod, bool]] = [(row, False) for row in existing]
+        for run_from, run_to in runs:
+            period = await self._create_if_absent(
+                db,
+                site_id=site_id,
+                rider_id=rider_id,
+                cycle_type=cycle_type,
+                start_date=run_from,
+                end_date=run_to,
+            )
+            result.append((period, True))
+            if rider_id != SITE_LEVEL_RIDER_ID:
+                # 站点级草稿里这几天改由骑手级周期结算，站点级需重算
+                await mark_stale(db, rider_ids=[rider_id], date_from=run_from, date_to=run_to)
+        result.sort(key=lambda item: item[0].start_date)
+        return result
 
     async def calculate(
         self,
@@ -701,6 +800,7 @@ class PeriodService:
         """
         period, site, _rider = await self._load_visible(db, request, pk)
         await self._assert_no_stale_drafts(db, period)
+        await self._assert_all_calculated(db, period)
         before = snapshot(period, _PERIOD_FIELDS)
         self.transition(period, PeriodStatus.locked.value, request, reason)
         await self._set_locked_flags(db, period, locked=True)
@@ -894,6 +994,33 @@ class PeriodService:
                 job_nos.append(job_no)
         raise errors.RequestError(msg=stale_lock_message(job_nos))
 
+    async def _assert_all_calculated(self, db: AsyncSession, period: RiderSalarySettlePeriod) -> None:
+        """锁账前确认本期应结算的骑手都有有效薪资单，避免新导入/新增骑手从未算薪就被锁账漏发"""
+        targets = await _riders_for_period(db, period, None)
+        if not targets:
+            return
+        calculated = set(
+            (
+                await db.scalars(
+                    select(RiderSalaryPayroll.rider_id).where(
+                        RiderSalaryPayroll.period_id == period.id,
+                        RiderSalaryPayroll.rider_id.in_(targets),
+                        RiderSalaryPayroll.kind != PayrollKind.reversal.value,
+                        RiderSalaryPayroll.status != PayrollStatus.voided.value,
+                        RiderSalaryPayroll.reversed.is_(False),
+                        RiderSalaryPayroll.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        missing = [rider_id for rider_id in targets if rider_id not in calculated]
+        if not missing:
+            return
+        rider_map = await self._rider_map(db, missing)
+        job_nos = [rider_map[rid].job_no if rid in rider_map else str(rid) for rid in missing]
+        shown = '、'.join(job_nos[:10]) + (f' 等{len(job_nos)}人' if len(job_nos) > 10 else '')
+        raise errors.RequestError(msg=f'以下骑手本期尚未算薪，请先算薪再锁账：{shown}')
+
     async def _set_locked_flags(self, db: AsyncSession, period: RiderSalarySettlePeriod, *, locked: bool) -> None:
         order_stmt = (
             update(RiderSalaryOrder)
@@ -932,10 +1059,22 @@ class PeriodService:
                     )
                 ).all()
             )
-            excluded = site_level_lock_excluded_rider_ids(overlapping)
-            if excluded:
-                order_stmt = order_stmt.where(RiderSalaryOrder.rider_id.notin_(list(excluded)))
-                adj_stmt = adj_stmt.where(RiderSalaryAdjustment.rider_id.notin_(list(excluded)))
+            # 只让出骑手级周期覆盖的「骑手 × 日期」，其余日期仍随站点级周期锁定/解锁
+            for row in overlapping:
+                order_stmt = order_stmt.where(
+                    ~and_(
+                        RiderSalaryOrder.rider_id == row.rider_id,
+                        RiderSalaryOrder.biz_date >= row.start_date,
+                        RiderSalaryOrder.biz_date <= row.end_date,
+                    )
+                )
+                adj_stmt = adj_stmt.where(
+                    ~and_(
+                        RiderSalaryAdjustment.rider_id == row.rider_id,
+                        RiderSalaryAdjustment.biz_date >= row.start_date,
+                        RiderSalaryAdjustment.biz_date <= row.end_date,
+                    )
+                )
         await db.execute(order_stmt)
         await db.execute(adj_stmt)
 

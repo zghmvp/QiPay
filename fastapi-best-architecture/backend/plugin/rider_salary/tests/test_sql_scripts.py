@@ -5,7 +5,8 @@ import anyio
 from backend.utils.sql_parser import parse_sql_script
 
 SQL_ROOT = Path(__file__).resolve().parents[1] / 'sql'
-SQL_FILES = sorted(SQL_ROOT.glob('*/*.sql'))
+# patch/ 下是给现网库手工执行的增量脚本（含 UPDATE/ALTER），不走 FBA 安装解析
+SQL_FILES = sorted(path for path in SQL_ROOT.glob('*/*.sql') if path.parent.name != 'patch')
 
 
 def test_plugin_sql_files_exist() -> None:

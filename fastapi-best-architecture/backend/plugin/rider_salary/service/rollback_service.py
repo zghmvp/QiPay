@@ -181,6 +181,8 @@ class RollbackService:
         payrolls = await self._affected_payrolls(db, pk)
         for payroll in payrolls:
             if payroll.status == PayrollStatus.draft.value:
+                # 作废前把本单已抵扣的预支加回，否则这部分预支永远不会再被抵扣
+                await payroll_service.restore_advances_from_payroll(db, payroll)
                 payroll.status = PayrollStatus.voided.value
                 period = await db.scalar(
                     select(RiderSalarySettlePeriod).where(

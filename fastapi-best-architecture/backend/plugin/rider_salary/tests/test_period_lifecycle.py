@@ -132,15 +132,3 @@ def test_summarize_trace_one_line_chinese() -> None:
     assert '公式：(配送距离 - 5) * 0.8' in text
     assert '配送距离=7.2' in text
     assert '结果=1.76' in text
-
-
-def test_site_level_lock_skips_rider_level_periods() -> None:
-    from backend.plugin.rider_salary.service.period_service import site_level_lock_excluded_rider_ids
-
-    overlapping = [
-        SimpleNamespace(rider_id=18),
-        SimpleNamespace(rider_id=0),
-        SimpleNamespace(rider_id=None),
-        SimpleNamespace(rider_id=22),
-    ]
-    assert site_level_lock_excluded_rider_ids(overlapping) == {18, 22}
