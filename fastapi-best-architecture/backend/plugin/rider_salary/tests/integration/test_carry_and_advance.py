@@ -248,7 +248,7 @@ def test_a9_leave_blocks_in_flight_and_requires_confirm_for_outstanding() -> Non
         await seed.paid_advance(rider, '120')
         check = await rider_service.leave_check(db=db, request=req, pk=rider.id)
         assert (check.in_flight_count, check.undeducted_amount, check.debt_amount) == (0, Decimal(120), Decimal(0))
-        with pytest.raises(errors.RequestError, match='未扣回预支 120.00 元'):
+        with pytest.raises(errors.RequestError, match=r'未扣回预支 120\.00 元'):
             await rider_service.leave(db=db, request=req, pk=rider.id, obj=leave)
 
         leave.confirm_outstanding = True

@@ -215,3 +215,31 @@ def test_a3_rider_override_skips_dates_settled_by_site_period() -> None:
         ]
 
     run_db(_case)
+
+
+def test_b8_mid_period_plan_switch_pays_base_and_guarantee_once() -> None:
+    async def _case(db: AsyncSession) -> None:
+        seed = Seed(db)
+        req = admin_request()
+        site = await seed.site()
+        rider = await seed.rider(site)
+        items = [
+            {'formula': '5'},
+            {'formula': '3000', 'stage': 'period', 'name': '底薪'},
+            {'formula': '最大值(4000 - 本期已计金额, 0)', 'stage': 'period', 'name': '保底'},
+            {'formula': '10 * 方案期内单量', 'stage': 'period', 'name': '段内冲单奖'},
+        ]
+        first = await seed.plan_version(items)
+        second = await seed.plan_version(items)
+        await seed.bind(rider, first, SEP1, date(2026, 9, 15))
+        await seed.bind(rider, second, date(2026, 9, 16))
+        await seed.orders(rider, date(2026, 9, 3), 10)
+        await seed.orders(rider, date(2026, 9, 20), 10)
+        period = await seed.period(site, SEP1, SEP30)
+        await calculate_period(db, period_id=period.id, operator=req)
+        row = (await _payrolls(db, period.id))[0]
+        # 逐单 100 + 段内冲单奖 100×2 + 底薪 3000（一次）= 3300，保底补到 4000 一次
+        assert row.gross == Decimal(4000)
+        assert any('只按期末方案计算一次' in text for text in row.warnings or [])
+
+    run_db(_case)

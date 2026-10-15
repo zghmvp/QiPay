@@ -235,6 +235,24 @@ def _eval_item(
     return True, signed, _trace(condition_expr, formula_expr, names, unsigned, hit=True)
 
 
+_SEGMENT_FIELDS = ('方案生效天数', '方案期内单量')
+
+
+def _item_text(item: PlanItemView) -> str:
+    return f'{item.condition_expr or ""} {item.formula_expr or ""}'
+
+
+def _is_guarantee(item: PlanItemView) -> bool:
+    """保底类周期项：引用了本期已计金额"""
+    return '本期已计金额' in _item_text(item)
+
+
+def _segment_scoped(item: PlanItemView) -> bool:
+    """按方案段分摊的周期项（引用方案生效天数/方案期内单量，且不是保底）"""
+    text = _item_text(item)
+    return not _is_guarantee(item) and any(name in text for name in _SEGMENT_FIELDS)
+
+
 def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-structure]
     """
     纲要 §3 算薪流水线（纯内存，供正式算薪与单测共用）
@@ -286,12 +304,16 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
     daily_total = ZERO
     period_total = ZERO
     covered: dict[date, int] = {}
+    active: list[tuple[Segment, list[date]]] = []
     for segment in data.segments:
         segment_dates = [
             day for day in iter_dates(segment.start_date, segment.end_date) if day not in data.excluded_dates
         ]
-        if not segment_dates:
-            continue
+        if segment_dates:
+            active.append((segment, segment_dates))
+    # 周期中途换方案（纲要 §10 #34）：分段项每段计一次，整期项与保底只按期末方案计一次
+    multi = len(active) > 1
+    for segment, segment_dates in active:
         for day in segment_dates:
             covered[day] = segment.plan_version_id
             employ = _employ_on(data.employ_history, data.employ_type, day)
@@ -370,6 +392,8 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             per_order_total=per_order_total,
         )
         for item in _enabled_items(segment, CalcStage.period.value):
+            if multi and not _segment_scoped(item):
+                continue
             seg_ctx['本期已计金额'] = float(q2(accrued))
             seg_ctx['本期逐单金额'] = float(q2(per_order_total))
             hit, amount, trace = _eval_item(item, seg_ctx, warnings)
@@ -384,6 +408,55 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                     include_in_gross=item.include_in_gross,
                     source=DetailSource.formula.value,
                     plan_version_id=segment.plan_version_id,
+                    plan_item_id=item.id,
+                    calc_trace=trace,
+                    direction=item.direction,
+                    name=item.name,
+                )
+            )
+            if item.include_in_gross:
+                accrued += amount
+                period_total += amount
+
+    if multi:
+        last_segment = active[-1][0]
+        whole_ctx = build_segment_context(
+            period_ctx,
+            plan_order_count=len([row for row in completed_all if row.biz_date in covered]),
+            segment_days=len(covered),
+            accrued_gross=accrued,
+            per_order_total=per_order_total,
+        )
+        skipped = [
+            item.name
+            for segment, _ in active[:-1]
+            for item in _enabled_items(segment, CalcStage.period.value)
+            if not _segment_scoped(item)
+        ]
+        if skipped:
+            warnings.append(
+                f'本期中途切换方案：整期项与保底只按期末方案计算一次，早期方案的「{"、".join(skipped)}」未重复计发'
+            )
+        whole_items = [
+            item for item in _enabled_items(last_segment, CalcStage.period.value) if not _segment_scoped(item)
+        ]
+        # 保底放最后，按整期已计金额评估
+        whole_items.sort(key=_is_guarantee)
+        for item in whole_items:
+            whole_ctx['本期已计金额'] = float(q2(accrued))
+            whole_ctx['本期逐单金额'] = float(q2(per_order_total))
+            hit, amount, trace = _eval_item(item, whole_ctx, warnings)
+            if not hit:
+                continue
+            details.append(
+                CalcDetail(
+                    rider_id=rider_id,
+                    subject_id=item.subject_id,
+                    amount=amount,
+                    stage=CalcStage.period.value,
+                    include_in_gross=item.include_in_gross,
+                    source=DetailSource.formula.value,
+                    plan_version_id=last_segment.plan_version_id,
                     plan_item_id=item.id,
                     calc_trace=trace,
                     direction=item.direction,
