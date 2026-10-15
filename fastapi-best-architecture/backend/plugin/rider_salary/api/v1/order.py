@@ -42,6 +42,11 @@ async def get_orders_paginated(
     order_no: Annotated[str | None, Query(description='订单号')] = None,
     import_batch_id: Annotated[int | None, Query(description='导入批次 ID')] = None,
     is_locked: Annotated[bool | None, Query(description='是否已锁账')] = None,
+    source: Annotated[str | None, Query(description='订单来源')] = None,
+    distance_min: Annotated[float | None, Query(description='配送距离起，公里')] = None,
+    distance_max: Annotated[float | None, Query(description='配送距离止，公里')] = None,
+    weight_min: Annotated[float | None, Query(description='商品重量起，斤')] = None,
+    weight_max: Annotated[float | None, Query(description='商品重量止，斤')] = None,
 ) -> ResponseSchemaModel[PageData[GetOrderDetail]]:
     page_data = await order_service.get_list(
         db=db,
@@ -54,6 +59,11 @@ async def get_orders_paginated(
         order_no=order_no,
         import_batch_id=import_batch_id,
         is_locked=is_locked,
+        source=source,
+        distance_min=distance_min,
+        distance_max=distance_max,
+        weight_min=weight_min,
+        weight_max=weight_max,
     )
     return response_base.success(data=page_data)
 

@@ -88,6 +88,7 @@ class AuditService:
         date_to: str | None,
         target_type: str | None,
         keyword: str | None,
+        target: str | None = None,
     ) -> dict[str, Any]:
         """
         分页获取操作日志
@@ -110,6 +111,7 @@ class AuditService:
             date_to=date_to,
             target_type=target_type,
             keyword=keyword,
+            target=target.strip() if target else None,
         )
         return await paging_data(db, stmt)
 

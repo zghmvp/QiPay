@@ -32,10 +32,11 @@ import { querySchema, siteFormSchema, useColumns } from './data';
 import { invalidateManagerCount } from './manager-count-cache';
 
 const formOptions: VbenFormProps = {
-  collapsed: true,
+  collapsed: false,
   schema: querySchema,
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
+  wrapperClass: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4',
 };
 
 const gridOptions: VxeTableGridOptions<SiteResult> = {

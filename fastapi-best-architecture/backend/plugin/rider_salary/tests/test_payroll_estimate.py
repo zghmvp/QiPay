@@ -10,6 +10,7 @@ import anyio
 from backend.plugin.rider_salary.enums import AdvanceStatus, DeductStatus, PayrollKind, PayrollStatus, RiderStatus
 from backend.plugin.rider_salary.schema.advance import AdvanceActionParam
 from backend.plugin.rider_salary.service.advance_service import advance_service
+from backend.plugin.rider_salary.service.h5_menu import builtin_flags
 from backend.plugin.rider_salary.service.me_service import me_service
 from backend.utils.timezone import timezone
 
@@ -110,6 +111,10 @@ async def _estimate(rows: list[SimpleNamespace], *, calc: SimpleNamespace | None
     )
     rider = SimpleNamespace(id=7, site_id=1)
     with (
+        patch(
+            'backend.plugin.rider_salary.service.me_service.h5_menu_service.assert_open',
+            AsyncMock(return_value=builtin_flags()),
+        ),
         patch(
             'backend.plugin.rider_salary.service.me_service.resolve_period',
             AsyncMock(return_value=_period()),

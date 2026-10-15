@@ -4,6 +4,7 @@ import { Button, Empty, Field, Form, NavBar, showConfirmDialog, showToast, Step,
 import AppTabbar from '@/components/AppTabbar.vue'
 import MoneyText from '@/components/MoneyText.vue'
 import { cancelAdvance, createAdvance, getAdvanceLimit, getAdvances } from '@/api/me'
+import { useMenuStore } from '@/stores/menu'
 import {
   ADVANCE_STATUS_OPTIONS,
   enumColor,
@@ -14,6 +15,7 @@ import { moneyNumber } from '@/utils/money'
 import { toDateTimeString } from '@/utils/date'
 import type { AdvanceDetail, AdvanceLimit } from '@/types'
 
+const menus = useMenuStore()
 const loading = ref(true)
 const submitting = ref(false)
 const limit = ref<AdvanceLimit | null>(null)
@@ -23,8 +25,12 @@ const form = reactive({
   reason: '',
 })
 
+const visibleReasons = computed(() =>
+  (limit.value?.reasons ?? []).filter((reason) => reason !== '当前周期预估实发不足，不能预支'),
+)
 const available = computed(() => moneyNumber(limit.value?.available))
-const canSubmit = computed(() => available.value > 0)
+const minAmount = computed(() => moneyNumber(limit.value?.min_amount))
+const canSubmit = computed(() => Boolean(limit.value?.eligible) && available.value > 0)
 
 function canCancel(item: AdvanceDetail) {
   return item.status === 'pending' || item.status === 'draft'
@@ -45,6 +51,10 @@ async function onSubmit() {
   const amount = Number(form.amount)
   if (!Number.isFinite(amount) || amount <= 0) {
     showToast('请输入大于 0 的预支金额')
+    return
+  }
+  if (minAmount.value > 0 && amount < minAmount.value) {
+    showToast(`单笔不能低于 ${minAmount.value.toFixed(2)} 元`)
     return
   }
   if (amount > available.value) {
@@ -94,16 +104,24 @@ onMounted(() => {
         <p class="waybill-kicker">可申请额度</p>
         <p class="waybill-amount display-num"><MoneyText :value="limit.available" /></p>
         <div class="metric-grid">
-          <div>
-            <span class="label">上限</span>
-            <span class="value"><MoneyText :value="limit.limit" /></span>
+          <div v-if="menus.flags.show_estimate_net">
+            <span class="label">预估实发</span>
+            <span class="value"><MoneyText :value="limit.estimate_net" /></span>
           </div>
           <div>
-            <span class="label">在途</span>
+            <span class="label">完成订单</span>
+            <span class="value">{{ limit.order_count }}</span>
+          </div>
+          <div>
+            <span class="label">本月次数</span>
+            <span class="value">{{ limit.monthly_used_count }} / {{ limit.monthly_max_count }}</span>
+          </div>
+          <div v-if="menus.flags.show_advance_inflight">
+            <span class="label">已占用（含未扣回）</span>
             <span class="value"><MoneyText :value="limit.used_pending_amount" /></span>
           </div>
         </div>
-        <p v-if="available <= 0" class="muted">当前无法预支，请联系站点</p>
+        <p v-for="reason in visibleReasons" :key="reason" class="muted">{{ reason }}</p>
       </section>
 
       <div class="section-title"><span>申请预支</span></div>

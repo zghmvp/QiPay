@@ -190,21 +190,17 @@ _bind_labels(
 
 
 class OrderStatus(LabeledStrEnum):
-    """订单状态"""
+    """订单状态。只结算配送完成。"""
 
     completed = 'completed'
-    cancelled = 'cancelled'
-    abnormal = 'abnormal'
-    refunded = 'refunded'
+    not_completed = 'not_completed'
 
 
 _bind_labels(
     OrderStatus,
     {
-        OrderStatus.completed: '已完成',
-        OrderStatus.cancelled: '已取消',
-        OrderStatus.abnormal: '配送异常',
-        OrderStatus.refunded: '已退款',
+        OrderStatus.completed: '配送完成',
+        OrderStatus.not_completed: '没有配送完成',
     },
 )
 
@@ -304,6 +300,7 @@ class DetailSource(LabeledStrEnum):
     manual = 'manual'
     advance = 'advance'
     reversal = 'reversal'
+    carry = 'carry'
 
 
 _bind_labels(
@@ -313,6 +310,7 @@ _bind_labels(
         DetailSource.manual: '手工',
         DetailSource.advance: '预支抵扣',
         DetailSource.reversal: '反冲',
+        DetailSource.carry: '欠款结转',
     },
 )
 

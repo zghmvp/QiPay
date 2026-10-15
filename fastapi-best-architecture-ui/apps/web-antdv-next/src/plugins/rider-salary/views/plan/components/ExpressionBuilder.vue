@@ -24,6 +24,12 @@ const stageFields = computed(() =>
   props.fields.filter((item) => item.stages.includes(props.stage)),
 );
 
+// 手工奖惩已经按明细计入应发，公式里再引用会重复计发
+const DUPLICATED_FIELDS = ['本期手工奖', '本期手工惩'];
+const duplicateHint = computed(() =>
+  DUPLICATED_FIELDS.filter((name) => (props.value || '').includes(name)),
+);
+
 function insert(token: string) {
   if (props.disabled) return;
   const current = props.value || '';
@@ -95,6 +101,12 @@ function insertNumber() {
       :value="value"
       placeholder="高级编辑：可直接修改表达式，保存前必须通过校验"
       @update:value="(v) => emit('update:value', String(v ?? ''))"
+    />
+    <a-alert
+      v-if="duplicateHint.length > 0"
+      type="warning"
+      show-icon
+      :message="`「${duplicateHint.join('、')}」已随手工奖惩明细计入应发，公式中再次引用会重复计发，请确认这是有意的`"
     />
   </div>
 </template>

@@ -17,11 +17,19 @@ const uuid = ref('')
 const imageSrc = ref('')
 const loading = ref(false)
 let timer: ReturnType<typeof setTimeout> | null = null
+let captchaSeq = 0
+
+function captchaSrc(image: string) {
+  const mime = image.startsWith('/9j/') ? 'image/jpeg' : 'image/png'
+  return `data:${mime};base64,${image}`
+}
 
 async function refreshCaptcha() {
+  const seq = ++captchaSeq
   const res = await getCaptcha()
+  if (seq !== captchaSeq) return
   uuid.value = res.uuid
-  imageSrc.value = `data:image/png;base64, ${res.image}`
+  imageSrc.value = captchaSrc(res.image)
   if (timer) clearTimeout(timer)
   if (res.is_enabled && res.expire_seconds > 0) {
     const delay = Math.max((res.expire_seconds - 3) * 1000, 1000)
@@ -88,14 +96,19 @@ onUnmounted(() => {
         placeholder="请输入密码"
         autocomplete="current-password"
       />
-      <Field v-model="form.captcha" name="captcha" label="验证码" placeholder="点击图片可刷新">
-        <template #button>
-          <button type="button" class="captcha" @click="refreshCaptcha">
-            <img v-if="imageSrc" :src="imageSrc" alt="图形验证码" />
-            <span v-else>加载中</span>
-          </button>
-        </template>
-      </Field>
+      <Field
+        v-model="form.captcha"
+        name="captcha"
+        label="验证码"
+        placeholder="不区分大小写"
+        maxlength="8"
+        autocomplete="off"
+      />
+      <button type="button" class="captcha" @click="refreshCaptcha">
+        <img v-if="imageSrc" :src="imageSrc" alt="图形验证码，点击刷新" />
+        <span v-else>验证码加载中</span>
+        <span class="captcha-tip">看不清？点击刷新</span>
+      </button>
       <div class="actions">
         <Button round block type="primary" native-type="submit" :loading="loading">
           登录
@@ -138,19 +151,29 @@ onUnmounted(() => {
 }
 
 .captcha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% - 24px);
+  margin: 4px 12px 0;
+  padding: 8px 10px;
   border: 0;
+  border-radius: 8px;
   background: #f0ebe3;
-  width: 108px;
-  height: 36px;
-  padding: 0;
-  border-radius: 4px;
-  overflow: hidden;
 }
 
 .captcha img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  width: 180px;
+  height: 60px;
+  object-fit: contain;
+  image-rendering: auto;
+  background: #fff;
+  border-radius: 4px;
+}
+
+.captcha-tip {
+  color: #8a8175;
+  font-size: 12px;
 }
 </style>

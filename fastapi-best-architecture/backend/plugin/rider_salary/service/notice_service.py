@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any
 
 from fastapi import Request
@@ -51,12 +52,21 @@ class NoticeService:
         title: str | None,
         status: str | None,
         site_id: int | None,
+        publish_from: date | None = None,
+        publish_to: date | None = None,
     ) -> dict[str, Any]:
         """分页获取公告"""
         visible = await get_visible_site_ids(request, db)
         if site_id is not None:
             assert_site_visible(visible, site_id)
-        stmt = await notice_dao.get_select(title=title, status=status, site_id=site_id, site_ids=None)
+        stmt = await notice_dao.get_select(
+            title=title,
+            status=status,
+            site_id=site_id,
+            site_ids=None,
+            publish_from=publish_from,
+            publish_to=publish_to,
+        )
         if visible is not None and site_id is None:
             stmt = stmt.where(
                 or_(RiderSalaryNotice.site_id.in_(list(visible) or [-1]), RiderSalaryNotice.site_id.is_(None))

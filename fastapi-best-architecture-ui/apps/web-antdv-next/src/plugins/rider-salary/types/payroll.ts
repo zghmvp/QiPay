@@ -39,6 +39,10 @@ export interface PayrollSummary {
   calc_by?: null | number;
   calc_time?: null | string;
   calc_version: number;
+  /** 本期扣回的上期欠款，负数为多扣退回 */
+  carry_in?: MoneyValue;
+  /** 结转下期的欠款 */
+  carry_out?: MoneyValue;
   created_time?: null | string;
   daily_total: MoneyValue;
   deduction_total: MoneyValue;

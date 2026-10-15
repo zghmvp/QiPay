@@ -9,6 +9,7 @@ import MoneyText from '../../../components/MoneyText.vue';
 
 const props = defineProps<{
   date: string;
+  dimmed?: boolean;
   inMonth: boolean;
   item?: CalendarDayItem;
   selected?: boolean;
@@ -52,6 +53,7 @@ const tooltip = computed(() => {
       class="relative flex h-full min-h-[110px] w-full flex-col items-stretch rounded-sm px-1.5 pb-1.5 pt-5 text-left"
       :class="{
         'opacity-40': !inMonth,
+        'opacity-30': props.dimmed && inMonth,
         'day-not-imported border border-dashed border-[#d9d9d9]':
           inMonth && status === 'not_imported',
         'bg-[#fafafa]': inMonth && status === 'no_orders',

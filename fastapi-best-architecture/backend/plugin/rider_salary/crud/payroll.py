@@ -89,7 +89,7 @@ class CRUDPayroll(CRUDPlus[RiderSalaryPayroll]):
         rider_id: int,
         kind: str,
     ) -> RiderSalaryPayroll | None:
-        """取当前未作废薪资单（同 kind 最新）"""
+        """取当前未作废、未被反冲的薪资单（同 kind 最新）"""
         from backend.plugin.rider_salary.enums import PayrollStatus
 
         return await db.scalar(
@@ -99,6 +99,7 @@ class CRUDPayroll(CRUDPlus[RiderSalaryPayroll]):
                 RiderSalaryPayroll.rider_id == rider_id,
                 RiderSalaryPayroll.kind == kind,
                 RiderSalaryPayroll.status != PayrollStatus.voided.value,
+                RiderSalaryPayroll.reversed.is_(False),
                 RiderSalaryPayroll.deleted == 0,
             )
             .order_by(RiderSalaryPayroll.id.desc())

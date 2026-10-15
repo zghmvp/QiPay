@@ -37,7 +37,12 @@ export interface SubjectForm {
 }
 
 export interface SubjectQuery {
+  code?: string;
   direction?: string;
+  entry_granularity?: string;
+  fee_mode?: string;
+  include_in_gross?: boolean;
+  is_builtin?: boolean;
   name?: string;
   page?: number;
   size?: number;

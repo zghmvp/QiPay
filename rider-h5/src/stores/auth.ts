@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { getProfile } from '@/api/me'
 import { logout as logoutApi } from '@/api/auth'
+import { useMenuStore } from '@/stores/menu'
 import { clearToken, getToken, setToken } from '@/utils/storage'
 import type { MeProfile } from '@/types'
 
@@ -32,6 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     profile.value = null
     clearToken()
+    useMenuStore().reset()
   }
 
   return {

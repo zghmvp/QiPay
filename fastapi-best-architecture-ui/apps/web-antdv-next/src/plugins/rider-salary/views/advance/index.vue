@@ -30,6 +30,7 @@ import { useReasonModal } from '../../components/use-reason-modal';
 import { toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import AdvanceDrawer from './components/AdvanceDrawer.vue';
+import AdvancePolicyModal from './components/AdvancePolicyModal.vue';
 import { querySchema, useColumns } from './data';
 
 function isUserCancelled(error: unknown) {
@@ -38,6 +39,7 @@ function isUserCancelled(error: unknown) {
 }
 
 const { ReasonModal, prompt } = useReasonModal();
+const policyOpen = ref(false);
 
 const route = useRoute();
 const ADVANCE_TABS = new Set(['all', 'paid', 'pending', 'to_pay']);
@@ -52,7 +54,7 @@ const tab = ref(
 );
 
 const formOptions: VbenFormProps = {
-  collapsed: true,
+  collapsed: false,
   schema: querySchema.map((item) =>
     item.fieldName === 'status' &&
     initialStatus &&
@@ -60,8 +62,16 @@ const formOptions: VbenFormProps = {
       ? { ...item, defaultValue: initialStatus }
       : item,
   ),
+  resetButtonOptions: {
+    autoInsertSpace: false,
+    content: '重置',
+  } as VbenFormProps['resetButtonOptions'],
   showCollapseButton: true,
-  submitButtonOptions: { content: '查询' },
+  submitButtonOptions: {
+    autoInsertSpace: false,
+    content: '查询',
+  } as VbenFormProps['submitButtonOptions'],
+  wrapperClass: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4',
 };
 
 const gridOptions: VxeTableGridOptions<AdvanceResult> = {
@@ -199,9 +209,14 @@ const [DetailDrawer, detailApi] = useVbenDrawer({
     </a-tabs>
     <Grid>
       <template #toolbar-actions>
-        <VbenButton v-access:code="'rs:advance:export'" @click="onExport">
-          导出预支明细
-        </VbenButton>
+        <div class="flex items-center gap-2">
+          <VbenButton v-access:code="'rs:advance:approve'" @click="policyOpen = true">
+            预支规则
+          </VbenButton>
+          <VbenButton v-access:code="'rs:advance:export'" @click="onExport">
+            导出预支明细
+          </VbenButton>
+        </div>
       </template>
       <template #amount="{ row }">
         <MoneyText :value="row.amount" />
@@ -215,5 +230,6 @@ const [DetailDrawer, detailApi] = useVbenDrawer({
     </Grid>
     <DetailDrawer />
     <ReasonModal />
+    <AdvancePolicyModal v-model:open="policyOpen" />
   </PageContainer>
 </template>

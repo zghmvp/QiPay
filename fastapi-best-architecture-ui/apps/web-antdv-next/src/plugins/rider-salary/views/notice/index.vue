@@ -26,14 +26,16 @@ import {
   publishNoticeApi,
   updateNoticeApi,
 } from '../../api/notice';
+import { toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import { noticeFormSchema, querySchema, useColumns } from './data';
 
 const formOptions: VbenFormProps = {
-  collapsed: true,
+  collapsed: false,
   schema: querySchema,
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
+  wrapperClass: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4',
 };
 
 const gridOptions: VxeTableGridOptions<NoticeResult> = {
@@ -43,17 +45,17 @@ const gridOptions: VxeTableGridOptions<NoticeResult> = {
     ajax: {
       query: async ({ page }, formValues) => {
         const values = { ...(formValues as Record<string, unknown>) };
+        const publishRange = values.publish_range as [string, string] | undefined;
+        delete values.publish_range;
         if (values.site_id === null || values.site_id === 0) {
           delete values.site_id;
         }
         return await getNoticeListApi({
           page: page.currentPage,
+          publish_from: toDateString(publishRange?.[0]),
+          publish_to: toDateString(publishRange?.[1]),
           size: page.pageSize,
-          ...(values as {
-            site_id?: number;
-            status?: string;
-            title?: string;
-          }),
+          ...values,
         });
       },
     },

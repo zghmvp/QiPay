@@ -40,6 +40,13 @@ from backend.plugin.rider_salary.service.calendar_service import (
     pick_effective_payroll,
     resolve_period,
 )
+from backend.plugin.rider_salary.service.h5_menu import (
+    mask_advance_limit,
+    mask_calendar_month,
+    mask_day_detail,
+    mask_payroll_estimate,
+)
+from backend.plugin.rider_salary.service.h5_menu_service import h5_menu_service
 from backend.plugin.rider_salary.service.rider_service import resolve_effective_plans
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
@@ -103,12 +110,17 @@ class MeService:
         )
 
     async def calendar(self, *, db: AsyncSession, rider: RiderSalaryRider, month: str | None) -> GetCalendarMonth:
-        return await calendar_service.build_month(db, rider.id, month, for_rider=True)
+        flags = await h5_menu_service.assert_open(db, rider, 'calendar')
+        month_view = await calendar_service.build_month(db, rider.id, month, for_rider=True)
+        return mask_calendar_month(flags, month_view)
 
     async def day(self, *, db: AsyncSession, rider: RiderSalaryRider, biz_date: date) -> GetCalendarDayDetail:
-        return await calendar_service.build_day(db, rider.id, biz_date, for_rider=True)
+        flags = await h5_menu_service.assert_open(db, rider, 'day')
+        detail = await calendar_service.build_day(db, rider.id, biz_date, for_rider=True)
+        return mask_day_detail(flags, detail)
 
     async def payroll_estimate(self, *, db: AsyncSession, rider: RiderSalaryRider) -> GetMePayrollEstimate:
+        flags = await h5_menu_service.assert_open(db, rider, 'payroll')
         today = timezone.now().date()
         period = await resolve_period(db, rider.site_id, rider.id, today)
         range_text = period_range_text(period.start_date, period.end_date)
@@ -130,28 +142,34 @@ class MeService:
             if stale_draft or (stored is not None and stored.status not in _STORED):
                 stored = None
         if stored is not None:
-            return GetMePayrollEstimate(
-                period_range=range_text,
-                period_status=period.status,
-                order_count=stored.order_count,
-                gross=q2(stored.gross),
-                deduction_total=q2(stored.deduction_total),
-                advance_deduction_estimate=q2(stored.advance_deduction),
-                net_estimate=q2(stored.net),
-                is_estimate=False,
-                updated_at=stored.calc_time or getattr(stored, 'updated_time', None),
+            return mask_payroll_estimate(
+                flags,
+                GetMePayrollEstimate(
+                    period_range=range_text,
+                    period_status=period.status,
+                    order_count=stored.order_count,
+                    gross=q2(stored.gross),
+                    deduction_total=q2(stored.deduction_total),
+                    advance_deduction_estimate=q2(stored.advance_deduction),
+                    net_estimate=q2(stored.net),
+                    is_estimate=False,
+                    updated_at=stored.calc_time or getattr(stored, 'updated_time', None),
+                ),
             )
         result = await calculate_rider_period(db, rider_id=rider.id, period=period, persist=False)
-        return GetMePayrollEstimate(
-            period_range=range_text,
-            period_status=period.status,
-            order_count=result.order_count,
-            gross=q2(result.gross),
-            deduction_total=q2(result.deduction_total),
-            advance_deduction_estimate=q2(result.advance_deductible),
-            net_estimate=q2(result.net),
-            is_estimate=True,
-            updated_at=timezone.now(),
+        return mask_payroll_estimate(
+            flags,
+            GetMePayrollEstimate(
+                period_range=range_text,
+                period_status=period.status,
+                order_count=result.order_count,
+                gross=q2(result.gross),
+                deduction_total=q2(result.deduction_total),
+                advance_deduction_estimate=q2(result.advance_deductible),
+                net_estimate=q2(result.net - result.advance_deductible),
+                is_estimate=True,
+                updated_at=timezone.now(),
+            ),
         )
 
     async def adjustments(
@@ -161,6 +179,7 @@ class MeService:
         rider: RiderSalaryRider,
         month: str | None,
     ) -> list[GetMeAdjustmentItem]:
+        await h5_menu_service.assert_open(db, rider, 'adjustments')
         _, start, end = parse_month(month)
         rows = list(
             (
@@ -207,6 +226,7 @@ class MeService:
         return result
 
     async def plan(self, *, db: AsyncSession, rider: RiderSalaryRider) -> GetMePlan:
+        await h5_menu_service.assert_open(db, rider, 'plan')
         today = timezone.now().date()
         bindings = await rider_plan_binding_dao.get_by_rider(db, rider.id)
         upcoming = [row for row in bindings if row.end_date is None or row.end_date >= today]
@@ -252,6 +272,7 @@ class MeService:
         return GetMePlan(bindings=result)
 
     async def notices(self, *, db: AsyncSession, rider: RiderSalaryRider) -> list[GetNoticeDetail]:
+        await h5_menu_service.assert_open(db, rider, 'notices')
         rows = list(
             (
                 await db.scalars(
@@ -271,10 +292,12 @@ class MeService:
         return [GetNoticeDetail.model_validate(row) for row in rows]
 
     async def advance_limit(self, *, db: AsyncSession, rider: RiderSalaryRider) -> GetMeAdvanceLimit:
+        flags = await h5_menu_service.assert_open(db, rider, 'advance')
         data = await advance_service.limit_for_rider(db=db, rider=rider)
-        return GetMeAdvanceLimit(**data)
+        return mask_advance_limit(flags, GetMeAdvanceLimit(**data))
 
     async def advances(self, *, db: AsyncSession, rider: RiderSalaryRider) -> list[GetAdvanceDetail]:
+        await h5_menu_service.assert_open(db, rider, 'advance')
         return await advance_service.list_for_rider(db=db, rider_id=rider.id)
 
     async def create_advance(
@@ -285,6 +308,7 @@ class MeService:
         rider: RiderSalaryRider,
         obj: CreateMeAdvanceParam,
     ) -> GetAdvanceDetail:
+        await h5_menu_service.assert_open(db, rider, 'advance')
         if rider.status == RiderStatus.resigned:
             raise errors.RequestError(msg='离职骑手不能申请预支')
         advance = await advance_service.submit_for_rider(db=db, request=request, rider=rider, obj=obj)
@@ -302,6 +326,7 @@ class MeService:
         rider: RiderSalaryRider,
         pk: int,
     ) -> None:
+        await h5_menu_service.assert_open(db, rider, 'advance')
         await advance_service.cancel_for_rider(db=db, request=request, rider=rider, pk=pk)
 
 

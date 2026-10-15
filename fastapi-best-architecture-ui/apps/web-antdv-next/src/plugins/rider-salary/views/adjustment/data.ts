@@ -14,6 +14,7 @@ import {
   enumTagOptions,
   SUBJECT_DIRECTION_OPTIONS,
 } from '../../constants/enums';
+import { dateRangePresets } from '../../utils/date';
 
 export const querySchema: VbenFormSchema[] = [
   {
@@ -34,8 +35,17 @@ export const querySchema: VbenFormSchema[] = [
   },
   {
     component: 'RangePicker',
+    componentProps: {
+      allowClear: true,
+      format: 'YYYY-MM-DD',
+      placeholder: ['开始日期', '结束日期'],
+      presets: dateRangePresets,
+      style: { width: '100%' },
+      valueFormat: 'YYYY-MM-DD',
+    },
     fieldName: 'date_range',
-    label: '日期范围',
+    formItemClass: 'md:col-span-2',
+    label: '业务日期',
   },
   {
     component: h(SubjectSelect),
@@ -51,6 +61,25 @@ export const querySchema: VbenFormSchema[] = [
     },
     fieldName: 'direction',
     label: '方向',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: [
+        { label: '已锁账', value: true },
+        { label: '未锁账', value: false },
+      ],
+      placeholder: '全部',
+    },
+    fieldName: 'is_locked',
+    label: '锁账',
+  },
+  {
+    component: 'Input',
+    componentProps: { allowClear: true, placeholder: '备注关键字' },
+    fieldName: 'remark',
+    label: '备注',
   },
 ];
 

@@ -16,11 +16,26 @@ from backend.plugin.rider_salary.schema.me import (
     GetMePlan,
     GetMeProfile,
 )
+from backend.plugin.rider_salary.schema.h5_menu import GetMeH5Menu
 from backend.plugin.rider_salary.schema.notice import GetNoticeDetail
+from backend.plugin.rider_salary.service.h5_menu_service import h5_menu_service
 from backend.plugin.rider_salary.service.me_service import me_service
 from backend.plugin.rider_salary.utils.deps import DependsCurrentRider
 
 router = APIRouter()
+
+
+@router.get(
+    '/menus',
+    summary='获取本人可见的骑手端菜单',
+    dependencies=[DependsJwtAuth],
+)
+async def get_me_menus(
+    db: CurrentSession,
+    rider: Annotated[Rider, DependsCurrentRider],
+) -> ResponseSchemaModel[GetMeH5Menu]:
+    data = await h5_menu_service.for_rider(db, rider)
+    return response_base.success(data=data)
 
 
 @router.get(

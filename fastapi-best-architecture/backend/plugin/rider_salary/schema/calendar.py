@@ -22,12 +22,12 @@ class CalendarMonthSummary(SchemaBase):
 
     order_count: int = Field(description='本月累计单量')
     valid_order_count: int = Field(description='本月有效单量')
-    gross: Decimal = Field(description='应发')
-    bonus: Decimal = Field(description='奖')
-    penalty: Decimal = Field(description='惩')
-    deduction_total: Decimal = Field(description='代扣')
-    advance_deduction: Decimal = Field(description='预支抵扣')
-    net: Decimal = Field(description='实发')
+    gross: Decimal | None = Field(description='应发')
+    bonus: Decimal | None = Field(description='奖')
+    penalty: Decimal | None = Field(description='惩')
+    deduction_total: Decimal | None = Field(description='代扣')
+    advance_deduction: Decimal | None = Field(description='预支抵扣')
+    net: Decimal | None = Field(description='实发')
     periods: list[CalendarPeriodChip] = Field(default_factory=list, description='涉及周期及状态')
     stale: bool = Field(False, description='是否存在需重算结果')
 
@@ -38,7 +38,7 @@ class CalendarDayItem(SchemaBase):
     date: dt.date = Field(description='日期')
     order_count: int = Field(description='单量')
     valid_order_count: int = Field(description='有效单量')
-    net_adjust: Decimal = Field(description='手工奖惩净额')
+    net_adjust: Decimal | None = Field(description='手工奖惩净额')
     subjects: list[str] = Field(default_factory=list, description='科目摘要')
     plan_version_id: int | None = Field(None, description='方案版本 ID')
     plan_short_name: str | None = Field(None, description='方案短名')
@@ -100,7 +100,7 @@ class CalendarHitDetail(SchemaBase):
     """订单命中明细"""
 
     subject: str = Field(description='科目')
-    amount: Decimal = Field(description='金额')
+    amount: Decimal | None = Field(description='金额')
     calc_trace: dict[str, Any] | None = Field(None, description='计算过程')
 
 
@@ -125,7 +125,7 @@ class CalendarDailyItem(SchemaBase):
 
     subject: str = Field(description='科目')
     name: str | None = Field(None, description='项名称')
-    amount: Decimal = Field(description='金额')
+    amount: Decimal | None = Field(description='金额')
     calc_trace: dict[str, Any] | None = Field(None, description='计算过程')
 
 
@@ -135,7 +135,7 @@ class CalendarAdjustmentItem(SchemaBase):
     id: int = Field(description='奖惩 ID')
     subject: str = Field(description='科目')
     direction: str = Field(description='方向')
-    amount: Decimal = Field(description='金额（带符号）')
+    amount: Decimal | None = Field(description='金额（带符号）')
     remark: str = Field(description='备注')
 
 
@@ -143,10 +143,10 @@ class CalendarDayTotals(SchemaBase):
     """当日合计"""
 
     order_count: int = Field(description='单量')
-    formula_amount: Decimal = Field(description='公式金额')
-    manual_bonus: Decimal = Field(description='手工奖')
-    manual_penalty: Decimal = Field(description='手工惩')
-    net: Decimal = Field(description='当日净额')
+    formula_amount: Decimal | None = Field(description='公式金额')
+    manual_bonus: Decimal | None = Field(description='手工奖')
+    manual_penalty: Decimal | None = Field(description='手工惩')
+    net: Decimal | None = Field(description='当日净额')
 
 
 class GetCalendarDayDetail(SchemaBase):

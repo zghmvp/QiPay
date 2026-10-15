@@ -163,7 +163,7 @@ def _build_orders() -> list[SimpleNamespace]:
             orders.append(_order(oid, f'A-{oid}', day, night=night, distance=7.2 if night else 3.2))
             oid += 1
     for _ in range(12):
-        orders.append(_order(oid, f'AC-{oid}', date(2026, 9, 1), status=OrderStatus.cancelled.value))
+        orders.append(_order(oid, f'AC-{oid}', date(2026, 9, 1), status=OrderStatus.not_completed.value))
         oid += 1
     remaining = 420
     for index, day in enumerate(b_days):
@@ -174,7 +174,7 @@ def _build_orders() -> list[SimpleNamespace]:
             orders.append(_order(oid, f'B-{oid}', day, distance=4.0))
             oid += 1
     for _ in range(23):
-        orders.append(_order(oid, f'BC-{oid}', date(2026, 9, 15), status=OrderStatus.cancelled.value))
+        orders.append(_order(oid, f'BC-{oid}', date(2026, 9, 15), status=OrderStatus.not_completed.value))
         oid += 1
     return orders
 
@@ -560,3 +560,49 @@ def test_recalc_must_restore_advance_before_rededuct() -> None:
     second, _ = compute_advance_deduction([adv], D('4509.33'), persist=True)
     assert second == D('800.00')
     assert adv.remaining_amount == D('0.00')
+
+
+def test_broken_formula_warns_instead_of_silent_zero() -> None:
+    """B9：公式或条件求值失败必须进告警，金额按 0、条件按未命中"""
+    day = date(2026, 9, 3)
+    bad_formula = _item(
+        pk=1,
+        subject_id=1,
+        name='坏公式',
+        stage=CalcStage.per_order.value,
+        sort_order=10,
+        condition={},
+        formula={'类型': '固定金额', '金额': 5},
+    )
+    bad_formula.formula_expr = '1 / 0'
+    bad_condition = _item(
+        pk=2,
+        subject_id=2,
+        name='坏条件',
+        stage=CalcStage.per_order.value,
+        sort_order=20,
+        condition={},
+        formula={'类型': '固定金额', '金额': 9},
+    )
+    bad_condition.condition_expr = '不存在的函数(1)'
+    data = CalcInput(
+        rider_id=1,
+        site_id=1,
+        period_start=day,
+        period_end=day,
+        hire_date=date(2026, 1, 1),
+        leave_date=None,
+        employ_type='full_time',
+        segments=[Segment(plan_version_id=1, start_date=day, end_date=day, items=[bad_formula, bad_condition])],
+        orders=[_order(1, 'O1', day)],
+        day_flags={},
+        employ_history=[],
+        adjustments=[],
+        advances=[],
+        covered_dates={day},
+        site_order_dates={day},
+    )
+    result = run_calc_pipeline(data)
+    assert result.gross == D('0.00')
+    assert any('坏公式' in text and '已按 0 计算' in text for text in result.warnings)
+    assert any('坏条件' in text and '已按未命中处理' in text for text in result.warnings)

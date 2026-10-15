@@ -40,6 +40,8 @@ export interface AdvanceResult {
 export interface AdvanceQuery extends PageParams {
   date_from?: string;
   date_to?: string;
+  deduct_status?: string;
+  reason?: string;
   rider_id?: number;
   site_id?: number;
   status?: string;
@@ -51,4 +53,18 @@ export interface AdvanceActionParam {
 
 export interface AdvanceReasonParam {
   reason: string;
+}
+
+export interface AdvancePolicy {
+  amount_mode: 'fixed' | 'percent';
+  fixed_amount: number | string;
+  max_amount?: null | number | string;
+  min_amount: number | string;
+  min_completed_orders: number;
+  min_tenure_days: number;
+  monthly_max_count: number;
+  percent: number | string;
+  site_id: number;
+  site_name: string;
+  source: 'builtin' | 'global' | 'site';
 }

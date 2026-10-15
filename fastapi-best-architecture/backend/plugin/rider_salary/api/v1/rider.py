@@ -19,6 +19,7 @@ from backend.plugin.rider_salary.schema.rider import (
     GetEmployHistoryDetail,
     GetPlanBindingDetail,
     GetRiderDetail,
+    GetRiderLeaveCheck,
     OpenRiderAccountParam,
     ResetRiderPasswordParam,
     RiderLeaveParam,
@@ -48,6 +49,11 @@ async def get_riders_paginated(
     status: Annotated[str | None, Query(description='状态')] = None,
     employ_type: Annotated[str | None, Query(description='用工类型')] = None,
     keyword: Annotated[str | None, Query(description='工号或姓名')] = None,
+    phone: Annotated[str | None, Query(description='手机号')] = None,
+    hire_date_from: Annotated[date | None, Query(description='入职日期起')] = None,
+    hire_date_to: Annotated[date | None, Query(description='入职日期止')] = None,
+    account_status: Annotated[str | None, Query(description='账号状态：none 未开通，0 停用，1 启用')] = None,
+    settle_cycle_override: Annotated[str | None, Query(description='结算周期覆盖，inherit 为跟随站点')] = None,
 ) -> ResponseSchemaModel[PageData[GetRiderDetail]]:
     page_data = await rider_service.get_list(
         db=db,
@@ -56,6 +62,11 @@ async def get_riders_paginated(
         status=status,
         employ_type=employ_type,
         keyword=keyword,
+        phone=phone,
+        hire_date_from=hire_date_from,
+        hire_date_to=hire_date_to,
+        account_status=account_status,
+        settle_cycle_override=settle_cycle_override,
     )
     return response_base.success(data=page_data)
 
@@ -244,6 +255,23 @@ async def get_effective_plans(
     end: Annotated[date, Query(description='结束日期')],
 ) -> ResponseSchemaModel[list[GetEffectivePlanSegment]]:
     data = await rider_service.get_effective_plans(db=db, request=request, pk=pk, start=start, end=end)
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/{pk}/leave-check',
+    summary='离职前检查',
+    dependencies=[
+        Depends(RequestPermission('rs:rider:edit')),
+        DependsRBAC,
+    ],
+)
+async def check_rider_leave(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='骑手 ID')],
+) -> ResponseSchemaModel[GetRiderLeaveCheck]:
+    data = await rider_service.leave_check(db=db, request=request, pk=pk)
     return response_base.success(data=data)
 
 

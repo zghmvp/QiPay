@@ -1,10 +1,11 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -19,6 +20,7 @@ from backend.plugin.rider_salary.enums import (
     DetailSource,
     PayrollKind,
     PayrollStatus,
+    PeriodStatus,
 )
 from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
@@ -132,9 +134,11 @@ class PayrollService:
     """薪资单领域服务：预支抵扣、反冲"""
 
     @staticmethod
-    async def load_paid_advances(db: AsyncSession, rider_id: int) -> list[RiderSalaryAdvance]:
-        """已发放且仍有待抵扣的预支单"""
-        rows = await db.scalars(
+    async def load_paid_advances(
+        db: AsyncSession, rider_id: int, *, for_update: bool = False
+    ) -> list[RiderSalaryAdvance]:
+        """已发放且仍有待抵扣的预支单；for_update 时加行锁，防止两个周期同时抵扣同一笔（B6）"""
+        stmt = (
             select(RiderSalaryAdvance)
             .where(
                 RiderSalaryAdvance.rider_id == rider_id,
@@ -143,6 +147,9 @@ class PayrollService:
             )
             .order_by(RiderSalaryAdvance.paid_time.asc(), RiderSalaryAdvance.id.asc())
         )
+        if for_update:
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        rows = await db.scalars(stmt)
         return [row for row in rows.all() if q2(row.remaining_amount or ZERO) > 0]
 
     async def apply_advance_deduction(
@@ -198,6 +205,8 @@ class PayrollService:
             deduction_total=q2(-payroll.deduction_total),
             advance_deduction=q2(-payroll.advance_deduction),
             net=q2(-payroll.net),
+            carry_in=q2(-(payroll.carry_in or ZERO)),
+            carry_out=q2(-(payroll.carry_out or ZERO)),
             plan_version_ids=list(payroll.plan_version_ids or []),
             reversed_of_id=payroll.id,
             calc_time=timezone.now(),
@@ -228,6 +237,8 @@ class PayrollService:
 
         payroll.reversed = True
         await db.flush()
+        # 本单的欠款结转与预支抵扣都已撤回，后续周期的草稿需重算
+        await self.release_later_drafts(db, rider_id=payroll.rider_id, period_id=payroll.period_id)
         if operator is not None:
             await audit_service.record(
                 db,
@@ -249,10 +260,13 @@ class PayrollService:
         if not advance_id:
             return
         advance = await db.scalar(
-            select(RiderSalaryAdvance).where(
+            select(RiderSalaryAdvance)
+            .where(
                 RiderSalaryAdvance.id == int(advance_id),
                 RiderSalaryAdvance.deleted == 0,
             )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if advance is None:
             return
@@ -264,6 +278,138 @@ class PayrollService:
         for detail in details:
             if detail.source == DetailSource.advance.value:
                 await self._restore_advance(db, detail)
+
+    @staticmethod
+    async def _period_start(db: AsyncSession, period_id: int) -> date | None:
+        return await db.scalar(
+            select(RiderSalarySettlePeriod.start_date).where(RiderSalarySettlePeriod.id == period_id)
+        )
+
+    @staticmethod
+    async def outstanding_debt(db: AsyncSession, *, rider_id: int, before: date) -> Decimal:
+        """
+        骑手在 before 之前开始的周期里，已定稿/已发薪且未被反冲的薪资单累计欠款（纲要 §10 #32）
+
+        正数为仍欠公司，负数为此前多扣、应退回骑手。
+        """
+        total = await db.scalar(
+            select(func.coalesce(func.sum(RiderSalaryPayroll.carry_out - RiderSalaryPayroll.carry_in), 0))
+            .join(RiderSalarySettlePeriod, RiderSalarySettlePeriod.id == RiderSalaryPayroll.period_id)
+            .where(
+                RiderSalaryPayroll.rider_id == rider_id,
+                RiderSalaryPayroll.status.in_([PayrollStatus.finalized.value, PayrollStatus.paid.value]),
+                RiderSalaryPayroll.kind != PayrollKind.reversal.value,
+                RiderSalaryPayroll.reversed.is_(False),
+                RiderSalaryPayroll.deleted == 0,
+                RiderSalarySettlePeriod.start_date < before,
+                RiderSalarySettlePeriod.deleted == 0,
+            )
+        )
+        return q2(Decimal(total or 0))
+
+    @staticmethod
+    async def has_earlier_draft(db: AsyncSession, *, rider_id: int, before: date) -> bool:
+        """更早开始的周期里是否还有该骑手未定稿的草稿（纲要 §10 #33：只由最早的开放周期抵扣）"""
+        found = await db.scalar(
+            select(RiderSalaryPayroll.id)
+            .join(RiderSalarySettlePeriod, RiderSalarySettlePeriod.id == RiderSalaryPayroll.period_id)
+            .where(
+                RiderSalaryPayroll.rider_id == rider_id,
+                RiderSalaryPayroll.status == PayrollStatus.draft.value,
+                RiderSalaryPayroll.deleted == 0,
+                RiderSalarySettlePeriod.start_date < before,
+                RiderSalarySettlePeriod.status.in_([PeriodStatus.open.value, PeriodStatus.reopened.value]),
+                RiderSalarySettlePeriod.deleted == 0,
+            )
+            .limit(1)
+        )
+        return found is not None
+
+    async def release_later_drafts(
+        self,
+        db: AsyncSession,
+        *,
+        rider_id: int,
+        period_id: int | None = None,
+        after: date | None = None,
+    ) -> None:
+        """
+        更早周期的结果变了（重算/锁账/反冲/作废）：把该骑手之后周期草稿占用的预支加回，并标记需重算
+
+        后续周期重算时再按最新的欠款与预支余额抵扣，保证同一笔预支/欠款只被最早的周期处理。
+        """
+        if after is None:
+            if period_id is None:
+                return
+            after = await self._period_start(db, period_id)
+            if after is None:
+                return
+        drafts = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryPayroll)
+                    .join(RiderSalarySettlePeriod, RiderSalarySettlePeriod.id == RiderSalaryPayroll.period_id)
+                    .where(
+                        RiderSalaryPayroll.rider_id == rider_id,
+                        RiderSalaryPayroll.status == PayrollStatus.draft.value,
+                        RiderSalaryPayroll.deleted == 0,
+                        RiderSalarySettlePeriod.start_date > after,
+                        RiderSalarySettlePeriod.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        for draft in drafts:
+            if q2(draft.advance_deduction or ZERO) != ZERO:
+                await self.restore_advances_from_payroll(db, draft)
+                await db.execute(
+                    update(RiderSalaryPayrollDetail)
+                    .where(
+                        RiderSalaryPayrollDetail.payroll_id == draft.id,
+                        RiderSalaryPayrollDetail.source == DetailSource.advance.value,
+                        RiderSalaryPayrollDetail.deleted == 0,
+                    )
+                    .values(deleted=RiderSalaryPayrollDetail.id, deleted_time=timezone.now())
+                )
+                draft.net = q2(draft.net + draft.advance_deduction)
+                draft.advance_deduction = ZERO
+            draft.stale = True
+        await db.flush()
+
+    async def advances_for_estimate(
+        self, db: AsyncSession, *, rider_id: int, draft: RiderSalaryPayroll | None
+    ) -> list[Any]:
+        """
+        预估用的预支余额副本：把当前草稿已抵扣的部分加回，但不改动数据库对象
+        """
+        rows = await db.scalars(
+            select(RiderSalaryAdvance).where(
+                RiderSalaryAdvance.rider_id == rider_id,
+                RiderSalaryAdvance.status == AdvanceStatus.paid.value,
+                RiderSalaryAdvance.deleted == 0,
+            )
+        )
+        held: dict[int, Decimal] = {}
+        if draft is not None and draft.status == PayrollStatus.draft.value:
+            for detail in await payroll_detail_dao.list_by_payroll(db, draft.id):
+                advance_id = (detail.calc_trace or {}).get('advance_id')
+                if detail.source == DetailSource.advance.value and advance_id:
+                    held[int(advance_id)] = held.get(int(advance_id), ZERO) + q2(abs(detail.amount))
+        copies = []
+        for row in rows.all():
+            remaining = q2(min((row.remaining_amount or ZERO) + held.get(row.id, ZERO), row.amount))
+            if remaining <= 0:
+                continue
+            copies.append(
+                SimpleNamespace(
+                    id=row.id,
+                    amount=row.amount,
+                    paid_time=row.paid_time,
+                    remaining_amount=remaining,
+                    deducted_amount=q2(max((row.deducted_amount or ZERO) - held.get(row.id, ZERO), ZERO)),
+                )
+            )
+        return copies
 
     @staticmethod
     async def get(db: AsyncSession, pk: int) -> RiderSalaryPayroll:

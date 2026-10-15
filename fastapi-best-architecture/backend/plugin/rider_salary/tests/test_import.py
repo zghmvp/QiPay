@@ -29,7 +29,7 @@ def test_template_can_be_parsed() -> None:
     assert row['site_code'] == 'CY01'
     assert row['job_no'] == 'RS001'
     assert row['order_no'] == 'ORD-DEMO-001'
-    assert row['status'] == '已完成'
+    assert row['status'] == '配送完成'
     assert row['_row'] == 2
 
 
@@ -90,18 +90,16 @@ def test_unsupported_file_type() -> None:
 @pytest.mark.parametrize(
     ['raw', 'expected'],
     [
+        ['配送完成', OrderStatus.completed.value],
         ['已完成', OrderStatus.completed.value],
-        ['完成', OrderStatus.completed.value],
+        ['正常', OrderStatus.completed.value],
         ['completed', OrderStatus.completed.value],
-        ['COMPLETED', OrderStatus.completed.value],
-        ['已取消', OrderStatus.cancelled.value],
-        ['取消', OrderStatus.cancelled.value],
-        ['cancelled', OrderStatus.cancelled.value],
-        ['配送异常', OrderStatus.abnormal.value],
-        ['异常', OrderStatus.abnormal.value],
-        ['已退款', OrderStatus.refunded.value],
-        ['退款', OrderStatus.refunded.value],
-        ['refunded', OrderStatus.refunded.value],
+        ['没有配送完成', OrderStatus.not_completed.value],
+        ['未完成', OrderStatus.not_completed.value],
+        ['not_completed', OrderStatus.not_completed.value],
+        ['已取消', None],
+        ['配送异常', None],
+        ['已退款', None],
         ['未知', None],
         ['', None],
     ],
@@ -144,10 +142,9 @@ def test_validate_row_error_messages() -> None:
             'distance_km': 1,
             'weight_jin': 1,
             'order_time': '2026-09-01 12:00:00',
-            'deliver_time': '2026-09-01 11:00:00',
-            'status': '已完成',
+            'status': '配送完成',
         })
-        == '送达时间不能早于下单时间'
+        == '没有配送完成时间时，订单状态应为没有配送完成'
     )
     assert (
         validate_row_format({
@@ -159,7 +156,7 @@ def test_validate_row_error_messages() -> None:
             'order_time': '2026-09-01 12:00:00',
             'status': '在途',
         })
-        == '订单状态不合法，请填写已完成/已取消/配送异常/已退款'
+        == '订单状态不合法，请填写配送完成或没有配送完成'
     )
 
 

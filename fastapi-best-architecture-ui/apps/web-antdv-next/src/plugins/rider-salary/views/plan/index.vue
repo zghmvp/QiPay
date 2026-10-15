@@ -32,6 +32,7 @@ import {
   enumLabel,
   enumTagOptions,
   PLAN_MODE_TAG_OPTIONS,
+  PLAN_VERSION_STATUS_OPTIONS,
 } from '../../constants/enums';
 import { toDateTimeString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
@@ -53,6 +54,10 @@ const { ReasonModal, prompt } = useReasonModal();
 
 const loading = ref(false);
 const keyword = ref('');
+const planStatus = ref<string>();
+const versionStatus = ref<string>();
+const versionMode = ref<string>();
+const versionUsed = ref<string>();
 const plans = ref<PlanDetail[]>([]);
 const versions = ref<PlanVersionDetail[]>([]);
 const allVersions = ref<PlanVersionDetail[]>([]);
@@ -70,6 +75,16 @@ const editingId = ref<number>();
 
 const selectedPlan = computed(() =>
   plans.value.find((item) => item.id === selectedPlanId.value),
+);
+
+const filteredVersions = computed(() =>
+  versions.value.filter((item) => {
+    if (versionStatus.value && item.status !== versionStatus.value) return false;
+    if (versionMode.value && item.mode_tag !== versionMode.value) return false;
+    if (versionUsed.value === 'yes' && !item.is_used) return false;
+    if (versionUsed.value === 'no' && item.is_used) return false;
+    return true;
+  }),
 );
 
 const planCards = computed(() =>
@@ -149,6 +164,7 @@ async function loadAll() {
         name: keyword.value || undefined,
         page: 1,
         size: 100,
+        status: planStatus.value || undefined,
       }),
       getPlanVersionListApi({ page: 1, size: 200 }),
     ]);
@@ -311,17 +327,27 @@ onMounted(loadAll);
     <a-spin class="min-h-0 flex-1" :spinning="loading" wrapper-class-name="h-full">
       <div class="flex h-full min-h-0 gap-3">
         <div class="flex w-[320px] shrink-0 flex-col gap-3">
-          <div class="flex gap-2">
+          <div class="flex flex-col gap-2">
+            <div class="flex gap-2">
             <a-input
               v-model:value="keyword"
               allow-clear
-              placeholder="搜索方案名称"
+              placeholder="名称、编码或短名"
               @press-enter="loadAll"
             />
             <VbenButton v-access:code="'rs:plan:add'" @click="openCreate">
               <MaterialSymbolsAdd class="size-5" />
               新增
             </VbenButton>
+            </div>
+            <a-select
+              v-model:value="planStatus"
+              allow-clear
+              class="w-full"
+              placeholder="方案状态"
+              :options="enumTagOptions(ENABLE_STATUS_OPTIONS)"
+              @change="loadAll"
+            />
           </div>
           <a-empty v-if="planCards.length === 0" description="暂无方案">
             <VbenButton v-access:code="'rs:plan:add'" @click="openCreate">
@@ -372,9 +398,35 @@ onMounted(loadAll);
         </div>
 
         <div class="min-w-0 flex-1">
-          <div class="mb-3 flex items-center justify-between">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="font-medium">
               {{ selectedPlan ? `${selectedPlan.name} 的版本` : '请选择方案' }}
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <a-select
+                v-model:value="versionStatus"
+                allow-clear
+                class="w-28"
+                placeholder="版本状态"
+                :options="enumTagOptions(PLAN_VERSION_STATUS_OPTIONS)"
+              />
+              <a-select
+                v-model:value="versionMode"
+                allow-clear
+                class="w-32"
+                placeholder="计薪模式"
+                :options="enumTagOptions(PLAN_MODE_TAG_OPTIONS)"
+              />
+              <a-select
+                v-model:value="versionUsed"
+                allow-clear
+                class="w-28"
+                placeholder="是否已使用"
+                :options="[
+                  { label: '已使用', value: 'yes' },
+                  { label: '未使用', value: 'no' },
+                ]"
+              />
             </div>
             <a-dropdown-button v-access:code="'rs:plan:add'" :disabled="!selectedPlanId">
               <span @click="createVersion">新建空白版本</span>
@@ -394,7 +446,7 @@ onMounted(loadAll);
           <a-table
             v-else
             :columns="versionColumns"
-            :data-source="versions"
+            :data-source="filteredVersions"
             :pagination="false"
             :scroll="{ x: 1200 }"
             row-key="id"

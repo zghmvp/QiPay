@@ -7,6 +7,8 @@ import { h } from 'vue';
 
 import { useAccess } from '@vben/access';
 
+import dayjs from 'dayjs';
+
 import SiteSelect from '../../components/SiteSelect.vue';
 import {
   CYCLE_TYPE_OPTIONS,
@@ -14,6 +16,25 @@ import {
   enumTagOptions,
   RIDER_STATUS_OPTIONS,
 } from '../../constants/enums';
+
+const hireDatePresets = [
+  { label: '今天', value: () => [dayjs(), dayjs()] },
+  {
+    label: '近7天',
+    value: () => [dayjs().subtract(6, 'day'), dayjs()],
+  },
+  {
+    label: '本月',
+    value: () => [dayjs().startOf('month'), dayjs().endOf('month')],
+  },
+  {
+    label: '上月',
+    value: () => [
+      dayjs().subtract(1, 'month').startOf('month'),
+      dayjs().subtract(1, 'month').endOf('month'),
+    ],
+  },
+];
 
 export const querySchema: VbenFormSchema[] = [
   {
@@ -23,27 +44,83 @@ export const querySchema: VbenFormSchema[] = [
     modelPropName: 'value',
   },
   {
+    component: 'Input',
+    componentProps: {
+      allowClear: true,
+      placeholder: '工号或姓名',
+    },
+    fieldName: 'keyword',
+    label: '工号/姓名',
+  },
+  {
+    component: 'Input',
+    componentProps: {
+      allowClear: true,
+      placeholder: '手机号',
+    },
+    fieldName: 'phone',
+    label: '手机',
+  },
+  {
     component: 'Select',
     componentProps: {
       allowClear: true,
       options: enumTagOptions(RIDER_STATUS_OPTIONS),
+      placeholder: '全部状态',
     },
     fieldName: 'status',
-    label: '状态',
+    label: '在职状态',
   },
   {
     component: 'Select',
     componentProps: {
       allowClear: true,
       options: enumTagOptions(EMPLOY_TYPE_OPTIONS),
+      placeholder: '全部类型',
     },
     fieldName: 'employ_type',
     label: '用工类型',
   },
   {
-    component: 'Input',
-    fieldName: 'keyword',
-    label: '工号/姓名',
+    component: 'RangePicker',
+    componentProps: {
+      allowClear: true,
+      format: 'YYYY-MM-DD',
+      placeholder: ['入职开始', '入职结束'],
+      presets: hireDatePresets,
+      style: { width: '100%' },
+      valueFormat: 'YYYY-MM-DD',
+    },
+    fieldName: 'hire_range',
+    formItemClass: 'md:col-span-2',
+    label: '入职日期',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: [
+        { label: '未开通', value: 'none' },
+        { label: '启用', value: '1' },
+        { label: '停用', value: '0' },
+      ],
+      placeholder: '全部账号',
+    },
+    fieldName: 'account_status',
+    label: '账号状态',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: [
+        { label: '跟随站点', value: 'inherit' },
+        ...enumTagOptions(CYCLE_TYPE_OPTIONS),
+      ],
+      placeholder: '全部周期',
+    },
+    fieldName: 'settle_cycle_override',
+    label: '结算周期',
   },
 ];
 

@@ -41,12 +41,17 @@ export interface OrderForm {
 export interface OrderQuery extends PageParams {
   date_from?: string;
   date_to?: string;
+  distance_max?: number;
+  distance_min?: number;
   import_batch_id?: number;
   is_locked?: boolean;
   order_no?: string;
   rider_id?: number;
   site_id?: number;
+  source?: string;
   status?: string;
+  weight_max?: number;
+  weight_min?: number;
 }
 
 export interface ImportErrorItem {

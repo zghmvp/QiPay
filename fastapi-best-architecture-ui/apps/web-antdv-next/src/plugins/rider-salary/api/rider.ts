@@ -7,6 +7,7 @@ import type {
   PlanBindingResult,
   RiderAccountForm,
   RiderForm,
+  RiderLeaveCheck,
   RiderLeaveForm,
   RiderQuery,
   RiderResult,
@@ -34,6 +35,10 @@ export async function updateRiderApi(pk: number, data: Partial<RiderForm>) {
 
 export async function deleteRiderApi(pk: number) {
   return requestClient.delete(`${BASE}/${pk}`);
+}
+
+export async function getRiderLeaveCheckApi(pk: number) {
+  return requestClient.get<RiderLeaveCheck>(`${BASE}/${pk}/leave-check`);
 }
 
 export async function leaveRiderApi(pk: number, data: RiderLeaveForm) {

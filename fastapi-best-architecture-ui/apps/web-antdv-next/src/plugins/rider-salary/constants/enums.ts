@@ -79,10 +79,8 @@ export const CALC_STAGE_OPTIONS = opts([
 ]);
 
 export const ORDER_STATUS_OPTIONS = opts([
-  ['completed', '已完成', 'success'],
-  ['cancelled', '已取消', 'default'],
-  ['abnormal', '配送异常', 'warning'],
-  ['refunded', '已退款', 'error'],
+  ['completed', '配送完成', 'success'],
+  ['not_completed', '没有配送完成', 'default'],
 ]);
 
 export const ORDER_SOURCE_OPTIONS = opts([
@@ -122,6 +120,7 @@ export const DETAIL_SOURCE_OPTIONS = opts([
   ['manual', '手工', 'gold'],
   ['advance', '预支抵扣', 'orange'],
   ['reversal', '反冲', 'error'],
+  ['carry', '欠款结转', 'warning'],
 ]);
 
 export const DAY_STATUS_OPTIONS = opts([

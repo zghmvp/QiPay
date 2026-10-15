@@ -14,6 +14,7 @@ import {
   DEDUCT_STATUS_OPTIONS,
   enumTagOptions,
 } from '../../constants/enums';
+import { dateRangePresets } from '../../utils/date';
 
 export const querySchema: VbenFormSchema[] = [
   {
@@ -43,8 +44,33 @@ export const querySchema: VbenFormSchema[] = [
   },
   {
     component: 'RangePicker',
+    componentProps: {
+      allowClear: true,
+      format: 'YYYY-MM-DD',
+      placeholder: ['申请开始', '申请结束'],
+      presets: dateRangePresets,
+      style: { width: '100%' },
+      valueFormat: 'YYYY-MM-DD',
+    },
     fieldName: 'date_range',
+    formItemClass: 'md:col-span-2',
     label: '申请日期',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: enumTagOptions(DEDUCT_STATUS_OPTIONS),
+      placeholder: '全部抵扣',
+    },
+    fieldName: 'deduct_status',
+    label: '抵扣状态',
+  },
+  {
+    component: 'Input',
+    componentProps: { allowClear: true, placeholder: '原因关键字' },
+    fieldName: 'reason',
+    label: '原因',
   },
 ];
 

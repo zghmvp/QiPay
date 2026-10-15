@@ -1,7 +1,8 @@
+from datetime import timedelta
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.admin.model import User
@@ -10,7 +11,7 @@ from backend.common.pagination import paging_data
 from backend.plugin.rider_salary.crud.rider import rider_dao
 from backend.plugin.rider_salary.crud.site import site_dao
 from backend.plugin.rider_salary.crud.site_manager import site_manager_dao
-from backend.plugin.rider_salary.enums import CycleType, ManagerRole, PeriodStatus
+from backend.plugin.rider_salary.enums import CycleType, ManagerRole
 from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod
 from backend.plugin.rider_salary.schema.site import (
     CreateSiteParam,
@@ -34,7 +35,6 @@ _SITE_FIELDS = (
     'status',
     'remark',
 )
-_LOCKED_PERIOD_STATUSES = {PeriodStatus.locked.value, PeriodStatus.paid.value}
 
 
 class SiteService:
@@ -69,6 +69,7 @@ class SiteService:
         name: str | None,
         code: str | None,
         status: str | None,
+        settle_cycle: str | None = None,
     ) -> dict[str, Any]:
         """
         分页获取站点
@@ -81,7 +82,13 @@ class SiteService:
         :return:
         """
         visible = await SiteService._visible(db, request)
-        stmt = await site_dao.get_select(name=name, code=code, status=status, site_ids=visible)
+        stmt = await site_dao.get_select(
+            name=name,
+            code=code,
+            status=status,
+            site_ids=visible,
+            settle_cycle=settle_cycle,
+        )
         return await paging_data(db, stmt)
 
     @staticmethod
@@ -161,17 +168,15 @@ class SiteService:
         )
         extra_desc = None
         if cycle_changed:
-            locked = await db.scalar(
-                select(RiderSalarySettlePeriod.id)
-                .where(
+            last_end = await db.scalar(
+                select(func.max(RiderSalarySettlePeriod.end_date)).where(
                     RiderSalarySettlePeriod.site_id == site.id,
-                    RiderSalarySettlePeriod.status.in_(list(_LOCKED_PERIOD_STATUSES)),
+                    RiderSalarySettlePeriod.rider_id == 0,
                     RiderSalarySettlePeriod.deleted == 0,
                 )
-                .limit(1)
             )
-            if locked is not None:
-                extra_desc = '仅影响未来周期'
+            if last_end is not None:
+                extra_desc = f'已有周期不变，新周期配置自 {last_end + timedelta(days=1)} 起生效'
         before = snapshot(site, _SITE_FIELDS)
         count = await site_dao.update(db, pk, obj)
         updated = await site_dao.get(db, pk)

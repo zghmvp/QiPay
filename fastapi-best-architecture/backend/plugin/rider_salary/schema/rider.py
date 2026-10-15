@@ -45,6 +45,7 @@ class UpdateRiderParam(SchemaBase):
     cycle_config_override: dict[str, Any] | None = Field(None, description='周期配置覆盖')
     remark: str | None = Field(None, description='备注')
     reason: str | None = Field(None, description='操作原因（更换站点时必填）')
+    transfer_date: date | None = Field(None, description='调岗生效日期（更换站点时使用，缺省为当天）')
 
 
 class GetRiderDetail(RiderSchemaBase):
@@ -98,6 +99,16 @@ class RiderLeaveParam(SchemaBase):
 
     leave_date: date = Field(description='离职日期')
     reason: str = Field(description='离职原因')
+    confirm_outstanding: bool = Field(False, description='已知晓尚有未扣回预支或欠款')
+
+
+class GetRiderLeaveCheck(SchemaBase):
+    """离职前检查：在途预支、未扣回预支与欠款"""
+
+    in_flight_count: int = Field(description='待审核/待发放的预支笔数')
+    in_flight_amount: Decimal = Field(description='待审核/待发放的预支金额')
+    undeducted_amount: Decimal = Field(description='已发放尚未扣回的预支')
+    debt_amount: Decimal = Field(description='已定稿薪资结转的欠款')
 
 
 class OpenRiderAccountParam(SchemaBase):

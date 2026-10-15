@@ -30,6 +30,8 @@ class CRUDAdjustment(CRUDPlus[RiderSalaryAdjustment]):
         date_from: str | None,
         date_to: str | None,
         site_ids: set[int] | None,
+        is_locked: bool | None = None,
+        remark: str | None = None,
     ) -> Select:
         """
         奖惩记录列表查询
@@ -55,6 +57,10 @@ class CRUDAdjustment(CRUDPlus[RiderSalaryAdjustment]):
             filters['biz_date__le'] = date_to
         if site_ids is not None:
             filters['site_id__in'] = list(site_ids) or [-1]
+        if is_locked is not None:
+            filters['is_locked'] = is_locked
+        if remark:
+            filters['remark__like'] = f'%{remark}%'
         return await self.select_order('biz_date', 'desc', **filters)
 
     async def create(

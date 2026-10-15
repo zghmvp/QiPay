@@ -12,7 +12,6 @@ from backend.common.pagination import paging_data
 from backend.core.conf import settings
 from backend.plugin.rider_salary.crud.advance import advance_dao
 from backend.plugin.rider_salary.crud.rider import rider_dao
-from backend.plugin.rider_salary.crud.site import site_dao
 from backend.plugin.rider_salary.enums import AdvanceStatus, DeductStatus, RiderStatus
 from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance
 from backend.plugin.rider_salary.model.audit_log import RiderSalaryAuditLog
@@ -24,6 +23,7 @@ from backend.plugin.rider_salary.schema.advance import (
     CreateMeAdvanceParam,
     GetAdvanceDetail,
 )
+from backend.plugin.rider_salary.service.advance_policy_service import advance_policy_service, quote_payload
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
 from backend.plugin.rider_salary.utils.audit import require_reason
 from backend.plugin.rider_salary.utils.deps import get_visible_site_ids
@@ -207,6 +207,8 @@ class AdvanceService:
         status: str | None,
         date_from: date | None,
         date_to: date | None,
+        deduct_status: str | None = None,
+        reason: str | None = None,
     ) -> dict[str, Any]:
         """分页列表"""
         visible = await get_visible_site_ids(request, db)
@@ -219,6 +221,8 @@ class AdvanceService:
             date_from=date_from,
             date_to=date_to,
             site_ids=visible if site_id is None else None,
+            deduct_status=deduct_status,
+            reason=reason.strip() if reason else None,
         )
         page = await paging_data(db, stmt)
         items = page.get('items') or []
@@ -347,16 +351,18 @@ class AdvanceService:
         obj: CreateMeAdvanceParam,
     ) -> RiderSalaryAdvance:
         """骑手提交预支"""
+        # 同一骑手的提交串行执行，后到的请求能看到前一笔在途申请（B5）
+        await db.execute(select(RiderSalaryRider.id).where(RiderSalaryRider.id == rider.id).with_for_update())
         if getattr(rider, 'status', None) == RiderStatus.resigned:
             raise errors.RequestError(msg='离职骑手不能申请预支')
-        in_flight = await advance_dao.list_in_flight(db, rider.id)
-        assert_no_in_flight(len(in_flight))
-        site = await site_dao.get(db, rider.site_id)
-        limit = resolve_advance_limit(
-            getattr(rider, 'advance_limit', None),
-            getattr(site, 'advance_limit', None) if site else None,
-        )
-        amount = assert_advance_amount(obj.amount, limit)
+        quote = await advance_policy_service.evaluate(db, rider)
+        if not quote.eligible:
+            raise errors.RequestError(msg=quote.reasons[0] if quote.reasons else '当前不能申请预支')
+        amount = q2(obj.amount)
+        if amount < quote.min_amount:
+            raise errors.RequestError(msg=f'单笔预支不能低于 {quote.min_amount} 元')
+        if amount > quote.available:
+            raise errors.RequestError(msg=f'预支金额不能超过可用额度 {quote.available} 元')
         reason = (obj.reason or '').strip()
         if not reason:
             raise errors.RequestError(msg='请填写申请原因')
@@ -387,7 +393,7 @@ class AdvanceService:
         pk: int,
     ) -> None:
         """骑手撤回 pending → cancelled"""
-        advance = await advance_dao.get(db, pk)
+        advance = await self._locked(db, pk)
         if not advance or advance.rider_id != rider.id:
             raise errors.NotFoundError(msg='预支单不存在')
         before = snapshot(advance, _ADVANCE_FIELDS)
@@ -402,17 +408,10 @@ class AdvanceService:
         extras = await self._enrich(db, rows)
         return [GetAdvanceDetail.model_validate(extras[row.id]) for row in rows]
 
-    async def limit_for_rider(self, *, db: AsyncSession, rider: Any) -> dict[str, Decimal]:
-        """预支额度"""
-        site = await site_dao.get(db, rider.site_id)
-        limit = resolve_advance_limit(
-            getattr(rider, 'advance_limit', None),
-            getattr(site, 'advance_limit', None) if site else None,
-        )
-        in_flight = await advance_dao.list_in_flight(db, rider.id)
-        used = q2(sum((row.amount for row in in_flight), ZERO))
-        available = q2(max(limit - used, ZERO))
-        return {'limit': limit, 'used_pending_amount': used, 'available': available}
+    async def limit_for_rider(self, *, db: AsyncSession, rider: Any) -> dict[str, Any]:
+        """按预支规则和当前周期预估实发计算可申请额度。"""
+        quote = await advance_policy_service.evaluate(db, rider)
+        return quote_payload(quote)
 
     async def _models_from_page_items(self, db: AsyncSession, items: list[Any]) -> list[RiderSalaryAdvance]:
         ids: list[int] = []
@@ -436,8 +435,18 @@ class AdvanceService:
         by_id = {row.id: row for row in rows.all()}
         return [by_id[pk] for pk in ids if pk in by_id]
 
+    @staticmethod
+    async def _locked(db: AsyncSession, pk: int) -> RiderSalaryAdvance | None:
+        """加行锁读取预支单，审核/发放/撤回并发时排队执行"""
+        return await db.scalar(
+            select(RiderSalaryAdvance)
+            .where(RiderSalaryAdvance.id == pk, RiderSalaryAdvance.deleted == 0)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
     async def _load_writable(self, db: AsyncSession, request: Request, pk: int) -> RiderSalaryAdvance:
-        advance = await advance_dao.get(db, pk)
+        advance = await self._locked(db, pk)
         if not advance:
             raise errors.NotFoundError(msg='预支单不存在')
         await self._assert_site(db, request, advance.site_id, action_msg='无权审核其他站点的预支申请')

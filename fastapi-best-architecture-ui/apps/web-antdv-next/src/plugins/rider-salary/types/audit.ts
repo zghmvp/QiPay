@@ -26,5 +26,6 @@ export interface AuditLogQuery {
   operator?: string;
   page?: number;
   size?: number;
+  target?: string;
   target_type?: string;
 }

@@ -1,9 +1,11 @@
 from collections.abc import Sequence
+from datetime import date
 
-from sqlalchemy import Select, or_
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
+from backend.app.admin.model import User
 from backend.plugin.rider_salary.model.rider import RiderSalaryRider
 from backend.plugin.rider_salary.schema.rider import CreateRiderParam, UpdateRiderParam
 from backend.utils.timezone import timezone
@@ -61,6 +63,11 @@ class CRUDRider(CRUDPlus[RiderSalaryRider]):
         employ_type: str | None,
         keyword: str | None,
         site_ids: set[int] | None,
+        phone: str | None = None,
+        hire_date_from: date | None = None,
+        hire_date_to: date | None = None,
+        account_status: str | None = None,
+        settle_cycle_override: str | None = None,
     ) -> Select:
         """
         骑手列表查询
@@ -70,6 +77,11 @@ class CRUDRider(CRUDPlus[RiderSalaryRider]):
         :param employ_type: 用工类型
         :param keyword: 工号或姓名
         :param site_ids: 可见站点，None 表示全部
+        :param phone: 手机号
+        :param hire_date_from: 入职日期起
+        :param hire_date_to: 入职日期止
+        :param account_status: 账号状态，none 未开通，0 停用，1 启用
+        :param settle_cycle_override: 结算周期覆盖，inherit 表示跟随站点
         :return:
         """
         filters: dict = {'deleted': 0}
@@ -81,12 +93,28 @@ class CRUDRider(CRUDPlus[RiderSalaryRider]):
             filters['employ_type'] = employ_type
         if site_ids is not None:
             filters['site_id__in'] = list(site_ids) or [-1]
-        data_filter = None
+        clauses = []
         if keyword:
             like = f'%{keyword}%'
-            data_filter = or_(self.model.job_no.like(like), self.model.name.like(like))
-        if data_filter is not None:
-            return await self.select_order('id', 'desc', data_filter, **filters)
+            clauses.append(or_(self.model.job_no.like(like), self.model.name.like(like)))
+        if phone:
+            clauses.append(self.model.phone.like(f'%{phone}%'))
+        if hire_date_from is not None:
+            clauses.append(self.model.hire_date >= hire_date_from)
+        if hire_date_to is not None:
+            clauses.append(self.model.hire_date <= hire_date_to)
+        if account_status == 'none':
+            clauses.append(self.model.user_id.is_(None))
+        elif account_status in {'0', '1'}:
+            clauses.append(
+                self.model.user_id.in_(select(User.id).where(User.status == int(account_status), User.deleted == 0))
+            )
+        if settle_cycle_override == 'inherit':
+            clauses.append(self.model.settle_cycle_override.is_(None))
+        elif settle_cycle_override:
+            filters['settle_cycle_override'] = settle_cycle_override
+        if clauses:
+            return await self.select_order('id', 'desc', and_(*clauses), **filters)
         return await self.select_order('id', 'desc', **filters)
 
     async def create(self, db: AsyncSession, obj: CreateRiderParam) -> RiderSalaryRider:
@@ -108,7 +136,7 @@ class CRUDRider(CRUDPlus[RiderSalaryRider]):
         :param obj: 更新参数
         :return:
         """
-        payload = obj.model_dump(exclude_unset=True, exclude={'reason'})
+        payload = obj.model_dump(exclude_unset=True, exclude={'reason', 'transfer_date'})
         payload.update(kwargs)
         return await self.update_model_by_column(db, payload, id=pk, deleted=0)
 

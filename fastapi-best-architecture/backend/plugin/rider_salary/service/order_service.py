@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -26,6 +27,7 @@ from backend.plugin.rider_salary.utils.excel import write_workbook
 from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
 from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
+from backend.plugin.rider_salary.utils.site_history import rider_at_site
 from backend.utils.timezone import timezone
 
 ORDER_EXPORT_HEADERS = [
@@ -54,27 +56,43 @@ def compute_biz_date(order_time: datetime, deliver_time: datetime | None) -> dat
     return timezone.from_datetime(order_time).date() if order_time.tzinfo else order_time.date()
 
 
+STATUS_INVALID_MSG = '订单状态不合法，请填写配送完成或没有配送完成'
+
+
+def status_from_deliver(deliver_time: datetime | None) -> str:
+    """有配送完成时间才是配送完成。"""
+    if deliver_time is not None:
+        return OrderStatus.completed.value
+    return OrderStatus.not_completed.value
+
+
 def map_order_status(raw: object) -> str | None:
     """将中文 / 英文 / 别名映射为订单状态枚举值。"""
     text = '' if raw is None else str(raw).strip()
     if not text:
         return None
     aliases = {
+        '配送完成': OrderStatus.completed.value,
         '已完成': OrderStatus.completed.value,
         '完成': OrderStatus.completed.value,
+        '正常': OrderStatus.completed.value,
         'completed': OrderStatus.completed.value,
-        '已取消': OrderStatus.cancelled.value,
-        '取消': OrderStatus.cancelled.value,
-        'cancelled': OrderStatus.cancelled.value,
-        'canceled': OrderStatus.cancelled.value,
-        '配送异常': OrderStatus.abnormal.value,
-        '异常': OrderStatus.abnormal.value,
-        'abnormal': OrderStatus.abnormal.value,
-        '已退款': OrderStatus.refunded.value,
-        '退款': OrderStatus.refunded.value,
-        'refunded': OrderStatus.refunded.value,
+        '没有配送完成': OrderStatus.not_completed.value,
+        '未配送完成': OrderStatus.not_completed.value,
+        '未完成': OrderStatus.not_completed.value,
+        'not_completed': OrderStatus.not_completed.value,
     }
     return aliases.get(text) or aliases.get(text.lower())
+
+
+def status_matches_deliver(status: str, deliver_time: datetime | None) -> str | None:
+    """状态必须和配送完成时间一致。返回中文错误，一致时为空。"""
+    expected = status_from_deliver(deliver_time)
+    if status == expected:
+        return None
+    if deliver_time is None:
+        return '没有配送完成时间时，订单状态应为没有配送完成'
+    return '有配送完成时间时，订单状态应为配送完成'
 
 
 def rider_employment_error(rider: RiderSalaryRider, biz_date: date) -> str | None:
@@ -139,6 +157,11 @@ class OrderService:
         order_no: str | None,
         import_batch_id: int | None,
         is_locked: bool | None,
+        source: str | None = None,
+        distance_min: float | None = None,
+        distance_max: float | None = None,
+        weight_min: float | None = None,
+        weight_max: float | None = None,
     ) -> dict[str, Any]:
         """
         分页获取订单
@@ -153,6 +176,7 @@ class OrderService:
         :param order_no: 订单号
         :param import_batch_id: 导入批次
         :param is_locked: 是否锁账
+        :param source: 订单来源
         :return:
         """
         visible = await get_visible_site_ids(request, db)
@@ -171,6 +195,11 @@ class OrderService:
             order_no=order_no,
             import_batch_id=import_batch_id,
             is_locked=is_locked,
+            source=source,
+            distance_min=distance_min,
+            distance_max=distance_max,
+            weight_min=weight_min,
+            weight_max=weight_max,
         )
         page_data = await paging_data(db, stmt)
         page_data['items'] = await _to_details(db, list(page_data['items']))
@@ -262,20 +291,21 @@ class OrderService:
         assert_site_visible(visible, obj.site_id)
         site = await _get_site(db, obj.site_id)
         rider = await _get_rider(db, obj.rider_id)
-        if rider.site_id != site.id:
-            raise errors.RequestError(msg='骑手不属于当前站点')
         mapped = map_order_status(obj.status)
         if mapped is None:
-            raise errors.RequestError(msg='订单状态不合法，请填写已完成/已取消/配送异常/已退款')
+            raise errors.RequestError(msg=STATUS_INVALID_MSG)
+        mismatch = status_matches_deliver(mapped, obj.deliver_time)
+        if mismatch:
+            raise errors.RequestError(msg=mismatch)
         if obj.distance_km < 0:
             raise errors.RequestError(msg='配送距离不能为负数')
         if obj.weight_jin < 0:
             raise errors.RequestError(msg='商品重量不能为负数')
         if obj.amount is not None and obj.amount < 0:
             raise errors.RequestError(msg='订单金额不能为负数')
-        if obj.deliver_time is not None and obj.deliver_time < obj.order_time:
-            raise errors.RequestError(msg='送达时间不能早于下单时间')
         biz_date = compute_biz_date(obj.order_time, obj.deliver_time)
+        if not await rider_at_site(db, rider, site.id, biz_date):
+            raise errors.RequestError(msg=f'骑手在 {biz_date} 不属于当前站点')
         emp_error = rider_employment_error(rider, biz_date)
         if emp_error:
             raise errors.RequestError(msg=emp_error)
@@ -298,7 +328,11 @@ class OrderService:
             remark=obj.remark,
         )
         db.add(order)
-        await db.flush()
+        try:
+            async with db.begin_nested():
+                await db.flush()
+        except IntegrityError:
+            raise errors.RequestError(msg='订单号已存在') from None
         await mark_stale(db, rider_ids=[rider.id], date_from=biz_date, date_to=biz_date)
         await audit_service.record(
             db,
@@ -363,7 +397,7 @@ class OrderService:
         if 'status' in payload and payload['status'] is not None:
             mapped = map_order_status(payload['status'])
             if mapped is None:
-                raise errors.RequestError(msg='订单状态不合法，请填写已完成/已取消/配送异常/已退款')
+                raise errors.RequestError(msg=STATUS_INVALID_MSG)
             order.status = mapped
         if 'amount' in payload:
             amount = payload['amount']
@@ -372,20 +406,25 @@ class OrderService:
             order.amount = q2(amount) if amount is not None else None
         if 'remark' in payload:
             order.remark = payload['remark']
-        if order.deliver_time is not None and order.deliver_time < order.order_time:
-            raise errors.RequestError(msg='送达时间不能早于下单时间')
+        mismatch = status_matches_deliver(order.status, order.deliver_time)
+        if mismatch:
+            raise errors.RequestError(msg=mismatch)
         site = await _get_site(db, order.site_id)
         rider = await _get_rider(db, order.rider_id)
-        if rider.site_id != site.id:
-            raise errors.RequestError(msg='骑手不属于当前站点')
         order.biz_date = compute_biz_date(order.order_time, order.deliver_time)
+        if not await rider_at_site(db, rider, site.id, order.biz_date):
+            raise errors.RequestError(msg=f'骑手在 {order.biz_date} 不属于当前站点')
         emp_error = rider_employment_error(rider, order.biz_date)
         if emp_error:
             raise errors.RequestError(msg=emp_error)
         await assert_not_locked(db, site_id=order.site_id, rider_id=order.rider_id, biz_date=order.biz_date)
         if old_rider_id != order.rider_id or old_biz_date != order.biz_date:
             await assert_not_locked(db, site_id=order.site_id, rider_id=old_rider_id, biz_date=old_biz_date)
-        await db.flush()
+        try:
+            async with db.begin_nested():
+                await db.flush()
+        except IntegrityError:
+            raise errors.RequestError(msg='订单号已存在') from None
         rider_ids = {old_rider_id, order.rider_id}
         date_from = min(old_biz_date, order.biz_date)
         date_to = max(old_biz_date, order.biz_date)

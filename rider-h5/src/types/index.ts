@@ -236,10 +236,34 @@ export interface NoticeDetail {
   updated_time: string | null
 }
 
+export interface H5Menus {
+  show_adjustments: boolean
+  show_advance: boolean
+  show_notices: boolean
+  show_plan: boolean
+  show_home: boolean
+  show_home_pay: boolean
+  show_day_amount: boolean
+  show_estimate_net: boolean
+  show_advance_inflight: boolean
+}
+
 export interface AdvanceLimit {
   limit: MoneyValue
   used_pending_amount: MoneyValue
   available: MoneyValue
+  estimate_net: MoneyValue
+  order_count: number
+  amount_mode: string
+  percent: MoneyValue
+  monthly_used_count: number
+  monthly_max_count: number
+  min_amount: MoneyValue
+  eligible: boolean
+  reasons: string[]
+  basis_text: string
+  period_range: string
+  period_status: string
 }
 
 export interface AdvanceTimelineItem {

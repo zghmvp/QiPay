@@ -25,6 +25,27 @@ export function currentMonth(): string {
   return dayjs().format('YYYY-MM');
 }
 
+/** 列表筛选里常用的日期范围快捷项 */
+export const dateRangePresets = [
+  { label: '今天', value: () => [dayjs(), dayjs()] },
+  {
+    label: '昨天',
+    value: () => [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')],
+  },
+  { label: '近7天', value: () => [dayjs().subtract(6, 'day'), dayjs()] },
+  {
+    label: '本月',
+    value: () => [dayjs().startOf('month'), dayjs().endOf('month')],
+  },
+  {
+    label: '上月',
+    value: () => [
+      dayjs().subtract(1, 'month').startOf('month'),
+      dayjs().subtract(1, 'month').endOf('month'),
+    ],
+  },
+];
+
 /** 周一起始的 6×7 月历矩阵，含上月末/下月初补齐格 */
 export function buildMonthMatrix(month: string): Dayjs[][] {
   const start = dayjs(`${month}-01`);

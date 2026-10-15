@@ -34,6 +34,7 @@ import {
 } from '../../api/period';
 import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
+import { toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import CalculateModal from './components/CalculateModal.vue';
 import GenerateModal from './components/GenerateModal.vue';
@@ -55,14 +56,19 @@ const initialStatus =
   typeof route.query.status === 'string' ? route.query.status : undefined;
 
 const formOptions: VbenFormProps = {
-  collapsed: true,
-  schema: querySchema.map((item) =>
-    item.fieldName === 'status' && initialStatus
-      ? { ...item, defaultValue: initialStatus }
-      : item,
-  ),
+  collapsed: false,
+  schema: querySchema.map((item) => {
+    if (item.fieldName === 'status' && initialStatus) {
+      return { ...item, defaultValue: initialStatus };
+    }
+    if (item.fieldName === 'has_stale' && onlyStale.value) {
+      return { ...item, defaultValue: true };
+    }
+    return item;
+  }),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
+  wrapperClass: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4',
 };
 
 const gridOptions: VxeTableGridOptions<PeriodResult> = {
@@ -72,21 +78,16 @@ const gridOptions: VxeTableGridOptions<PeriodResult> = {
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
-        const res = await getPeriodListApi({
+        const { date_range, ...rest } = formValues as Record<string, unknown> & {
+          date_range?: [string, string];
+        };
+        return await getPeriodListApi({
+          date_from: toDateString(date_range?.[0]),
+          date_to: toDateString(date_range?.[1]),
           page: page.currentPage,
           size: page.pageSize,
-          ...(formValues as {
-            month?: string;
-            rider_id?: number;
-            site_id?: number;
-            status?: string;
-          }),
+          ...rest,
         });
-        if (!onlyStale.value) return res;
-        const items = (res?.items ?? []).filter(
-          (item) => (item.stale_count ?? 0) > 0,
-        );
-        return { ...res, items, total: items.length };
       },
     },
   },

@@ -34,22 +34,47 @@ class CRUDSubject(CRUDPlus[RiderSalarySubject]):
         """
         return await self.select_model_by_column(db, code=code, deleted=0)
 
-    async def get_select(self, name: str | None, status: str | None, direction: str | None) -> Select:
+    async def get_select(
+        self,
+        name: str | None,
+        status: str | None,
+        direction: str | None,
+        code: str | None = None,
+        fee_mode: str | None = None,
+        entry_granularity: str | None = None,
+        include_in_gross: bool | None = None,
+        is_builtin: bool | None = None,
+    ) -> Select:
         """
         科目列表查询
 
         :param name: 科目名称
         :param status: 状态
         :param direction: 方向
+        :param code: 科目编码
+        :param fee_mode: 计费方式
+        :param entry_granularity: 入账粒度
+        :param include_in_gross: 是否进应发
+        :param is_builtin: 是否内置
         :return:
         """
         filters: dict = {'deleted': 0}
         if name:
             filters['name__like'] = f'%{name}%'
+        if code:
+            filters['code__like'] = f'%{code}%'
         if status:
             filters['status'] = status
         if direction:
             filters['direction'] = direction
+        if fee_mode:
+            filters['fee_mode'] = fee_mode
+        if entry_granularity:
+            filters['entry_granularity'] = entry_granularity
+        if include_in_gross is not None:
+            filters['include_in_gross'] = include_in_gross
+        if is_builtin is not None:
+            filters['is_builtin'] = is_builtin
         return await self.select_order('sort_order', 'asc', **filters)
 
     async def get_all(self, db: AsyncSession) -> Sequence[RiderSalarySubject]:

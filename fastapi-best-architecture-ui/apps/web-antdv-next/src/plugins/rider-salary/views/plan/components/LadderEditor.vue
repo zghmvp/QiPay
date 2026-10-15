@@ -2,12 +2,12 @@
 import type { EngineField } from '../../../types/engine';
 import type { LadderTier } from '../../../types/plan';
 
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { evaluateSampleApi } from '../../../api/engine';
 import MoneyText from '../../../components/MoneyText.vue';
+import { previewLadder, previewOrderQuantity } from './ladder-preview';
 
 const props = withDefaults(
   defineProps<{
@@ -23,11 +23,9 @@ const emit = defineEmits<{
   'update:value': [value: Record<string, unknown>];
 }>();
 
+const demoOpen = ref(false);
 const sample = ref<number>(5);
-const sampleAmount = ref<null | number>(null);
-const sampleHit = ref(true);
-const sampleError = ref('');
-let timer: null | ReturnType<typeof setTimeout> = null;
+const orderCount = ref<number>(100);
 
 const numberFields = computed(() =>
   props.fields.filter(
@@ -98,40 +96,41 @@ function moveTier(index: number, delta: number) {
   patch({ 档位: next });
 }
 
-async function runSample() {
-  sampleError.value = '';
-  try {
-    const res = await evaluateSampleApi({
-      condition_json: {},
-      context: { [String(props.value.字段 || '配送距离')]: sample.value },
-      formula_json: props.value,
-      stage: props.stage,
-    });
-    sampleHit.value = res.hit;
-    sampleAmount.value = res.amount;
-    if (res.trace?.错误) {
-      sampleError.value = Array.isArray(res.trace.错误)
-        ? res.trace.错误.join('；')
-        : String(res.trace.错误);
-    }
-  } catch {
-    sampleError.value = '预览求值失败';
-  }
-}
+const fieldName = computed(() => String(props.value.字段 || '字段'));
+const fieldUnit = computed(
+  () => props.fields.find((item) => item.name === fieldName.value)?.unit || '',
+);
+const countField = computed(() => fieldUnit.value === '单');
+const ladderMode = computed(() => String(props.value.模式 || ''));
+const ladderPricing = computed(() => String(props.value.计价 || ''));
 
-watch(
-  () => [props.value, sample.value, props.stage],
-  () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(runSample, 400);
-  },
-  { deep: true, immediate: true },
+const probe = computed(() =>
+  previewLadder(Number(sample.value), ladderMode.value, ladderPricing.value, tiers.value),
+);
+
+const quantityPreview = computed(() =>
+  previewOrderQuantity({
+    countField: countField.value,
+    fieldName: fieldName.value,
+    mode: ladderMode.value,
+    orderCount: Number(orderCount.value),
+    pricing: ladderPricing.value,
+    sample: probe.value,
+    sampleValue: Number(sample.value),
+    tiers: tiers.value,
+  }),
+);
+
+const quantityHint = computed(() =>
+  countField.value
+    ? `填写订单数量，按「${fieldName.value}」代入阶梯`
+    : `先填每单的「${fieldName.value}」，再按订单数量汇总`,
 );
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 lg:flex-row">
-    <div class="flex min-w-0 flex-1 flex-col gap-3">
+  <div class="flex flex-col gap-3">
+    <div class="flex min-w-0 flex-col gap-3">
       <div class="flex flex-wrap gap-3">
         <div>
           <div class="mb-1 text-xs">字段</div>
@@ -217,20 +216,68 @@ watch(
           </a-space>
         </div>
       </div>
-      <a-button :disabled="disabled" @click="addTier">添加档位</a-button>
+      <div class="flex flex-wrap gap-2">
+        <a-button :disabled="disabled" @click="addTier">添加档位</a-button>
+        <a-button @click="demoOpen = true">演示</a-button>
+      </div>
       <div v-if="ladderErrors.length" class="text-sm text-red-500">
         {{ ladderErrors.join('；') }}
       </div>
     </div>
-    <div class="w-full rounded border p-3 lg:w-[220px]">
-      <div class="mb-2 text-sm font-medium">即时示例</div>
-      <a-input-number v-model:value="sample" class="w-full" />
-      <div class="mt-2 text-sm">
-        结果：
-        <MoneyText :value="sampleAmount" />
-        <span class="text-muted-foreground ml-1">{{ sampleHit ? '命中' : '未命中' }}</span>
+
+    <a-modal
+      v-model:open="demoOpen"
+      :footer="null"
+      title="按订单数量算金额"
+      width="420px"
+    >
+      <div class="flex flex-col gap-3">
+        <div class="text-muted-foreground text-xs">
+          {{ ladderMode || '未选模式' }} · {{ ladderPricing || '未选计价' }}
+          · {{ quantityHint }}
+        </div>
+        <div v-if="!countField">
+          <div class="mb-1 text-xs">
+            每单{{ fieldName }}{{ fieldUnit ? `（${fieldUnit}）` : '' }}
+          </div>
+          <a-input-number v-model:value="sample" class="w-full" />
+        </div>
+        <div>
+          <div class="mb-1 text-xs">订单数量（单）</div>
+          <a-input-number
+            v-model:value="orderCount"
+            :min="0"
+            :precision="0"
+            class="w-full"
+          />
+        </div>
+        <div class="rounded-md bg-muted/40 px-3 py-3">
+          <div class="text-muted-foreground text-xs">模拟金额</div>
+          <div class="mt-1 text-2xl font-semibold leading-none">
+            <MoneyText :value="quantityPreview.amount" />
+            <span class="ml-1 text-sm font-normal">元</span>
+          </div>
+          <div v-if="quantityPreview.error" class="mt-2 text-xs text-red-500">
+            {{ quantityPreview.error }}
+          </div>
+          <div v-else class="text-muted-foreground mt-2 text-xs">
+            {{ quantityPreview.note }}
+          </div>
+        </div>
+        <ul v-if="quantityPreview.slices.length" class="space-y-1 text-xs">
+          <li
+            v-for="(slice, index) in quantityPreview.slices"
+            :key="`${slice.label}-${index}`"
+            class="flex items-start justify-between gap-3"
+          >
+            <span class="text-muted-foreground">{{ slice.label }}</span>
+            <span class="shrink-0">
+              <MoneyText :value="slice.amount" />
+              元
+            </span>
+          </li>
+        </ul>
       </div>
-      <div v-if="sampleError" class="mt-1 text-xs text-red-500">{{ sampleError }}</div>
-    </div>
+    </a-modal>
   </div>
 </template>

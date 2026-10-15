@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,8 @@ class CRUDNotice(CRUDPlus[RiderSalaryNotice]):
         status: str | None,
         site_id: int | None,
         site_ids: set[int] | None,
+        publish_from: date | None = None,
+        publish_to: date | None = None,
     ) -> Select:
         """
         公告列表查询
@@ -47,6 +50,11 @@ class CRUDNotice(CRUDPlus[RiderSalaryNotice]):
             filters['site_id'] = site_id
         elif site_ids is not None:
             filters['site_id__in'] = list(site_ids) or [-1]
+        if publish_from is not None:
+            filters['publish_time__ge'] = datetime.combine(publish_from, datetime.min.time(), tzinfo=timezone.tz_info)
+        if publish_to is not None:
+            next_day = publish_to + timedelta(days=1)
+            filters['publish_time__lt'] = datetime.combine(next_day, datetime.min.time(), tzinfo=timezone.tz_info)
         return await self.select_order('created_time', 'desc', **filters)
 
     async def get_all(self, db: AsyncSession) -> Sequence[RiderSalaryNotice]:

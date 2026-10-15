@@ -8,6 +8,7 @@ from backend.plugin.rider_salary.api.v1.calendar import router as calendar_route
 from backend.plugin.rider_salary.api.v1.dashboard import router as dashboard_router
 from backend.plugin.rider_salary.api.v1.day_flag import router as day_flag_router
 from backend.plugin.rider_salary.api.v1.engine import router as engine_router
+from backend.plugin.rider_salary.api.v1.h5_menu import router as h5_menu_router
 from backend.plugin.rider_salary.api.v1.me import router as me_router
 from backend.plugin.rider_salary.api.v1.notice import router as notice_router
 from backend.plugin.rider_salary.api.v1.order import batch_router as import_batch_router
@@ -39,4 +40,5 @@ v1.include_router(dashboard_router, prefix='/dashboard', tags=['工作台'])
 v1.include_router(advance_router, prefix='/advances', tags=['预支审核'])
 v1.include_router(notice_router, prefix='/notices', tags=['站点公告'])
 v1.include_router(audit_router, prefix='/audit-logs', tags=['操作日志'])
+v1.include_router(h5_menu_router, prefix='/h5-menus', tags=['骑手端菜单'])
 v1.include_router(me_router, prefix='/me', tags=['骑手端'])

@@ -2,17 +2,45 @@ from calendar import monthrange
 from datetime import date
 
 from fastapi import Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
 from backend.plugin.rider_salary.crud.day_flag import day_flag_dao
 from backend.plugin.rider_salary.crud.rider import rider_dao
 from backend.plugin.rider_salary.crud.site import site_dao
+from backend.plugin.rider_salary.model.rider import RiderSalaryRider
+from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod
 from backend.plugin.rider_salary.schema.day_flag import GetDayFlagDetail, UpsertDayFlagParam
 from backend.plugin.rider_salary.service.audit_service import audit_service
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
-from backend.plugin.rider_salary.utils.lock_check import assert_not_locked, locked_dates_in_range
+from backend.plugin.rider_salary.utils.lock_check import assert_not_locked, is_status_locked, locked_dates_in_range
 from backend.plugin.rider_salary.utils.recalc import mark_stale
+
+
+async def _assert_no_rider_period_locked(db: AsyncSession, site_id: int, biz_date: date) -> None:
+    """该日若落在任一骑手级 locked/paid 周期内则拒绝，报错列出工号（最多 10 个）"""
+    periods = (
+        await db.scalars(
+            select(RiderSalarySettlePeriod).where(
+                RiderSalarySettlePeriod.site_id == site_id,
+                RiderSalarySettlePeriod.rider_id > 0,
+                RiderSalarySettlePeriod.start_date <= biz_date,
+                RiderSalarySettlePeriod.end_date >= biz_date,
+                RiderSalarySettlePeriod.deleted == 0,
+            )
+        )
+    ).all()
+    rider_ids = sorted({int(row.rider_id) for row in periods if is_status_locked(row.status)})
+    if not rider_ids:
+        return
+    riders = (await db.scalars(select(RiderSalaryRider).where(RiderSalaryRider.id.in_(rider_ids)))).all()
+    job_by_id = {int(row.id): row.job_no for row in riders}
+    job_nos = sorted(job_by_id.get(rider_id, str(rider_id)) for rider_id in rider_ids)
+    shown = '、'.join(job_nos[:10])
+    if len(job_nos) > 10:
+        shown = f'{shown} 等{len(job_nos)}人'
+    raise errors.ForbiddenError(msg=f'该日期有骑手的结算周期已锁账，禁止修改日标记：{shown}')
 
 
 class DayFlagService:
@@ -88,6 +116,7 @@ class DayFlagService:
         dates = [item.biz_date for item in obj.days]
         for item in obj.days:
             await assert_not_locked(db, site_id=obj.site_id, rider_id=None, biz_date=item.biz_date)
+            await _assert_no_rider_period_locked(db, obj.site_id, item.biz_date)
             existed = await day_flag_dao.get_by_site_date(db, obj.site_id, item.biz_date)
             if existed:
                 await day_flag_dao.update(db, existed.id, item)

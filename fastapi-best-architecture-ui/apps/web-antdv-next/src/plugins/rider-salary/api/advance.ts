@@ -1,5 +1,6 @@
 import type {
   AdvanceActionParam,
+  AdvancePolicy,
   AdvanceQuery,
   AdvanceReasonParam,
   AdvanceResult,
@@ -41,4 +42,14 @@ export async function cancelAdvanceApi(pk: number, data: AdvanceReasonParam) {
 
 export async function exportAdvancesApi(params?: Omit<AdvanceQuery, 'page' | 'size'>) {
   return downloadNamedBlob(`${BASE}/export`, '预支明细.xlsx', { params });
+}
+
+export async function getAdvancePolicyApi(siteId: number) {
+  return requestClient.get<AdvancePolicy>(`${BASE}/policy`, {
+    params: { site_id: siteId },
+  });
+}
+
+export async function saveAdvancePolicyApi(data: Omit<AdvancePolicy, 'site_name' | 'source'>) {
+  return requestClient.put<AdvancePolicy>(`${BASE}/policy`, data);
 }

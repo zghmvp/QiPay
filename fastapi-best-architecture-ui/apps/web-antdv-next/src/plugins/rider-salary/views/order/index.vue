@@ -43,7 +43,7 @@ const initialStatus =
   typeof route.query.status === 'string' ? route.query.status : undefined;
 
 const formOptions: VbenFormProps = {
-  collapsed: true,
+  collapsed: false,
   schema: querySchema.map((item) =>
     item.fieldName === 'status' && initialStatus
       ? { ...item, defaultValue: initialStatus }
@@ -51,6 +51,7 @@ const formOptions: VbenFormProps = {
   ),
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
+  wrapperClass: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4',
 };
 
 const gridOptions: VxeTableGridOptions<OrderResult> = {

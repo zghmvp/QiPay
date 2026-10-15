@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { CalendarDayItem, CalendarPlanBand } from '@/types'
 import { buildMonthMatrix, formatMonthTitle, shiftMonth, WEEKDAY_LABELS } from '@/utils/date'
 import { isNegativeMoney, isPositiveMoney, moneyNumber } from '@/utils/money'
+import { useMenuStore } from '@/stores/menu'
 import dayjs from 'dayjs'
 
 const props = defineProps<{
@@ -10,6 +11,8 @@ const props = defineProps<{
   days: CalendarDayItem[]
   planBands: CalendarPlanBand[]
 }>()
+
+const menus = useMenuStore()
 
 const emit = defineEmits<{
   'update:month': [value: string]
@@ -107,13 +110,14 @@ function onCell(date: string, inMonth: boolean) {
         <span class="marks">
           <i
             v-if="
+              menus.flags.show_day_amount &&
               isPositiveMoney(dayMap.get(cell.format('YYYY-MM-DD'))?.net_adjust) &&
               moneyNumber(dayMap.get(cell.format('YYYY-MM-DD'))?.net_adjust) >= 0.005
             "
             class="dot green"
           />
           <i
-            v-if="isNegativeMoney(dayMap.get(cell.format('YYYY-MM-DD'))?.net_adjust)"
+            v-if="menus.flags.show_day_amount && isNegativeMoney(dayMap.get(cell.format('YYYY-MM-DD'))?.net_adjust)"
             class="dot red"
           />
           <i
@@ -126,8 +130,8 @@ function onCell(date: string, inMonth: boolean) {
     </div>
     <div class="legend">
       <span><i class="dot gray" />未导入</span>
-      <span><i class="dot red" />无方案 / 扣款</span>
-      <span><i class="dot green" />奖励</span>
+      <span><i class="dot red" />{{ menus.flags.show_day_amount ? '无方案 / 扣款' : '无方案' }}</span>
+      <span v-if="menus.flags.show_day_amount"><i class="dot green" />奖励</span>
     </div>
   </div>
 </template>

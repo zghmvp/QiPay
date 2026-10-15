@@ -12,6 +12,7 @@ from backend.plugin.rider_salary.crud.settle_period import SITE_LEVEL_RIDER_ID
 from backend.plugin.rider_salary.enums import CalcStage, DetailSource, PayrollKind, PayrollStatus
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
+from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.model.payroll_detail import RiderSalaryPayrollDetail
 from backend.plugin.rider_salary.model.plan import RiderSalaryPlan
 from backend.plugin.rider_salary.model.plan_version import RiderSalaryPlanVersion
@@ -67,7 +68,7 @@ ADJUSTMENT_HEADERS = [
     '备注',
     '是否锁账',
 ]
-NET_HEADERS = ['工号', '姓名', '原单', '反冲', '补发', '净差']
+NET_HEADERS = ['工号', '姓名', '原单', '反冲', '补发', '净差', '本轮应付']
 
 SHEET_SUMMARY = '薪资汇总'
 SHEET_DETAIL = '薪资明细'
@@ -195,15 +196,8 @@ class ExportService:
             ])
             if payroll.rider_id not in net_acc:
                 ordered_rider_ids.append(payroll.rider_id)
-                net_acc[payroll.rider_id] = {
-                    'job_no': job_no,
-                    'name': name,
-                    'normal': ZERO,
-                    'reversal': ZERO,
-                    'supplement': ZERO,
-                }
-            if payroll.kind in net_acc[payroll.rider_id]:
-                net_acc[payroll.rider_id][payroll.kind] = q2(net_acc[payroll.rider_id][payroll.kind] + q2(payroll.net))
+                net_acc[payroll.rider_id] = {'job_no': job_no, 'name': name, 'rows': []}
+            net_acc[payroll.rider_id]['rows'].append(payroll)
             detail_rows.extend(
                 [
                     job_no,
@@ -332,21 +326,21 @@ class ExportService:
             ])
         return rows_out
 
-    @staticmethod
     def _net_rows(
-        net_acc: dict[int, dict[str, Any]],
+        self: dict[int, dict[str, Any]],
         riders: dict[int, RiderSalaryRider],
         ordered_ids: list[int],
     ) -> list[list]:
         rows: list[list] = []
         for rider_id in ordered_ids:
-            bucket = net_acc.get(rider_id)
+            bucket = self.get(rider_id)
             if bucket is None:
                 continue
             rider = riders.get(rider_id)
-            original = q2(bucket.get('normal') or ZERO)
-            reversal = q2(bucket.get('reversal') or ZERO)
-            supplement = q2(bucket.get('supplement') or ZERO)
+            payrolls = bucket['rows']
+            original = q2(sum((q2(row.net) for row in payrolls if row.kind == PayrollKind.normal.value), ZERO))
+            reversal = q2(sum((q2(row.net) for row in payrolls if row.kind == PayrollKind.reversal.value), ZERO))
+            supplement = q2(sum((q2(row.net) for row in payrolls if row.kind == PayrollKind.supplement.value), ZERO))
             rows.append([
                 rider.job_no if rider is not None else bucket.get('job_no'),
                 rider.name if rider is not None else bucket.get('name'),
@@ -354,8 +348,42 @@ class ExportService:
                 _excel_number(reversal),
                 _excel_number(supplement),
                 _excel_number(q2(original + reversal + supplement)),
+                _excel_number(_current_round_payable(payrolls)),
             ])
         return rows
+
+
+def _current_round_payable(payrolls: list[RiderSalaryPayroll]) -> Decimal:
+    """最近一轮尚未被再反冲的补发，加上冲掉它上一轮的反冲单。没有补发时为本期净差。"""
+    supplements = [row for row in payrolls if row.kind == PayrollKind.supplement.value and not row.reversed]
+    if not supplements:
+        return q2(sum((q2(row.net) for row in payrolls), ZERO))
+    latest = max(supplements, key=lambda row: (row.calc_version, row.id))
+    reversal = next(
+        (
+            row
+            for row in payrolls
+            if row.kind == PayrollKind.reversal.value and row.reversed_of_id == _previous_round_id(payrolls, latest)
+        ),
+        None,
+    )
+    return q2(latest.net + (reversal.net if reversal is not None else ZERO))
+
+
+def _previous_round_id(payrolls: list[RiderSalaryPayroll], latest: RiderSalaryPayroll) -> int | None:
+    """本轮补发所替换的上一轮单据：同骑手中计算轮次小于本轮、且已被反冲的最后一张"""
+    earlier = [
+        row
+        for row in payrolls
+        if row.rider_id == latest.rider_id
+        and row.kind != PayrollKind.reversal.value
+        and row.reversed
+        and row.calc_version <= latest.calc_version
+        and row.id != latest.id
+    ]
+    if not earlier:
+        return None
+    return max(earlier, key=lambda row: (row.calc_version, row.id)).id
 
 
 export_service = ExportService()

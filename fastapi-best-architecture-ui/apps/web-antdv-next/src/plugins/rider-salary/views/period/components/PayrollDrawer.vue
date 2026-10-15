@@ -132,11 +132,19 @@ const [Drawer, drawerApi] = useVbenDrawer({
           <a-descriptions-item label="代扣">
             <MoneyText :value="detail.deduction_total" />
           </a-descriptions-item>
+          <a-descriptions-item label="上期欠款">
+            <MoneyText :value="detail.carry_in" />
+          </a-descriptions-item>
           <a-descriptions-item label="预支抵扣">
             <MoneyText :value="detail.advance_deduction" />
           </a-descriptions-item>
           <a-descriptions-item label="实发">
             <MoneyText :value="detail.net" />
+          </a-descriptions-item>
+          <a-descriptions-item label="结转欠款">
+            <span :class="Number(detail.carry_out) > 0 ? 'font-medium text-red-500' : ''">
+              <MoneyText :value="detail.carry_out" />
+            </span>
           </a-descriptions-item>
           <a-descriptions-item label="逐单">
             <MoneyText :value="detail.per_order_total" />

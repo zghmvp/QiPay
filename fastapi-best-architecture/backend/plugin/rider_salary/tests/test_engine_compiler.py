@@ -1,6 +1,5 @@
 from datetime import date
-
-import pytest
+from decimal import Decimal
 
 from backend.plugin.rider_salary.engine.compiler import compile_condition, compile_formula
 from backend.plugin.rider_salary.engine.evaluator import evaluate, evaluate_amount, evaluate_condition
@@ -60,7 +59,8 @@ def test_datetime_minutes_use_app_timezone() -> None:
         biz_date=day,
     )
     ctx = build_order_context(order, build_day_context(1, day, None, 'part_time'))
-    assert ctx['下单时刻'] == 10 * 60 + 25
+    assert '下单时刻' not in ctx
+    assert '配送时长' not in ctx
     assert ctx['送达时刻'] == 23 * 60 + 5
 
 
@@ -90,17 +90,17 @@ def test_belong_and_not_belong() -> None:
         '逻辑': '且',
         '条件': [
             {'字段': '星期', '运算符': '不属于', '值': [6, 7]},
-            {'字段': '配送时长', '运算符': '在区间内', '值': [0, 60]},
+            {'字段': '配送距离', '运算符': '在区间内', '值': [0, 60]},
         ],
     }
     expr = compile_condition(raw, STAGE)
     assert 'not in' in expr
-    assert evaluate_condition(expr, {'星期': 1, '配送时长': 28}) is True
-    assert evaluate_condition(expr, {'星期': 6, '配送时长': 28}) is False
-    belong = {'字段': '订单状态', '运算符': '属于', '值': ['completed', 'abnormal']}
+    assert evaluate_condition(expr, {'星期': 1, '配送距离': 28}) is True
+    assert evaluate_condition(expr, {'星期': 6, '配送距离': 28}) is False
+    belong = {'字段': '订单状态', '运算符': '属于', '值': ['completed']}
     belong_expr = compile_condition(belong, STAGE)
     assert evaluate_condition(belong_expr, {'订单状态': 'completed'}) is True
-    assert evaluate_condition(belong_expr, {'订单状态': 'cancelled'}) is False
+    assert evaluate_condition(belong_expr, {'订单状态': 'not_completed'}) is False
 
 
 def test_nested_or() -> None:
@@ -199,7 +199,9 @@ def test_formula_ladder_compile() -> None:
     }
     expr = compile_formula(formula, CalcStage.period.value)
     assert expr.startswith('阶梯(周期单量')
-    assert evaluate(expr, {'周期单量': 420}) == pytest.approx(420 * 5.5)
+    result = evaluate(expr, {'周期单量': 420})
+    assert isinstance(result, Decimal)
+    assert result == Decimal(420) * Decimal('5.5')
 
 
 def test_formula_expression() -> None:

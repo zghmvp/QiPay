@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -21,7 +21,11 @@ from backend.plugin.rider_salary.engine.context import (
     iter_dates,
     trace_variables,
 )
-from backend.plugin.rider_salary.engine.evaluator import EvalError, evaluate_amount, evaluate_condition
+from backend.plugin.rider_salary.engine.evaluator import (
+    EvalError,
+    evaluate_amount_strict,
+    evaluate_condition_strict,
+)
 from backend.plugin.rider_salary.engine.segments import PlanItemView, Segment, resolve_segments
 from backend.plugin.rider_salary.enums import (
     CalcStage,
@@ -31,6 +35,7 @@ from backend.plugin.rider_salary.enums import (
     PayrollKind,
     PayrollStatus,
     PeriodStatus,
+    PlanVersionStatus,
     SubjectDirection,
 )
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
@@ -51,6 +56,7 @@ from backend.plugin.rider_salary.service.payroll_service import (
     payroll_service,
 )
 from backend.plugin.rider_salary.utils.audit import audit_service
+from backend.plugin.rider_salary.utils.lock_check import rider_level_covered_dates
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
 
@@ -121,6 +127,8 @@ class CalcResult:
     dailies: list[CalcDaily]
     calc_version: int = 0
     stale: bool = False
+    carry_in: Decimal = ZERO
+    carry_out: Decimal = ZERO
 
 
 @dataclass
@@ -144,6 +152,13 @@ class CalcInput:
     site_order_dates: set[date]
     persist_advance: bool = False
     period_id: int | None = None
+    # 站点级周期中已被骑手级周期覆盖的日期：不取数、不计薪
+    excluded_dates: set[date] = field(default_factory=set)
+    # 此前周期结转的欠款（负数为多扣退回）；更早周期仍有草稿时本期不处理欠款与预支
+    carry_debt: Decimal = ZERO
+    defer_settlement: bool = False
+    # 取数阶段产生的告警（如绑定的方案版本已作废）
+    load_warnings: list[str] = field(default_factory=list)
 
 
 def _json_safe(value: Any) -> Any:
@@ -191,7 +206,11 @@ def _employ_on(history: list[Any], default: str, day: date) -> str:
 
 
 def _is_completed(order: Any) -> bool:
-    return getattr(order, 'status', None) == OrderStatus.completed.value
+    """只结算有配送完成时间、且状态为配送完成的订单。"""
+    return (
+        getattr(order, 'deliver_time', None) is not None
+        and getattr(order, 'status', None) == OrderStatus.completed.value
+    )
 
 
 def _after_leave(leave_date: date | None, day: date) -> bool:
@@ -211,23 +230,45 @@ def _eval_item(
 ) -> tuple[bool, Decimal, dict[str, Any]]:
     condition_expr = item.condition_expr or 'True'
     formula_expr = item.formula_expr or '0'
-    hit = evaluate_condition(condition_expr, names)
+    try:
+        hit = evaluate_condition_strict(condition_expr, names)
+    except EvalError as exc:
+        warnings.append(f'方案项「{item.name}」条件求值失败（{exc}），已按未命中处理')
+        return False, ZERO, _trace(condition_expr, formula_expr, names, ZERO, hit=False)
     if not hit:
         return False, ZERO, _trace(condition_expr, formula_expr, names, ZERO, hit=False)
     try:
-        unsigned = evaluate_amount(formula_expr, names)
-    except EvalError:
-        warnings.append(f'方案项「{item.name}」公式求值失败，已按 0 计算')
+        unsigned = evaluate_amount_strict(formula_expr, names)
+    except EvalError as exc:
+        warnings.append(f'方案项「{item.name}」公式求值失败（{exc}），已按 0 计算')
         unsigned = ZERO
     signed = q2(unsigned * _sign(item.direction))
     return True, signed, _trace(condition_expr, formula_expr, names, unsigned, hit=True)
+
+
+_SEGMENT_FIELDS = ('方案生效天数', '方案期内单量')
+
+
+def _item_text(item: PlanItemView) -> str:
+    return f'{item.condition_expr or ""} {item.formula_expr or ""}'
+
+
+def _is_guarantee(item: PlanItemView) -> bool:
+    """保底类周期项：引用了本期已计金额"""
+    return '本期已计金额' in _item_text(item)
+
+
+def _segment_scoped(item: PlanItemView) -> bool:
+    """按方案段分摊的周期项（引用方案生效天数/方案期内单量，且不是保底）"""
+    text = _item_text(item)
+    return not _is_guarantee(item) and any(name in text for name in _SEGMENT_FIELDS)
 
 
 def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-structure]
     """
     纲要 §3 算薪流水线（纯内存，供正式算薪与单测共用）
     """
-    warnings: list[str] = []
+    warnings: list[str] = list(data.load_warnings)
     details: list[CalcDetail] = []
     rider_id = data.rider_id
     orders = list(data.orders)
@@ -274,8 +315,17 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
     daily_total = ZERO
     period_total = ZERO
     covered: dict[date, int] = {}
+    active: list[tuple[Segment, list[date]]] = []
     for segment in data.segments:
-        for day in iter_dates(segment.start_date, segment.end_date):
+        segment_dates = [
+            day for day in iter_dates(segment.start_date, segment.end_date) if day not in data.excluded_dates
+        ]
+        if segment_dates:
+            active.append((segment, segment_dates))
+    # 周期中途换方案（纲要 §10 #34）：分段项每段计一次，整期项与保底只按期末方案计一次
+    multi = len(active) > 1
+    for segment, segment_dates in active:
+        for day in segment_dates:
             covered[day] = segment.plan_version_id
             employ = _employ_on(data.employ_history, data.employ_type, day)
             day_ctx = build_day_context(data.site_id, day, data.day_flags.get(day), employ)
@@ -286,10 +336,6 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             day_per_order = ZERO
             for order in completed:
                 ctx = build_order_context(order, day_ctx)
-                if ctx.pop('_missing_deliver', False):
-                    msg = '字段「配送时长」为空，已按 0 计算'
-                    if msg not in warnings:
-                        warnings.append(msg)
                 for item in _enabled_items(segment, CalcStage.per_order.value):
                     hit, amount, trace = _eval_item(item, ctx, warnings)
                     if not hit:
@@ -318,10 +364,10 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                         per_order_total += amount
             day_agg = {
                 **day_ctx,
-                '日单量': float(len(completed)),
-                '日有效单量': float(len(completed)),
-                '日总单量': float(len(day_orders)),
-                '日逐单金额': float(q2(day_per_order)),
+                '日单量': Decimal(len(completed)),
+                '日有效单量': Decimal(len(completed)),
+                '日总单量': Decimal(len(day_orders)),
+                '日逐单金额': q2(day_per_order),
                 '用工类型': employ,
             }
             for item in _enabled_items(segment, CalcStage.daily.value):
@@ -348,7 +394,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                     accrued += amount
                     daily_total += amount
         plan_orders = [row for row in completed_all if segment.start_date <= row.biz_date <= segment.end_date]
-        segment_days = (segment.end_date - segment.start_date).days + 1
+        segment_days = len(segment_dates)
         seg_ctx = build_segment_context(
             period_ctx,
             plan_order_count=len(plan_orders),
@@ -357,8 +403,10 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             per_order_total=per_order_total,
         )
         for item in _enabled_items(segment, CalcStage.period.value):
-            seg_ctx['本期已计金额'] = float(q2(accrued))
-            seg_ctx['本期逐单金额'] = float(q2(per_order_total))
+            if multi and not _segment_scoped(item):
+                continue
+            seg_ctx['本期已计金额'] = q2(accrued)
+            seg_ctx['本期逐单金额'] = q2(per_order_total)
             hit, amount, trace = _eval_item(item, seg_ctx, warnings)
             if not hit:
                 continue
@@ -381,9 +429,58 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                 accrued += amount
                 period_total += amount
 
+    if multi:
+        last_segment = active[-1][0]
+        whole_ctx = build_segment_context(
+            period_ctx,
+            plan_order_count=len([row for row in completed_all if row.biz_date in covered]),
+            segment_days=len(covered),
+            accrued_gross=accrued,
+            per_order_total=per_order_total,
+        )
+        skipped = [
+            item.name
+            for segment, _ in active[:-1]
+            for item in _enabled_items(segment, CalcStage.period.value)
+            if not _segment_scoped(item)
+        ]
+        if skipped:
+            warnings.append(
+                f'本期中途切换方案：整期项与保底只按期末方案计算一次，早期方案的「{"、".join(skipped)}」未重复计发'
+            )
+        whole_items = [
+            item for item in _enabled_items(last_segment, CalcStage.period.value) if not _segment_scoped(item)
+        ]
+        # 保底放最后，按整期已计金额评估
+        whole_items.sort(key=_is_guarantee)
+        for item in whole_items:
+            whole_ctx['本期已计金额'] = q2(accrued)
+            whole_ctx['本期逐单金额'] = q2(per_order_total)
+            hit, amount, trace = _eval_item(item, whole_ctx, warnings)
+            if not hit:
+                continue
+            details.append(
+                CalcDetail(
+                    rider_id=rider_id,
+                    subject_id=item.subject_id,
+                    amount=amount,
+                    stage=CalcStage.period.value,
+                    include_in_gross=item.include_in_gross,
+                    source=DetailSource.formula.value,
+                    plan_version_id=last_segment.plan_version_id,
+                    plan_item_id=item.id,
+                    calc_trace=trace,
+                    direction=item.direction,
+                    name=item.name,
+                )
+            )
+            if item.include_in_gross:
+                accrued += amount
+                period_total += amount
+
     no_plan_days: set[date] = set()
     for day in iter_dates(data.period_start, data.period_end):
-        if day in covered:
+        if day in covered or day in data.excluded_dates:
             continue
         day_completed = [
             row
@@ -427,13 +524,38 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                 for row in details
                 if (not row.include_in_gross)
                 and row.direction == SubjectDirection.penalty.value
-                and row.source != DetailSource.advance.value
+                and row.source not in {DetailSource.advance.value, DetailSource.carry.value}
             ),
             ZERO,
         )
     )
-    cap = q2(max(gross - deduction_total, ZERO))
-    deductible, lines = compute_advance_deduction(data.advances, cap, persist=data.persist_advance)
+    carry_in = ZERO if data.defer_settlement else q2(data.carry_debt)
+    if carry_in != ZERO:
+        details.append(
+            CalcDetail(
+                rider_id=rider_id,
+                subject_id=ADVANCE_SUBJECT_ID,
+                amount=q2(-carry_in),
+                stage=CalcStage.period.value,
+                include_in_gross=False,
+                source=DetailSource.carry.value,
+                calc_trace={'公式': '上期欠款结转', '变量': {'欠款': float(carry_in)}, '结果': float(-carry_in)},
+                direction=SubjectDirection.penalty.value if carry_in > 0 else SubjectDirection.bonus.value,
+                name='上期欠款扣回' if carry_in > 0 else '上期多扣退回',
+            )
+        )
+    available = q2(gross - deduction_total - carry_in)
+    # 实发最低为 0，差额作为欠款结转下期（纲要 §10 #32）
+    carry_out = q2(max(-available, ZERO))
+    if carry_out > 0:
+        warnings.append(f'本期应发不足以覆盖扣款，实发记为 0，欠款 {carry_out} 元结转下期扣回')
+    cap = q2(max(available, ZERO))
+    if data.defer_settlement:
+        deductible, lines = ZERO, []
+        if data.advances or data.carry_debt != ZERO:
+            warnings.append('该骑手更早的结算周期尚未锁账，预支抵扣与上期欠款待其锁账后重算本期时处理')
+    else:
+        deductible, lines = compute_advance_deduction(data.advances, cap, persist=data.persist_advance)
     advance_deduction = ZERO
     if data.persist_advance:
         advance_deduction = deductible
@@ -452,7 +574,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             for line in lines
         )
 
-    net = q2(gross - deduction_total - advance_deduction)
+    net = q2(max(available, ZERO) - advance_deduction)
     bonus_total = q2(
         sum(
             (
@@ -565,6 +687,8 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         warnings=warnings,
         details=details,
         dailies=dailies,
+        carry_in=carry_in,
+        carry_out=carry_out,
     )
 
 
@@ -579,6 +703,21 @@ async def _acquire_calc_lock(period_id: int, rider_id: int) -> Any:
     if not acquired:
         raise errors.ConflictError(msg='该骑手薪资正在计算中，请稍后再试')
     return lock
+
+
+async def _assert_period_writable(db: AsyncSession, period_id: int) -> None:
+    """
+    写库算薪前对周期加共享锁并重新确认状态（B3）
+
+    锁账对周期加排他锁，二者互斥：算薪进行中锁账会等待，锁账之后的算薪会被拒绝。
+    """
+    status = await db.scalar(
+        select(RiderSalarySettlePeriod.status)
+        .where(RiderSalarySettlePeriod.id == period_id, RiderSalarySettlePeriod.deleted == 0)
+        .with_for_update(read=True)
+    )
+    if status not in {PeriodStatus.open.value, PeriodStatus.reopened.value}:
+        raise errors.RequestError(msg='结算周期已锁账或已发薪，不允许算薪')
 
 
 async def calculate_rider_period(
@@ -603,6 +742,8 @@ async def calculate_rider_period(
     if persist:
         lock = await _acquire_calc_lock(period.id, rider_id)
     try:
+        if persist:
+            await _assert_period_writable(db, period.id)
         return await _calculate_rider_period_inner(
             db,
             rider=rider,
@@ -623,10 +764,28 @@ async def _load_calc_input(
     period: RiderSalarySettlePeriod,
     forced_plan_version: RiderSalaryPlanVersion | None,
     persist_advance: bool,
+    excluded_dates: set[date] | None = None,
+    advances: list[Any] | None = None,
 ) -> CalcInput:
     start, end = period.start_date, period.end_date
+    excluded = set(excluded_dates or ())
     site_id = period.site_id
     segments = await resolve_segments(db, rider.id, start, end, forced=forced_plan_version)
+    load_warnings: list[str] = []
+    if forced_plan_version is None:
+        # 已作废（回退）的版本不再计薪（B11）
+        voided = [
+            seg
+            for seg in segments
+            if seg.plan_version is not None and seg.plan_version.status == PlanVersionStatus.voided.value
+        ]
+        load_warnings.extend(
+            f'{seg.start_date}~{seg.end_date} 绑定的方案版本 v{seg.plan_version.version_no} 已作废，'
+            '该段未计薪，请重新绑定方案'
+            for seg in voided
+        )
+        voided_ids = {id(seg) for seg in voided}
+        segments = [seg for seg in segments if id(seg) not in voided_ids]
     orders = list(
         (
             await db.scalars(
@@ -675,6 +834,9 @@ async def _load_calc_input(
             )
         ).all()
     )
+    if excluded:
+        orders = [row for row in orders if row.biz_date not in excluded]
+        adjustments = [row for row in adjustments if row.biz_date not in excluded]
     subject_ids = {row.subject_id for row in adjustments}
     subjects: dict[int, RiderSalarySubject] = {}
     if subject_ids:
@@ -719,7 +881,10 @@ async def _load_calc_input(
             )
         ).all()
     )
-    advances = await payroll_service.load_paid_advances(db, rider.id)
+    if advances is None:
+        advances = await payroll_service.load_paid_advances(db, rider.id, for_update=persist_advance)
+    # 预支只在发放日所在周期及之后抵扣（纲要 §10 #33）
+    advances = [row for row in advances if _paid_on(row) is None or _paid_on(row) <= end]
     return CalcInput(
         rider_id=rider.id,
         site_id=site_id,
@@ -738,7 +903,18 @@ async def _load_calc_input(
         site_order_dates=set(site_dates),
         persist_advance=persist_advance,
         period_id=period.id,
+        excluded_dates=excluded,
+        load_warnings=load_warnings,
     )
+
+
+def _paid_on(advance: Any) -> date | None:
+    paid_time = getattr(advance, 'paid_time', None)
+    if paid_time is None:
+        return None
+    if paid_time.tzinfo is not None:
+        paid_time = paid_time.astimezone(timezone.tz_info)
+    return paid_time.date()
 
 
 async def _persist_result(
@@ -817,6 +993,8 @@ async def _persist_result(
     payroll.deduction_total = result.deduction_total
     payroll.advance_deduction = result.advance_deduction
     payroll.net = result.net
+    payroll.carry_in = result.carry_in
+    payroll.carry_out = result.carry_out
     payroll.plan_version_ids = result.plan_version_ids
     payroll.calc_time = timezone.now()
     payroll.calc_by = int(getattr(getattr(operator, 'user', None), 'id', 0) or 0) if operator else None
@@ -879,15 +1057,42 @@ async def _calculate_rider_period_inner(
     forced_plan_version: RiderSalaryPlanVersion | None,
     operator: Request | None,
 ) -> CalcResult:
+    current = None
+    if period.id:
+        kind = (
+            PayrollKind.supplement.value if period.status == PeriodStatus.reopened.value else PayrollKind.normal.value
+        )
+        current = await payroll_dao.get_current(db, period.id, rider.id, kind)
+    advances = None
     if persist:
+        # 先锁住该骑手的预支行，再加回/抵扣，避免并发算薪重复抵扣同一笔（B6）
+        await payroll_service.load_paid_advances(db, rider.id, for_update=True)
         await _restore_draft_advances(db, rider_id=rider.id, period=period)
+        # 本期是更早的周期：之后周期草稿占用的预支先还回来，由本期优先抵扣
+        await payroll_service.release_later_drafts(db, rider_id=rider.id, after=period.start_date)
+    else:
+        advances = await payroll_service.advances_for_estimate(db, rider_id=rider.id, draft=current)
+    excluded: set[date] = set()
+    if not period.rider_id or period.rider_id == SITE_LEVEL_RIDER_ID:
+        covered = await rider_level_covered_dates(
+            db,
+            site_id=period.site_id,
+            date_from=period.start_date,
+            date_to=period.end_date,
+            rider_ids=[rider.id],
+        )
+        excluded = covered.get(rider.id, set())
     data = await _load_calc_input(
         db,
         rider=rider,
         period=period,
         forced_plan_version=forced_plan_version,
         persist_advance=persist,
+        excluded_dates=excluded,
+        advances=advances,
     )
+    data.carry_debt = await payroll_service.outstanding_debt(db, rider_id=rider.id, before=period.start_date)
+    data.defer_settlement = await payroll_service.has_earlier_draft(db, rider_id=rider.id, before=period.start_date)
     result = run_calc_pipeline(data)
     if persist:
         _backfill_adjustments(period=period, adjustments=data.adjustments)
@@ -979,12 +1184,14 @@ async def _riders_for_period(
         if rider_ids is not None and period.rider_id not in rider_ids:
             return []
         return [period.rider_id]
+    # 期初前已离职、本期又无订单/奖惩的骑手不再进入算薪
     current = set(
         (
             await db.scalars(
                 select(RiderSalaryRider.id).where(
                     RiderSalaryRider.site_id == period.site_id,
                     RiderSalaryRider.deleted == 0,
+                    or_(RiderSalaryRider.leave_date.is_(None), RiderSalaryRider.leave_date >= period.start_date),
                 )
             )
         ).all()
@@ -1016,17 +1223,9 @@ async def _riders_for_period(
     ids = current | from_orders | from_adj
     if rider_ids is not None:
         ids &= set(rider_ids)
-    covered = set(
-        (
-            await db.scalars(
-                select(RiderSalarySettlePeriod.rider_id).where(
-                    RiderSalarySettlePeriod.site_id == period.site_id,
-                    RiderSalarySettlePeriod.rider_id != SITE_LEVEL_RIDER_ID,
-                    RiderSalarySettlePeriod.start_date <= period.end_date,
-                    RiderSalarySettlePeriod.end_date >= period.start_date,
-                    RiderSalarySettlePeriod.deleted == 0,
-                )
-            )
-        ).all()
+    # 只排除整期都被骑手级周期覆盖的骑手；部分覆盖的骑手由站点级周期结算剩余日期
+    covered = await rider_level_covered_dates(
+        db, site_id=period.site_id, date_from=period.start_date, date_to=period.end_date
     )
-    return sorted(rid for rid in ids if rid not in covered)
+    period_days = (period.end_date - period.start_date).days + 1
+    return sorted(rid for rid in ids if len(covered.get(rid, ())) < period_days)

@@ -138,6 +138,8 @@ class AdjustmentService:
         date_from: date | None,
         date_to: date | None,
         direction: str | None,
+        is_locked: bool | None = None,
+        remark: str | None = None,
     ) -> dict[str, Any]:
         """分页获取奖惩记录"""
         visible = await get_visible_site_ids(request, db)
@@ -150,6 +152,8 @@ class AdjustmentService:
             date_from=date_from.isoformat() if date_from else None,
             date_to=date_to.isoformat() if date_to else None,
             site_ids=visible,
+            is_locked=is_locked,
+            remark=remark.strip() if remark else None,
         )
         if direction:
             stmt = stmt.join(

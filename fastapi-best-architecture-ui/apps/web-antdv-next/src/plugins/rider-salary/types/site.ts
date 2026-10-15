@@ -30,6 +30,7 @@ export interface SiteQuery {
   code?: string;
   name?: string;
   page?: number;
+  settle_cycle?: string;
   size?: number;
   status?: string;
 }

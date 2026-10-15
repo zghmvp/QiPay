@@ -1,10 +1,9 @@
-import math
-
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from backend.plugin.rider_salary.engine.ladder import ladder as ladder_impl
+from backend.plugin.rider_salary.engine.ladder import to_decimal, to_decimal_or_zero
 from backend.utils.timezone import timezone
 
 FUNCTION_META: tuple[dict[str, Any], ...] = (
@@ -56,94 +55,105 @@ WHITELIST_FUNCTION_NAMES: frozenset[str] = frozenset({
 })
 
 
-def _to_float(value: Any) -> float:
-    if value is None:
-        return 0.0
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, Decimal):
-        return float(value)
-    return float(str(value))
+def _is_real_number(value: Any) -> bool:
+    return isinstance(value, (int, float, Decimal)) and not isinstance(value, bool)
 
 
-def fn_max(*args: Any) -> float:
+def fn_max(*args: Any) -> Decimal:
     """最大值(*args)"""
     if not args:
-        return 0.0
-    return max(_to_float(item) for item in args)
+        return Decimal(0)
+    return max(to_decimal_or_zero(item) for item in args)
 
 
-def fn_min(*args: Any) -> float:
+def fn_min(*args: Any) -> Decimal:
     """最小值(*args)"""
     if not args:
-        return 0.0
-    return min(_to_float(item) for item in args)
+        return Decimal(0)
+    return min(to_decimal_or_zero(item) for item in args)
 
 
-def fn_floor(x: Any) -> int:
+def fn_floor(x: Any) -> Decimal:
     """取整(x) 向下取整"""
-    return math.floor(_to_float(x))
+    return to_decimal_or_zero(x).to_integral_value(rounding=ROUND_FLOOR)
 
 
-def fn_ceil(x: Any) -> int:
+def fn_ceil(x: Any) -> Decimal:
     """向上取整(x)"""
-    return math.ceil(_to_float(x))
+    return to_decimal_or_zero(x).to_integral_value(rounding=ROUND_CEILING)
 
 
-def fn_round(x: Any, 位数: int = 2) -> float:  # ruff: ignore[invalid-argument-name]
-    """四舍五入(x, 位数=2)"""
+def fn_round(x: Any, 位数: Any = 2) -> Decimal:  # ruff: ignore[invalid-argument-name]
+    """四舍五入(x, 位数=2)，舍入模式 ROUND_HALF_UP"""
     digits = int(位数)
     quant = Decimal(1) if digits <= 0 else Decimal(1).scaleb(-digits)
-    return float(Decimal(str(_to_float(x))).quantize(quant, rounding=ROUND_HALF_UP))
+    return to_decimal_or_zero(x).quantize(quant, rounding=ROUND_HALF_UP)
 
 
-def fn_abs(x: Any) -> float:
+def fn_abs(x: Any) -> Decimal:
     """绝对值(x)"""
-    return abs(_to_float(x))
+    return abs(to_decimal_or_zero(x))
 
 
-def to_minutes(value: Any) -> float | None:
-    """将时刻转为自 0 点起的分钟数；无法解析返回 None。datetime 先转到应用时区再取时分。"""
-    if value is None or value is False:
+def _minutes_from_clock(text: str) -> int | None:
+    parts = text.split(':')
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+    except ValueError:
         return None
-    if isinstance(value, bool):
+    return hour * 60 + minute
+
+
+def _minutes_from_number(value: float | Decimal) -> int | Decimal:
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, float):
+        return Decimal(str(value))
+    return value
+
+
+def to_minutes(value: Any) -> int | Decimal | None:
+    """将时刻转为自 0 点起的分钟数；无法解析返回 None。datetime 先转到应用时区再取时分。"""
+    if value is None or isinstance(value, bool):
         return None
     if isinstance(value, datetime):
         if value.tzinfo is not None:
             value = timezone.from_datetime(value)
-        return float(value.hour * 60 + value.minute)
+        return value.hour * 60 + value.minute
     if isinstance(value, (int, float, Decimal)):
-        return float(value)
+        return _minutes_from_number(value)
     text = str(value).strip()
     if not text:
         return None
     if ':' in text:
-        parts = text.split(':')
-        try:
-            hour = int(parts[0])
-            minute = int(parts[1]) if len(parts) > 1 else 0
-        except ValueError:
-            return None
-        return float(hour * 60 + minute)
+        return _minutes_from_clock(text)
     try:
-        return float(text)
-    except ValueError:
+        return to_decimal(text)
+    except (ArithmeticError, TypeError, ValueError):
         return None
 
 
-def fn_minutes(value: Any) -> float:
-    """时刻分钟(t)，供内部比较"""
+def _minutes_decimal(value: Any) -> Decimal | None:
     minutes = to_minutes(value)
-    return 0.0 if minutes is None else minutes
+    if minutes is None:
+        return None
+    if isinstance(minutes, Decimal):
+        return minutes
+    return Decimal(minutes)
+
+
+def fn_minutes(value: Any) -> Decimal:
+    """时刻分钟(t)，供内部比较"""
+    minutes = _minutes_decimal(value)
+    return Decimal(0) if minutes is None else minutes
 
 
 def in_time_range(t: Any, start: Any, end: Any) -> bool:
     """在时段内(t, 起, 止)，支持跨午夜；两端含"""
-    current = to_minutes(t)
-    start_m = to_minutes(start)
-    end_m = to_minutes(end)
+    current = _minutes_decimal(t)
+    start_m = _minutes_decimal(start)
+    end_m = _minutes_decimal(end)
     if current is None or start_m is None or end_m is None:
         return False
     if start_m <= end_m:
@@ -160,6 +170,8 @@ def in_range(value: Any, low: Any, high: Any) -> bool:
     """在区间内(x, a, b)，含端点"""
     if value is None or low is None or high is None:
         return False
+    if all(_is_real_number(item) for item in (value, low, high)):
+        return to_decimal(low) <= to_decimal(value) <= to_decimal(high)
     return low <= value <= high
 
 

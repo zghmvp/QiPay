@@ -1,3 +1,5 @@
+import type { MoneyValue } from './common';
+
 export interface RiderResult {
   account_status?: null | number;
   account_status_label?: null | string;
@@ -38,12 +40,18 @@ export interface RiderForm {
   settle_cycle_override?: null | string;
   site_id: number;
   status?: string;
+  transfer_date?: null | string;
 }
 
 export interface RiderQuery {
+  account_status?: string;
   employ_type?: string;
+  hire_date_from?: string;
+  hire_date_to?: string;
   keyword?: string;
   page?: number;
+  phone?: string;
+  settle_cycle_override?: string;
   size?: number;
   site_id?: number;
   status?: string;
@@ -92,8 +100,17 @@ export interface EmployHistoryForm {
 }
 
 export interface RiderLeaveForm {
+  /** 已知晓尚有未扣回预支或欠款 */
+  confirm_outstanding?: boolean;
   leave_date: string;
   reason: string;
+}
+
+export interface RiderLeaveCheck {
+  debt_amount: MoneyValue;
+  in_flight_amount: MoneyValue;
+  in_flight_count: number;
+  undeducted_amount: MoneyValue;
 }
 
 export interface RiderAccountForm {

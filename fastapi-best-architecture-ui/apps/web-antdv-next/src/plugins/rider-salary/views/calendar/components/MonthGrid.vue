@@ -18,11 +18,12 @@ import PlanBands from './PlanBands.vue';
 const props = withDefaults(
   defineProps<{
     days?: CalendarDayItem[];
+    highlightStatus?: string;
     month: string;
     planBands?: CalendarPlanBand[];
     selectedDate?: string;
   }>(),
-  { days: () => [], planBands: () => [], selectedDate: undefined },
+  { days: () => [], highlightStatus: undefined, planBands: () => [], selectedDate: undefined },
 );
 
 const emit = defineEmits<{
@@ -74,6 +75,11 @@ function inMonth(day: Dayjs) {
         v-for="day in week"
         :key="keyOf(day)"
         :date="keyOf(day)"
+        :dimmed="
+          Boolean(highlightStatus) &&
+          inMonth(day) &&
+          dayMap.get(keyOf(day))?.day_status !== highlightStatus
+        "
         :in-month="inMonth(day)"
         :item="inMonth(day) ? dayMap.get(keyOf(day)) : undefined"
         :selected="selectedDate === keyOf(day)"
