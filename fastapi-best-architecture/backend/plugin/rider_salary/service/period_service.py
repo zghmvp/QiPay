@@ -798,7 +798,7 @@ class PeriodService:
         :param reason: 原因
         :return:
         """
-        period, site, _rider = await self._load_visible(db, request, pk)
+        period, site, _rider = await self._load_visible(db, request, pk, for_update=True)
         await self._assert_no_stale_drafts(db, period)
         await self._assert_all_calculated(db, period)
         before = snapshot(period, _PERIOD_FIELDS)
@@ -862,7 +862,7 @@ class PeriodService:
         :param reason: 原因
         :return:
         """
-        period, site, _rider = await self._load_visible(db, request, pk)
+        period, site, _rider = await self._load_visible(db, request, pk, for_update=True)
         before = snapshot(period, _PERIOD_FIELDS)
         self.transition(period, PeriodStatus.paid.value, request, reason)
         await db.execute(
@@ -912,7 +912,7 @@ class PeriodService:
         :param reason: 原因
         :return:
         """
-        period, site, _rider = await self._load_visible(db, request, pk)
+        period, site, _rider = await self._load_visible(db, request, pk, for_update=True)
         before = snapshot(period, _PERIOD_FIELDS)
         self.transition(period, PeriodStatus.reopened.value, request, reason)
         payrolls = list(await payroll_dao.select_models(db, period_id=period.id, deleted=0))
@@ -958,7 +958,7 @@ class PeriodService:
         :param pk: 周期 ID
         :return:
         """
-        period, site, _rider = await self._load_visible(db, request, pk)
+        period, site, _rider = await self._load_visible(db, request, pk, for_update=True)
         if period.status != PeriodStatus.open.value:
             raise errors.RequestError(msg='仅开放且没有任何薪资结果的周期可以删除')
         payroll_id = await db.scalar(
@@ -1113,8 +1113,19 @@ class PeriodService:
         db: AsyncSession,
         request: Request,
         pk: int,
+        *,
+        for_update: bool = False,
     ) -> tuple[RiderSalarySettlePeriod, RiderSalarySite | None, RiderSalaryRider | None]:
-        period = await settle_period_dao.get(db, pk)
+        if for_update:
+            # 状态流转加行锁：并发的锁账/发薪/反冲排队执行，后到者看到最新状态（B4）
+            period = await db.scalar(
+                select(RiderSalarySettlePeriod)
+                .where(RiderSalarySettlePeriod.id == pk, RiderSalarySettlePeriod.deleted == 0)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        else:
+            period = await settle_period_dao.get(db, pk)
         if period is None:
             raise errors.NotFoundError(msg='结算周期不存在')
         visible = await get_visible_site_ids(request, db)

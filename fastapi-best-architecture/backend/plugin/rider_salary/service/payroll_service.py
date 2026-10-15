@@ -134,9 +134,11 @@ class PayrollService:
     """薪资单领域服务：预支抵扣、反冲"""
 
     @staticmethod
-    async def load_paid_advances(db: AsyncSession, rider_id: int) -> list[RiderSalaryAdvance]:
-        """已发放且仍有待抵扣的预支单"""
-        rows = await db.scalars(
+    async def load_paid_advances(
+        db: AsyncSession, rider_id: int, *, for_update: bool = False
+    ) -> list[RiderSalaryAdvance]:
+        """已发放且仍有待抵扣的预支单；for_update 时加行锁，防止两个周期同时抵扣同一笔（B6）"""
+        stmt = (
             select(RiderSalaryAdvance)
             .where(
                 RiderSalaryAdvance.rider_id == rider_id,
@@ -145,6 +147,9 @@ class PayrollService:
             )
             .order_by(RiderSalaryAdvance.paid_time.asc(), RiderSalaryAdvance.id.asc())
         )
+        if for_update:
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        rows = await db.scalars(stmt)
         return [row for row in rows.all() if q2(row.remaining_amount or ZERO) > 0]
 
     async def apply_advance_deduction(
@@ -255,10 +260,13 @@ class PayrollService:
         if not advance_id:
             return
         advance = await db.scalar(
-            select(RiderSalaryAdvance).where(
+            select(RiderSalaryAdvance)
+            .where(
                 RiderSalaryAdvance.id == int(advance_id),
                 RiderSalaryAdvance.deleted == 0,
             )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if advance is None:
             return

@@ -621,6 +621,21 @@ async def _acquire_calc_lock(period_id: int, rider_id: int) -> Any:
     return lock
 
 
+async def _assert_period_writable(db: AsyncSession, period_id: int) -> None:
+    """
+    写库算薪前对周期加共享锁并重新确认状态（B3）
+
+    锁账对周期加排他锁，二者互斥：算薪进行中锁账会等待，锁账之后的算薪会被拒绝。
+    """
+    status = await db.scalar(
+        select(RiderSalarySettlePeriod.status)
+        .where(RiderSalarySettlePeriod.id == period_id, RiderSalarySettlePeriod.deleted == 0)
+        .with_for_update(read=True)
+    )
+    if status not in {PeriodStatus.open.value, PeriodStatus.reopened.value}:
+        raise errors.RequestError(msg='结算周期已锁账或已发薪，不允许算薪')
+
+
 async def calculate_rider_period(
     db: AsyncSession,
     *,
@@ -643,6 +658,8 @@ async def calculate_rider_period(
     if persist:
         lock = await _acquire_calc_lock(period.id, rider_id)
     try:
+        if persist:
+            await _assert_period_writable(db, period.id)
         return await _calculate_rider_period_inner(
             db,
             rider=rider,
@@ -766,7 +783,7 @@ async def _load_calc_input(
         ).all()
     )
     if advances is None:
-        advances = await payroll_service.load_paid_advances(db, rider.id)
+        advances = await payroll_service.load_paid_advances(db, rider.id, for_update=persist_advance)
     # 预支只在发放日所在周期及之后抵扣（纲要 §10 #33）
     advances = [row for row in advances if _paid_on(row) is None or _paid_on(row) <= end]
     return CalcInput(
@@ -948,6 +965,8 @@ async def _calculate_rider_period_inner(
         current = await payroll_dao.get_current(db, period.id, rider.id, kind)
     advances = None
     if persist:
+        # 先锁住该骑手的预支行，再加回/抵扣，避免并发算薪重复抵扣同一笔（B6）
+        await payroll_service.load_paid_advances(db, rider.id, for_update=True)
         await _restore_draft_advances(db, rider_id=rider.id, period=period)
         # 本期是更早的周期：之后周期草稿占用的预支先还回来，由本期优先抵扣
         await payroll_service.release_later_drafts(db, rider_id=rider.id, after=period.start_date)

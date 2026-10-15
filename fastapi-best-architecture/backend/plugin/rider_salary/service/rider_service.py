@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
+from enum import Enum
 from re import fullmatch
 from typing import Any
 
@@ -49,6 +50,9 @@ from backend.plugin.rider_salary.utils.recalc import mark_stale
 from backend.utils.timezone import timezone
 
 _OPEN_END = date(9999, 12, 31)
+_STALE_FROM = date(1970, 1, 1)
+_STALE_UNTIL = date(2999, 12, 31)
+_MASTER_STALE_FIELDS = ('hire_date', 'employ_type', 'site_id', 'settle_cycle_override', 'cycle_config_override')
 _MOBILE = r'^1[3-9]\d{9}$'
 _RIDER_ROLE_NAME = '骑手'
 _DEFAULT_PASSWORD = 'Rider@123456'
@@ -95,6 +99,50 @@ class BindingView:
 
 def _as_end(value: date | None) -> date:
     return value if value is not None else _OPEN_END
+
+
+def _field_value(value: Any) -> Any:
+    return value.value if isinstance(value, Enum) else value
+
+
+def _param_changed(obj: Any, name: str, current: Any) -> bool:
+    """请求显式带上且与当前值不同"""
+    if name not in obj.model_fields_set:
+        return False
+    return _field_value(getattr(obj, name)) != _field_value(current)
+
+
+def _earlier_date(left: date | None, right: date | None) -> date | None:
+    values = [item for item in (left, right) if item is not None]
+    if not values:
+        return None
+    return min(values)
+
+
+def changed_ranges(
+    old_start: date,
+    old_end: date | None,
+    new_start: date,
+    new_end: date | None,
+    *,
+    content_changed: bool,
+) -> list[tuple[date, date | None]]:
+    """
+    区间调整时真正受影响的日期段（结束日期 None 表示无限远）
+
+    内容（如用工类型）变了则新旧区间全部受影响；只挪起止日期时，只有挪动的那几段受影响。
+    """
+    old_e, new_e = _as_end(old_end), _as_end(new_end)
+    if content_changed:
+        end = max(old_e, new_e)
+        return [(min(old_start, new_start), None if end == _OPEN_END else end)]
+    ranges: list[tuple[date, date | None]] = []
+    if old_start != new_start:
+        ranges.append((min(old_start, new_start), max(old_start, new_start) - timedelta(days=1)))
+    if old_e != new_e:
+        end = max(old_e, new_e)
+        ranges.append((min(old_e, new_e) + timedelta(days=1), None if end == _OPEN_END else end))
+    return ranges
 
 
 def ranges_overlap(a_start: date, a_end: date | None, b_start: date, b_end: date | None) -> bool:
@@ -452,9 +500,26 @@ class RiderService:
             assert_site_visible(visible, obj.site_id)
             if not await site_dao.get(db, obj.site_id):
                 raise errors.NotFoundError(msg='站点不存在')
+        leave_from = None
+        if _param_changed(obj, 'leave_date', rider.leave_date):
+            leave_from = _earlier_date(rider.leave_date, obj.leave_date)
+            if leave_from is not None:
+                # 离职日当天仍在职，受影响的是次日起
+                await RiderService._assert_binding_unlocked(
+                    db,
+                    site_id=rider.site_id,
+                    rider_id=pk,
+                    start_date=leave_from + timedelta(days=1),
+                    end_date=None,
+                )
+        master_changed = any(_param_changed(obj, name, getattr(rider, name)) for name in _MASTER_STALE_FIELDS)
         before = snapshot(rider, _RIDER_FIELDS)
         count = await rider_dao.update(db, pk, obj)
         updated = await rider_dao.get(db, pk)
+        if leave_from is not None:
+            await mark_stale(db, rider_ids=[pk], date_from=leave_from, date_to=_STALE_UNTIL)
+        if master_changed:
+            await mark_stale(db, rider_ids=[pk], date_from=_STALE_FROM, date_to=_STALE_UNTIL)
         await audit_service.record(
             db,
             request,
@@ -526,6 +591,13 @@ class RiderService:
         rider = await RiderService._get_visible_rider(db=db, request=request, pk=pk)
         if rider.status == RiderStatus.resigned:
             raise errors.ConflictError(msg='该骑手已离职')
+        await RiderService._assert_binding_unlocked(
+            db,
+            site_id=rider.site_id,
+            rider_id=pk,
+            start_date=obj.leave_date + timedelta(days=1),
+            end_date=None,
+        )
         before = snapshot(rider, _RIDER_FIELDS)
         await rider_employ_history_dao.close_open(db, pk, obj.leave_date)
         count = await rider_dao.update(
@@ -534,6 +606,7 @@ class RiderService:
             UpdateRiderParam(status=RiderStatus.resigned, leave_date=obj.leave_date, reason=obj.reason),
         )
         updated = await rider_dao.get(db, pk)
+        await mark_stale(db, rider_ids=[pk], date_from=obj.leave_date, date_to=_STALE_UNTIL)
         await audit_service.record(
             db,
             request,
@@ -566,12 +639,31 @@ class RiderService:
         rider = await RiderService._get_visible_rider(db=db, request=request, pk=pk)
         check_range_order(obj.start_date, obj.end_date)
         existing = await rider_employ_history_dao.get_by_rider(db, pk)
+        to_close: list[tuple[RiderSalaryRiderEmployHistory, date]] = []
         for item in existing:
             if item.end_date is not None or item.start_date >= obj.start_date:
                 continue
             close_end = obj.start_date - timedelta(days=1)
             if close_end < item.start_date:
                 continue
+            to_close.append((item, close_end))
+        if to_close:
+            # 收尾上一开放段只影响新段起始日之后
+            await RiderService._assert_binding_unlocked(
+                db,
+                site_id=rider.site_id,
+                rider_id=pk,
+                start_date=obj.start_date,
+                end_date=None,
+            )
+        await RiderService._assert_binding_unlocked(
+            db,
+            site_id=rider.site_id,
+            rider_id=pk,
+            start_date=obj.start_date,
+            end_date=obj.end_date,
+        )
+        for item, close_end in to_close:
             before = snapshot(item, _HISTORY_FIELDS)
             await rider_employ_history_dao.update(
                 db,
@@ -583,7 +675,7 @@ class RiderService:
                 db,
                 rider_ids=[pk],
                 date_from=item.start_date,
-                date_to=close_end,
+                date_to=_as_end(None),
             )
             await audit_service.record(
                 db,
@@ -635,12 +727,23 @@ class RiderService:
         check_range_order(start_date, end_date)
         existing = await rider_employ_history_dao.get_by_rider(db, pk)
         check_employ_overlap(existing, start_date, end_date, exclude_id=history_id)
+        union_from = min(row.start_date, start_date)
+        union_to = max(_as_end(row.end_date), _as_end(end_date))
+        type_changed = obj.employ_type is not None and _field_value(obj.employ_type) != row.employ_type
+        for range_from, range_to in changed_ranges(
+            row.start_date, row.end_date, start_date, end_date, content_changed=type_changed
+        ):
+            await RiderService._assert_binding_unlocked(
+                db,
+                site_id=rider.site_id,
+                rider_id=pk,
+                start_date=range_from,
+                end_date=range_to,
+            )
         before = snapshot(row, _HISTORY_FIELDS)
         count = await rider_employ_history_dao.update(db, history_id, obj)
         updated = await rider_employ_history_dao.get(db, history_id)
-        date_from = min(row.start_date, start_date)
-        date_to = max(_as_end(row.end_date), _as_end(end_date))
-        await mark_stale(db, rider_ids=[pk], date_from=date_from, date_to=date_to)
+        await mark_stale(db, rider_ids=[pk], date_from=union_from, date_to=union_to)
         await audit_service.record(
             db,
             request,
@@ -661,6 +764,13 @@ class RiderService:
         row = await rider_employ_history_dao.get(db, history_id)
         if not row or row.rider_id != pk:
             raise errors.NotFoundError(msg='用工类型历史不存在')
+        await RiderService._assert_binding_unlocked(
+            db,
+            site_id=rider.site_id,
+            rider_id=pk,
+            start_date=row.start_date,
+            end_date=row.end_date,
+        )
         before = snapshot(row, _HISTORY_FIELDS)
         count = await rider_employ_history_dao.delete(db, history_id)
         await mark_stale(db, rider_ids=[pk], date_from=row.start_date, date_to=_as_end(row.end_date))
