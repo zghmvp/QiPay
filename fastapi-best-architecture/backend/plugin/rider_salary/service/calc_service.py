@@ -31,6 +31,7 @@ from backend.plugin.rider_salary.enums import (
     PayrollKind,
     PayrollStatus,
     PeriodStatus,
+    PlanVersionStatus,
     SubjectDirection,
 )
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment
@@ -152,6 +153,8 @@ class CalcInput:
     # 此前周期结转的欠款（负数为多扣退回）；更早周期仍有草稿时本期不处理欠款与预支
     carry_debt: Decimal = ZERO
     defer_settlement: bool = False
+    # 取数阶段产生的告警（如绑定的方案版本已作废）
+    load_warnings: list[str] = field(default_factory=list)
 
 
 def _json_safe(value: Any) -> Any:
@@ -257,7 +260,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
     """
     纲要 §3 算薪流水线（纯内存，供正式算薪与单测共用）
     """
-    warnings: list[str] = []
+    warnings: list[str] = list(data.load_warnings)
     details: list[CalcDetail] = []
     rider_id = data.rider_id
     orders = list(data.orders)
@@ -760,6 +763,20 @@ async def _load_calc_input(
     excluded = set(excluded_dates or ())
     site_id = period.site_id
     segments = await resolve_segments(db, rider.id, start, end, forced=forced_plan_version)
+    load_warnings: list[str] = []
+    if forced_plan_version is None:
+        # 已作废（回退）的版本不再计薪（B11）
+        voided = [
+            seg
+            for seg in segments
+            if seg.plan_version is not None and seg.plan_version.status == PlanVersionStatus.voided.value
+        ]
+        load_warnings.extend(
+            f'{seg.start_date}~{seg.end_date} 绑定的方案版本 v{seg.plan_version.version_no} 已作废，该段未计薪，请重新绑定方案'
+            for seg in voided
+        )
+        voided_ids = {id(seg) for seg in voided}
+        segments = [seg for seg in segments if id(seg) not in voided_ids]
     orders = list(
         (
             await db.scalars(
@@ -878,6 +895,7 @@ async def _load_calc_input(
         persist_advance=persist_advance,
         period_id=period.id,
         excluded_dates=excluded,
+        load_warnings=load_warnings,
     )
 
 

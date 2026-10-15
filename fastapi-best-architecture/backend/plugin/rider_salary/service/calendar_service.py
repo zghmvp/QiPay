@@ -322,9 +322,7 @@ class CalendarService:
             cache = dailies.get(day)
             day_orders = orders_by_day.get(day, [])
             completed = [
-                row
-                for row in day_orders
-                if row.status == OrderStatus.completed.value and row.deliver_time is not None
+                row for row in day_orders if row.status == OrderStatus.completed.value and row.deliver_time is not None
             ]
             plan_vid = plan_by_day.get(day)
             imported = day in covered or day in site_order_dates
@@ -666,15 +664,35 @@ async def _adjustments_in_range(db: AsyncSession, rider_id: int, start: date, en
 
 
 async def _details_in_range(db: AsyncSession, rider_id: int, start: date, end: date) -> list[RiderSalaryPayrollDetail]:
-    rows = await db.scalars(
-        select(RiderSalaryPayrollDetail).where(
-            RiderSalaryPayrollDetail.rider_id == rider_id,
-            RiderSalaryPayrollDetail.biz_date >= start,
-            RiderSalaryPayrollDetail.biz_date <= end,
-            RiderSalaryPayrollDetail.deleted == 0,
-        )
+    """只取每个周期当前有效薪资单的明细，不叠加原单、反冲单和作废单（B10）"""
+    rows = list(
+        (
+            await db.scalars(
+                select(RiderSalaryPayrollDetail).where(
+                    RiderSalaryPayrollDetail.rider_id == rider_id,
+                    RiderSalaryPayrollDetail.biz_date >= start,
+                    RiderSalaryPayrollDetail.biz_date <= end,
+                    RiderSalaryPayrollDetail.deleted == 0,
+                )
+            )
+        ).all()
     )
-    return list(rows.all())
+    payroll_ids = {row.payroll_id for row in rows}
+    if not payroll_ids:
+        return []
+    payrolls = (
+        await db.scalars(
+            select(RiderSalaryPayroll).where(
+                RiderSalaryPayroll.id.in_(payroll_ids),
+                RiderSalaryPayroll.deleted == 0,
+            )
+        )
+    ).all()
+    by_period: dict[int, list[RiderSalaryPayroll]] = defaultdict(list)
+    for payroll in payrolls:
+        by_period[payroll.period_id].append(payroll)
+    effective = {picked.id for group in by_period.values() if (picked := pick_effective_payroll(group)) is not None}
+    return [row for row in rows if row.payroll_id in effective]
 
 
 async def _subjects_map(db: AsyncSession, ids: set[int]) -> dict[int, RiderSalarySubject]:

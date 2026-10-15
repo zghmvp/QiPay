@@ -243,3 +243,49 @@ def test_b8_mid_period_plan_switch_pays_base_and_guarantee_once() -> None:
         assert any('只按期末方案计算一次' in text for text in row.warnings or [])
 
     run_db(_case)
+
+
+def test_b10_calendar_day_shows_only_effective_payroll_amounts() -> None:
+    from backend.plugin.rider_salary.service.calendar_service import calendar_service
+
+    async def _case(db: AsyncSession) -> None:
+        seed = Seed(db)
+        req = admin_request()
+        site = await seed.site()
+        rider = await seed.rider(site)
+        version = await seed.plan_version([{'formula': '5'}])
+        await seed.bind(rider, version, SEP1)
+        await seed.orders(rider, date(2026, 9, 3), 2)
+        period = await seed.period(site, SEP1, SEP30)
+        await calculate_period(db, period_id=period.id, operator=req)
+        await period_service.lock(db=db, request=req, pk=period.id, reason='锁账')
+        await period_service.reverse(db=db, request=req, pk=period.id, reason='补发')
+        await calculate_period(db, period_id=period.id, operator=req)
+
+        day = await calendar_service.build_day(db, rider.id, date(2026, 9, 3))
+        # 原单 +10、反冲 -10、补发 +10：只显示补发单的 10
+        assert day.totals.formula_amount == Decimal(10)
+        assert [[hit.amount for hit in order.details] for order in day.orders] == [[Decimal(5)], [Decimal(5)]]
+
+    run_db(_case)
+
+
+def test_b11_voided_plan_version_is_not_paid() -> None:
+    from backend.plugin.rider_salary.enums import PlanVersionStatus
+
+    async def _case(db: AsyncSession) -> None:
+        seed = Seed(db)
+        site = await seed.site()
+        rider = await seed.rider(site)
+        version = await seed.plan_version([{'formula': '5'}])
+        await seed.bind(rider, version, SEP1)
+        await seed.orders(rider, date(2026, 9, 3), 2)
+        version.status = PlanVersionStatus.voided.value
+        await db.flush()
+        period = await seed.period(site, SEP1, SEP30)
+        await calculate_period(db, period_id=period.id, operator=admin_request())
+        row = (await _payrolls(db, period.id))[0]
+        assert row.gross == Decimal(0)
+        assert any('已作废' in text for text in row.warnings or [])
+
+    run_db(_case)
