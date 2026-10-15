@@ -1,3 +1,5 @@
+import type { MoneyValue } from './common';
+
 export interface RiderResult {
   account_status?: null | number;
   account_status_label?: null | string;
@@ -97,8 +99,17 @@ export interface EmployHistoryForm {
 }
 
 export interface RiderLeaveForm {
+  /** 已知晓尚有未扣回预支或欠款 */
+  confirm_outstanding?: boolean;
   leave_date: string;
   reason: string;
+}
+
+export interface RiderLeaveCheck {
+  debt_amount: MoneyValue;
+  in_flight_amount: MoneyValue;
+  in_flight_count: number;
+  undeducted_amount: MoneyValue;
 }
 
 export interface RiderAccountForm {

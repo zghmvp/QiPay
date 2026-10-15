@@ -19,6 +19,7 @@ from backend.plugin.rider_salary.schema.rider import (
     GetEmployHistoryDetail,
     GetPlanBindingDetail,
     GetRiderDetail,
+    GetRiderLeaveCheck,
     OpenRiderAccountParam,
     ResetRiderPasswordParam,
     RiderLeaveParam,
@@ -254,6 +255,23 @@ async def get_effective_plans(
     end: Annotated[date, Query(description='结束日期')],
 ) -> ResponseSchemaModel[list[GetEffectivePlanSegment]]:
     data = await rider_service.get_effective_plans(db=db, request=request, pk=pk, start=start, end=end)
+    return response_base.success(data=data)
+
+
+@router.get(
+    '/{pk}/leave-check',
+    summary='离职前检查',
+    dependencies=[
+        Depends(RequestPermission('rs:rider:edit')),
+        DependsRBAC,
+    ],
+)
+async def check_rider_leave(
+    db: CurrentSession,
+    request: Request,
+    pk: Annotated[int, Path(description='骑手 ID')],
+) -> ResponseSchemaModel[GetRiderLeaveCheck]:
+    data = await rider_service.leave_check(db=db, request=request, pk=pk)
     return response_base.success(data=data)
 
 

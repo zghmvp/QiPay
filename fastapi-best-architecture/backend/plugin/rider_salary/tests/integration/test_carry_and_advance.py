@@ -222,3 +222,38 @@ def test_a5_quote_counts_undeducted_advance_and_estimate_subtracts_it() -> None:
         assert quote.available == Decimal(200)
 
     run_db(_case)
+
+
+def test_a9_leave_blocks_in_flight_and_requires_confirm_for_outstanding() -> None:
+    import pytest
+
+    from backend.common.exception import errors
+    from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance
+    from backend.plugin.rider_salary.schema.rider import RiderLeaveParam
+    from backend.plugin.rider_salary.service.rider_service import rider_service
+
+    async def _case(db: AsyncSession) -> None:
+        seed = Seed(db)
+        req = admin_request()
+        site = await seed.site()
+        rider = await seed.rider(site)
+        pending = await seed.add(
+            RiderSalaryAdvance(rider_id=rider.id, site_id=site.id, amount=Decimal(50), reason='急用', status='pending')
+        )
+        leave = RiderLeaveParam(leave_date=date(2026, 10, 20), reason='个人原因')
+        with pytest.raises(errors.RequestError, match='待审核或待发放'):
+            await rider_service.leave(db=db, request=req, pk=rider.id, obj=leave)
+
+        pending.status = 'rejected'
+        await seed.paid_advance(rider, '120')
+        check = await rider_service.leave_check(db=db, request=req, pk=rider.id)
+        assert (check.in_flight_count, check.undeducted_amount, check.debt_amount) == (0, Decimal(120), Decimal(0))
+        with pytest.raises(errors.RequestError, match='未扣回预支 120.00 元'):
+            await rider_service.leave(db=db, request=req, pk=rider.id, obj=leave)
+
+        leave.confirm_outstanding = True
+        assert await rider_service.leave(db=db, request=req, pk=rider.id, obj=leave) > 0
+        await db.refresh(rider)
+        assert rider.leave_date == date(2026, 10, 20)
+
+    run_db(_case)

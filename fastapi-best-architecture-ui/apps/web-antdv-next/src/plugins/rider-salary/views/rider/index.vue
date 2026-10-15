@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { VbenFormProps } from '@vben/common-ui';
 
-import type { RiderForm, RiderResult } from '../../types/rider';
+import type { RiderForm, RiderLeaveCheck, RiderResult } from '../../types/rider';
 
 import type {
   OnActionClickParams,
@@ -11,7 +11,7 @@ import type {
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { useVbenDrawer, VbenButton } from '@vben/common-ui';
+import { confirm, useVbenDrawer, VbenButton } from '@vben/common-ui';
 import { MaterialSymbolsAdd } from '@vben/icons';
 
 import { message } from 'antdv-next';
@@ -25,12 +25,14 @@ import {
   disableRiderAccountApi,
   enableRiderAccountApi,
   getRiderApi,
+  getRiderLeaveCheckApi,
   getRiderListApi,
   leaveRiderApi,
   openRiderAccountApi,
   resetRiderPasswordApi,
   updateRiderApi,
 } from '../../api/rider';
+import MoneyText from '../../components/MoneyText.vue';
 import { useReasonModal } from '../../components/use-reason-modal';
 import { toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
@@ -213,6 +215,11 @@ const [Drawer, drawerApi] = useVbenDrawer({
 });
 
 const leaveTarget = ref<RiderResult>();
+const leaveCheck = ref<RiderLeaveCheck>();
+const leaveBlocked = computed(() => (leaveCheck.value?.in_flight_count ?? 0) > 0);
+const leaveOutstanding = computed(
+  () => Number(leaveCheck.value?.undeducted_amount ?? 0) + Number(leaveCheck.value?.debt_amount ?? 0) > 0,
+);
 const [LeaveForm, leaveFormApi] = useVbenForm({
   layout: 'vertical',
   schema: [
@@ -238,13 +245,27 @@ const [LeaveDrawer, leaveDrawerApi] = useVbenDrawer({
   async onConfirm() {
     const pk = leaveTarget.value?.id;
     if (!pk) return;
+    if (leaveBlocked.value) {
+      message.warning('请先驳回或发放该骑手的在途预支，再办理离职');
+      return;
+    }
     const { valid } = await leaveFormApi.validate();
     if (!valid) return;
     const values = await leaveFormApi.getValues<{ leave_date: string }>();
+    if (leaveOutstanding.value) {
+      await confirm({
+        content: `该骑手尚有未扣回预支 ${leaveCheck.value?.undeducted_amount} 元、欠款 ${leaveCheck.value?.debt_amount} 元。离职结算时从最后一期工资中扣回，不足部分需线下追回。确认继续办理离职？`,
+        icon: 'warning',
+      });
+    }
     const { reason } = await prompt({ title: '离职原因' });
     leaveDrawerApi.lock();
     try {
-      await leaveRiderApi(pk, { leave_date: values.leave_date, reason });
+      await leaveRiderApi(pk, {
+        confirm_outstanding: leaveOutstanding.value,
+        leave_date: values.leave_date,
+        reason,
+      });
       message.success('已办理离职');
       await leaveDrawerApi.close();
       onRefresh();
@@ -252,9 +273,12 @@ const [LeaveDrawer, leaveDrawerApi] = useVbenDrawer({
       leaveDrawerApi.unlock();
     }
   },
-  onOpenChange(isOpen) {
+  async onOpenChange(isOpen) {
     if (!isOpen) return;
     leaveFormApi.resetForm();
+    leaveCheck.value = undefined;
+    const pk = leaveTarget.value?.id;
+    if (pk) leaveCheck.value = await getRiderLeaveCheckApi(pk);
   },
 });
 
@@ -304,6 +328,19 @@ onMounted(() => {
       <Form />
     </Drawer>
     <LeaveDrawer title="骑手离职">
+      <a-alert
+        v-if="leaveBlocked"
+        class="mb-4"
+        show-icon
+        type="error"
+        :message="`该骑手有 ${leaveCheck?.in_flight_count} 笔待审核或待发放的预支，请先驳回或发放后再办理离职`"
+      />
+      <a-alert v-else-if="leaveOutstanding" class="mb-4" show-icon type="warning">
+        <template #message>
+          尚有未扣回预支 <MoneyText :value="leaveCheck?.undeducted_amount" /> 元、欠款
+          <MoneyText :value="leaveCheck?.debt_amount" /> 元，将在离职结算时从最后一期工资中扣回
+        </template>
+      </a-alert>
       <LeaveForm />
     </LeaveDrawer>
     <ReasonModal />

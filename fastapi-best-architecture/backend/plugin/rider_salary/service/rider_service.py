@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 from enum import Enum
 from re import fullmatch
 from typing import Any
@@ -21,7 +22,15 @@ from backend.plugin.rider_salary.crud.rider import rider_dao
 from backend.plugin.rider_salary.crud.rider_employ_history import rider_employ_history_dao
 from backend.plugin.rider_salary.crud.rider_plan_binding import rider_plan_binding_dao
 from backend.plugin.rider_salary.crud.site import site_dao
-from backend.plugin.rider_salary.enums import BindingType, PeriodStatus, PlanVersionStatus, RiderStatus
+from backend.plugin.rider_salary.enums import (
+    AdvanceStatus,
+    BindingType,
+    PayrollStatus,
+    PeriodStatus,
+    PlanVersionStatus,
+    RiderStatus,
+)
+from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.model.plan import RiderSalaryPlan
@@ -36,6 +45,7 @@ from backend.plugin.rider_salary.schema.rider import (
     DisableRiderAccountParam,
     EnableRiderAccountParam,
     GetEffectivePlanSegment,
+    GetRiderLeaveCheck,
     OpenRiderAccountParam,
     ResetRiderPasswordParam,
     RiderLeaveParam,
@@ -44,8 +54,10 @@ from backend.plugin.rider_salary.schema.rider import (
     UpdateRiderParam,
 )
 from backend.plugin.rider_salary.service.audit_service import audit_service, snapshot
+from backend.plugin.rider_salary.service.payroll_service import payroll_service
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
 from backend.plugin.rider_salary.utils.lock_check import assert_not_locked
+from backend.plugin.rider_salary.utils.money import q2
 from backend.plugin.rider_salary.utils.recalc import mark_stale
 from backend.utils.timezone import timezone
 
@@ -591,6 +603,17 @@ class RiderService:
         rider = await RiderService._get_visible_rider(db=db, request=request, pk=pk)
         if rider.status == RiderStatus.resigned:
             raise errors.ConflictError(msg='该骑手已离职')
+        check = await RiderService._leave_check(db, pk)
+        if check.in_flight_count > 0:
+            raise errors.RequestError(
+                msg=f'该骑手有 {check.in_flight_count} 笔待审核或待发放的预支，请先驳回或发放后再办理离职'
+            )
+        outstanding = q2(check.undeducted_amount + check.debt_amount)
+        if outstanding > 0 and not obj.confirm_outstanding:
+            raise errors.RequestError(
+                msg=f'该骑手尚有未扣回预支 {check.undeducted_amount} 元、欠款 {check.debt_amount} 元，'
+                '请确认后再办理离职'
+            )
         await RiderService._assert_binding_unlocked(
             db,
             site_id=rider.site_id,
@@ -618,8 +641,54 @@ class RiderService:
             reason=obj.reason,
             before=before,
             after=snapshot(updated, _RIDER_FIELDS) if updated else None,
+            description=(
+                f'离职时尚有未扣回预支 {check.undeducted_amount} 元、欠款 {check.debt_amount} 元，操作人已确认'
+                if outstanding > 0
+                else None
+            ),
         )
         return count
+
+    @staticmethod
+    async def leave_check(*, db: AsyncSession, request: Request, pk: int) -> GetRiderLeaveCheck:
+        """离职前检查"""
+        await RiderService._get_visible_rider(db=db, request=request, pk=pk)
+        return await RiderService._leave_check(db, pk)
+
+    @staticmethod
+    async def _leave_check(db: AsyncSession, rider_id: int) -> GetRiderLeaveCheck:
+        in_flight = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryAdvance.amount).where(
+                        RiderSalaryAdvance.rider_id == rider_id,
+                        RiderSalaryAdvance.status.in_([AdvanceStatus.pending.value, AdvanceStatus.to_pay.value]),
+                        RiderSalaryAdvance.deleted == 0,
+                    )
+                )
+            ).all()
+        )
+        remaining = await db.scalar(
+            select(func.coalesce(func.sum(RiderSalaryAdvance.remaining_amount), 0)).where(
+                RiderSalaryAdvance.rider_id == rider_id,
+                RiderSalaryAdvance.status == AdvanceStatus.paid.value,
+                RiderSalaryAdvance.deleted == 0,
+            )
+        )
+        held = await db.scalar(
+            select(func.coalesce(func.sum(RiderSalaryPayroll.advance_deduction), 0)).where(
+                RiderSalaryPayroll.rider_id == rider_id,
+                RiderSalaryPayroll.status == PayrollStatus.draft.value,
+                RiderSalaryPayroll.deleted == 0,
+            )
+        )
+        debt = await payroll_service.outstanding_debt(db, rider_id=rider_id, before=_STALE_UNTIL)
+        return GetRiderLeaveCheck(
+            in_flight_count=len(in_flight),
+            in_flight_amount=q2(sum(in_flight, Decimal(0))),
+            undeducted_amount=q2(Decimal(remaining or 0) + Decimal(held or 0)),
+            debt_amount=q2(max(debt, Decimal(0))),
+        )
 
     @staticmethod
     async def list_employ_history(*, db: AsyncSession, request: Request, pk: int) -> Any:
