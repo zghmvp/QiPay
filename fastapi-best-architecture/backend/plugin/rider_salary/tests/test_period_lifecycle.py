@@ -132,3 +132,33 @@ def test_summarize_trace_one_line_chinese() -> None:
     assert '公式：(配送距离 - 5) * 0.8' in text
     assert '配送距离=7.2' in text
     assert '结果=1.76' in text
+
+
+def test_c5_current_round_payable_uses_latest_unreversed_supplement() -> None:
+    from types import SimpleNamespace
+
+    from backend.plugin.rider_salary.service.export_service import _current_round_payable
+
+    def row(pk, kind, net, *, version=1, reversed_=False, reversed_of=None):
+        return SimpleNamespace(
+            id=pk,
+            rider_id=1,
+            kind=kind,
+            net=Decimal(net),
+            calc_version=version,
+            reversed=reversed_,
+            reversed_of_id=reversed_of,
+        )
+
+    # 原单 100 被反冲，第一轮补发 90 又被反冲，第二轮补发 95
+    payrolls = [
+        row(1, 'normal', '100', version=1, reversed_=True),
+        row(2, 'reversal', '-100', version=1, reversed_of=1),
+        row(3, 'supplement', '90', version=2, reversed_=True),
+        row(4, 'reversal', '-90', version=2, reversed_of=3),
+        row(5, 'supplement', '95', version=3),
+    ]
+    # 本轮应付 = 冲掉上一轮的 -90 + 本轮补发 95
+    assert _current_round_payable(payrolls) == Decimal('5')
+    # 没有补发时退回本期净差
+    assert _current_round_payable(payrolls[:2]) == Decimal('0')
