@@ -37,6 +37,10 @@ export interface PeriodWithPayrolls extends PeriodResult {
 }
 
 export interface PeriodQuery extends PageParams {
+  cycle_type?: string;
+  date_from?: string;
+  date_to?: string;
+  has_stale?: boolean;
   month?: string;
   rider_id?: number;
   site_id?: number;

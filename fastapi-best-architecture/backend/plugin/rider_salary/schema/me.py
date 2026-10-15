@@ -43,10 +43,10 @@ class GetMePayrollEstimate(SchemaBase):
     period_range: str = Field(description='周期区间')
     period_status: str = Field(description='周期状态')
     order_count: int = Field(description='单量')
-    gross: Decimal = Field(description='应发')
-    deduction_total: Decimal = Field(description='代扣')
-    advance_deduction_estimate: Decimal = Field(description='预支抵扣（预估）')
-    net_estimate: Decimal = Field(description='实发预估')
+    gross: Decimal | None = Field(description='应发')
+    deduction_total: Decimal | None = Field(description='代扣')
+    advance_deduction_estimate: Decimal | None = Field(description='预支抵扣（预估）')
+    net_estimate: Decimal | None = Field(description='实发预估')
     is_estimate: bool = Field(description='是否实时预估')
     updated_at: datetime | None = Field(None, description='更新时间')
 
@@ -94,9 +94,21 @@ class GetMePlan(SchemaBase):
 class GetMeAdvanceLimit(SchemaBase):
     """预支额度"""
 
-    limit: Decimal = Field(description='上限')
-    used_pending_amount: Decimal = Field(description='在途占用')
-    available: Decimal = Field(description='可用额度')
+    limit: Decimal = Field(description='本周期可预支上限')
+    used_pending_amount: Decimal | None = Field(description='在途占用')
+    available: Decimal = Field(description='当前可申请额度')
+    estimate_net: Decimal | None = Field(description='当前周期预估实发')
+    order_count: int = Field(description='当前周期完成订单数')
+    amount_mode: str = Field(description='额度方式：percent 或 fixed')
+    percent: Decimal = Field(description='预估实发百分比')
+    monthly_used_count: int = Field(description='本月已计入的预支次数')
+    monthly_max_count: int = Field(description='每月预支次数上限')
+    min_amount: Decimal = Field(description='单笔最低金额')
+    eligible: bool = Field(description='当前是否允许提交')
+    reasons: list[str] = Field(default_factory=list, description='不能预支的原因')
+    basis_text: str = Field(description='额度计算说明')
+    period_range: str = Field(description='当前结算周期')
+    period_status: str = Field(description='当前结算周期状态')
 
 
 class GetMeCalendar(GetCalendarMonth):

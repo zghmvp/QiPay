@@ -12,10 +12,11 @@ import PageContainer from '../_shared/PageContainer.vue';
 import { querySchema, useColumns } from './data';
 
 const formOptions: VbenFormProps = {
-  collapsed: true,
+  collapsed: false,
   schema: querySchema,
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
+  wrapperClass: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4',
 };
 
 const gridOptions: VxeTableGridOptions<AuditLogResult> = {

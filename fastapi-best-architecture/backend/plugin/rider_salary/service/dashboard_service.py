@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import and_, func, or_, select, true
+from sqlalchemy import and_, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.plugin.rider_salary.engine.context import iter_dates
@@ -97,6 +97,7 @@ class DashboardService:
                     RiderSalaryOrder.biz_date >= start,
                     RiderSalaryOrder.biz_date <= end,
                     RiderSalaryOrder.status == OrderStatus.completed.value,
+                    RiderSalaryOrder.deliver_time.is_not(None),
                     RiderSalaryOrder.deleted == 0,
                     order_filter,
                 )
@@ -221,9 +222,6 @@ class DashboardService:
         gap_block = await self._import_gaps(db, site_ids, start, end, today)
         if gap_block:
             blocks.append(gap_block)
-        abnormal_block = await self._abnormal_orders(db, site_ids, start, end)
-        if abnormal_block:
-            blocks.append(abnormal_block)
         due_block = await self._due_periods(db, site_ids, today)
         if due_block:
             blocks.append(due_block)
@@ -427,72 +425,6 @@ class DashboardService:
             count=total,
             items=items,
             link='/rider-salary/order',
-        )
-
-    async def _abnormal_orders(
-        self,
-        db: AsyncSession,
-        site_ids: set[int] | None,
-        start: date,
-        end: date,
-    ) -> DashboardAttentionBlock | None:
-        duration_sec = func.extract('epoch', RiderSalaryOrder.deliver_time - RiderSalaryOrder.order_time)
-        abnormal_cond = or_(
-            RiderSalaryOrder.status.in_([OrderStatus.abnormal.value, OrderStatus.refunded.value]),
-            and_(RiderSalaryOrder.deliver_time.is_not(None), duration_sec > 3600),
-        )
-        total = int(
-            await db.scalar(
-                select(func.count())
-                .select_from(RiderSalaryOrder)
-                .where(
-                    RiderSalaryOrder.biz_date >= start,
-                    RiderSalaryOrder.biz_date <= end,
-                    RiderSalaryOrder.deleted == 0,
-                    _site_filter(RiderSalaryOrder.site_id, site_ids),
-                    abnormal_cond,
-                )
-            )
-            or 0
-        )
-        if total <= 0:
-            return None
-        matched = list(
-            (
-                await db.scalars(
-                    select(RiderSalaryOrder)
-                    .where(
-                        RiderSalaryOrder.biz_date >= start,
-                        RiderSalaryOrder.biz_date <= end,
-                        RiderSalaryOrder.deleted == 0,
-                        _site_filter(RiderSalaryOrder.site_id, site_ids),
-                        abnormal_cond,
-                    )
-                    .order_by(RiderSalaryOrder.id.desc())
-                    .limit(_ATTENTION_LIMIT)
-                )
-            ).all()
-        )
-        rider_map = await _riders_by_id(db, [row.rider_id for row in matched])
-        items = []
-        for row in matched:
-            duration = None
-            if row.deliver_time is not None and row.order_time is not None:
-                duration = round((row.deliver_time - row.order_time).total_seconds() / 60, 1)
-            items.append({
-                'id': row.id,
-                'order_no': row.order_no,
-                'rider_id': row.rider_id,
-                'rider_name': getattr(rider_map.get(row.rider_id), 'name', ''),
-                'status': row.status,
-                'duration_min': duration,
-            })
-        return DashboardAttentionBlock(
-            key='abnormal_orders',
-            title='异常订单',
-            count=total,
-            items=items,
-            link='/rider-salary/order?status=abnormal',
         )
 
     async def _due_periods(

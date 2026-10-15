@@ -38,6 +38,7 @@ class CRUDSite(CRUDPlus[RiderSalarySite]):
         code: str | None,
         status: str | None,
         site_ids: set[int] | None,
+        settle_cycle: str | None = None,
     ) -> Select:
         """
         站点列表查询
@@ -55,6 +56,8 @@ class CRUDSite(CRUDPlus[RiderSalarySite]):
             filters['code__like'] = f'%{code}%'
         if status:
             filters['status'] = status
+        if settle_cycle:
+            filters['settle_cycle'] = settle_cycle
         if site_ids is not None:
             filters['id__in'] = list(site_ids) or [-1]
         return await self.select_order('id', 'desc', **filters)

@@ -33,6 +33,7 @@ async def get_audit_logs_paginated(
     date_to: Annotated[str | None, Query(description='结束时间')] = None,
     target_type: Annotated[str | None, Query(description='对象类型')] = None,
     keyword: Annotated[str | None, Query(description='关键字')] = None,
+    target: Annotated[str | None, Query(description='对象')] = None,
 ) -> ResponseSchemaModel[PageData[GetAuditLogDetail]]:
     page_data = await audit_service.get_list(
         db=db,
@@ -43,5 +44,6 @@ async def get_audit_logs_paginated(
         date_to=date_to,
         target_type=target_type,
         keyword=keyword,
+        target=target,
     )
     return response_base.success(data=page_data)

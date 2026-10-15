@@ -40,6 +40,8 @@ async def get_adjustments_paginated(
     date_from: Annotated[date | None, Query(description='开始日期')] = None,
     date_to: Annotated[date | None, Query(description='结束日期')] = None,
     direction: Annotated[str | None, Query(description='方向')] = None,
+    is_locked: Annotated[bool | None, Query(description='是否已锁账')] = None,
+    remark: Annotated[str | None, Query(description='备注')] = None,
 ) -> ResponseSchemaModel[PageData[GetAdjustmentDetail]]:
     page_data = await adjustment_service.get_list(
         db=db,
@@ -50,6 +52,8 @@ async def get_adjustments_paginated(
         date_from=date_from,
         date_to=date_to,
         direction=direction,
+        is_locked=is_locked,
+        remark=remark,
     )
     return response_base.success(data=page_data)
 

@@ -31,6 +31,7 @@ interface CellState {
 
 const siteId = ref<number>();
 const month = ref(currentMonth());
+const flagFilter = ref<string>();
 const loading = ref(false);
 const saving = ref(false);
 const cells = reactive<Record<string, CellState>>({});
@@ -65,6 +66,17 @@ function keyOf(day: Dayjs) {
 
 function isCurrentMonth(day: Dayjs) {
   return day.format('YYYY-MM') === month.value;
+}
+
+function matchesFlag(day: Dayjs) {
+  if (!flagFilter.value) return true;
+  const cell = cells[keyOf(day)];
+  if (!cell) return false;
+  if (flagFilter.value === 'bad_weather') return cell.bad_weather;
+  if (flagFilter.value === 'high_temp') return cell.high_temp;
+  if (flagFilter.value === 'promo') return cell.promo;
+  if (flagFilter.value === 'remark') return Boolean(cell.remark.trim());
+  return true;
 }
 
 async function load() {
@@ -139,6 +151,18 @@ async function save() {
         picker="month"
         value-format="YYYY-MM"
       />
+      <a-select
+        v-model:value="flagFilter"
+        allow-clear
+        class="w-36"
+        placeholder="标记类型"
+        :options="[
+          { label: '恶劣天气', value: 'bad_weather' },
+          { label: '高温', value: 'high_temp' },
+          { label: '活动', value: 'promo' },
+          { label: '有备注', value: 'remark' },
+        ]"
+      />
       <VbenButton
         v-access:code="'rs:dayflag:edit'"
         :disabled="!siteId"
@@ -166,7 +190,9 @@ async function save() {
             v-for="day in week"
             :key="keyOf(day)"
             class="min-h-[110px] bg-background p-2"
-            :class="isCurrentMonth(day) ? '' : 'opacity-40'"
+            :class="
+              !isCurrentMonth(day) || !matchesFlag(day) ? 'opacity-40' : ''
+            "
           >
             <div class="mb-1 flex items-center justify-between">
               <span class="text-sm">{{ day.date() }}</span>

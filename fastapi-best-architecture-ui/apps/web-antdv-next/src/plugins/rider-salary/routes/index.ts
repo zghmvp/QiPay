@@ -103,6 +103,12 @@ const routes: RouteRecordRaw[] = [
         path: '/rider-salary/notice',
       },
       {
+        component: () => import('../views/h5-menu/index.vue'),
+        meta: { icon: 'lucide:smartphone', title: '骑手端' },
+        name: 'RiderSalaryH5Menu',
+        path: '/rider-salary/h5-menu',
+      },
+      {
         component: () => import('../views/audit/index.vue'),
         meta: { icon: 'lucide:scroll-text', title: '操作日志' },
         name: 'RiderSalaryAudit',

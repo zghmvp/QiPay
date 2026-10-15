@@ -321,7 +321,11 @@ class CalendarService:
         for day in iter_dates(start, end):
             cache = dailies.get(day)
             day_orders = orders_by_day.get(day, [])
-            completed = [row for row in day_orders if row.status == OrderStatus.completed.value]
+            completed = [
+                row
+                for row in day_orders
+                if row.status == OrderStatus.completed.value and row.deliver_time is not None
+            ]
             plan_vid = plan_by_day.get(day)
             imported = day in covered or day in site_order_dates
             if cache is not None:
@@ -537,7 +541,9 @@ class CalendarService:
             manual_penalty = q2(cache.manual_penalty)
         covered, site_order_dates = await _import_coverage(db, rider.site_id, biz_date, biz_date)
         imported = biz_date in covered or biz_date in site_order_dates
-        completed = [row for row in orders if row.status == OrderStatus.completed.value]
+        completed = [
+            row for row in orders if row.status == OrderStatus.completed.value and row.deliver_time is not None
+        ]
         if cache is not None:
             day_status = cache.day_status
             order_count = cache.order_count

@@ -17,6 +17,7 @@ import { getRiderApi } from '../../api/rider';
 import RiderSelect from '../../components/RiderSelect.vue';
 import SalaryCalendar from '../../components/SalaryCalendar.vue';
 import SiteSelect from '../../components/SiteSelect.vue';
+import { DAY_STATUS_OPTIONS, enumTagOptions } from '../../constants/enums';
 import { currentMonth } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import DayDrawer from './components/DayDrawer.vue';
@@ -40,6 +41,7 @@ function queryStr(key: string) {
 const siteId = ref<number | undefined>(queryNum('site_id'));
 const riderId = ref<number | undefined>(queryNum('rider_id'));
 const month = ref(queryStr('month') || currentMonth());
+const dayStatus = ref<string>();
 const selectedDate = ref<string | undefined>(queryStr('date'));
 const drawerOpen = ref(Boolean(queryStr('date')));
 const riderName = ref('');
@@ -214,6 +216,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           ›
         </VbenButton>
       </div>
+      <a-select
+        v-model:value="dayStatus"
+        allow-clear
+        class="w-32"
+        placeholder="日状态"
+        :options="enumTagOptions(DAY_STATUS_OPTIONS)"
+      />
       <div class="ml-auto flex items-center gap-2">
         <VbenButton
           v-access:code="'rs:period:export'"
@@ -240,6 +249,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         <SummaryBar :summary="data?.summary" />
         <SalaryCalendar
           :days="data?.days ?? []"
+          :highlight-status="dayStatus"
           :month="month"
           :plan-bands="data?.plan_bands ?? []"
           :selected-date="selectedDate"

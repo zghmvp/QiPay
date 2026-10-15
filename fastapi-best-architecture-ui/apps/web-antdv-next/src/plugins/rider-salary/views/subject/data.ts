@@ -13,17 +13,30 @@ import {
   SUBJECT_DIRECTION_OPTIONS,
 } from '../../constants/enums';
 
+const yesNoOptions = [
+  { label: '是', value: true },
+  { label: '否', value: false },
+];
+
 export const querySchema: VbenFormSchema[] = [
   {
     component: 'Input',
+    componentProps: { allowClear: true, placeholder: '科目编码' },
+    fieldName: 'code',
+    label: '编码',
+  },
+  {
+    component: 'Input',
+    componentProps: { allowClear: true, placeholder: '科目名称' },
     fieldName: 'name',
-    label: '科目名称',
+    label: '名称',
   },
   {
     component: 'Select',
     componentProps: {
       allowClear: true,
       options: enumTagOptions(SUBJECT_DIRECTION_OPTIONS),
+      placeholder: '全部方向',
     },
     fieldName: 'direction',
     label: '方向',
@@ -32,7 +45,51 @@ export const querySchema: VbenFormSchema[] = [
     component: 'Select',
     componentProps: {
       allowClear: true,
+      options: enumTagOptions(FEE_MODE_OPTIONS),
+      placeholder: '全部方式',
+    },
+    fieldName: 'fee_mode',
+    label: '计费方式',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: enumTagOptions(ENTRY_GRANULARITY_OPTIONS),
+      placeholder: '全部粒度',
+    },
+    fieldName: 'entry_granularity',
+    label: '入账粒度',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: yesNoOptions,
+      placeholder: '全部',
+    },
+    fieldName: 'include_in_gross',
+    label: '进应发',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: [
+        { label: '内置', value: true },
+        { label: '自定义', value: false },
+      ],
+      placeholder: '全部',
+    },
+    fieldName: 'is_builtin',
+    label: '来源',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
       options: enumTagOptions(ENABLE_STATUS_OPTIONS),
+      placeholder: '全部状态',
     },
     fieldName: 'status',
     label: '状态',

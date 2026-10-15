@@ -60,9 +60,23 @@ class SubjectService:
         name: str | None,
         status: str | None,
         direction: str | None,
+        code: str | None = None,
+        fee_mode: str | None = None,
+        entry_granularity: str | None = None,
+        include_in_gross: bool | None = None,
+        is_builtin: bool | None = None,
     ) -> dict[str, Any]:
         """分页获取科目"""
-        stmt = await subject_dao.get_select(name=name, status=status, direction=direction)
+        stmt = await subject_dao.get_select(
+            name=name,
+            status=status,
+            direction=direction,
+            code=code,
+            fee_mode=fee_mode,
+            entry_granularity=entry_granularity,
+            include_in_gross=include_in_gross,
+            is_builtin=is_builtin,
+        )
         return await paging_data(db, stmt)
 
     @staticmethod

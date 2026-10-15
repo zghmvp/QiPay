@@ -57,8 +57,23 @@ async def get_subjects_paginated(
     name: Annotated[str | None, Query(description='科目名称')] = None,
     status: Annotated[str | None, Query(description='状态')] = None,
     direction: Annotated[str | None, Query(description='方向')] = None,
+    code: Annotated[str | None, Query(description='科目编码')] = None,
+    fee_mode: Annotated[str | None, Query(description='计费方式')] = None,
+    entry_granularity: Annotated[str | None, Query(description='入账粒度')] = None,
+    include_in_gross: Annotated[bool | None, Query(description='是否进应发')] = None,
+    is_builtin: Annotated[bool | None, Query(description='是否内置')] = None,
 ) -> ResponseSchemaModel[PageData[GetSubjectDetail]]:
-    page_data = await subject_service.get_list(db=db, name=name, status=status, direction=direction)
+    page_data = await subject_service.get_list(
+        db=db,
+        name=name,
+        status=status,
+        direction=direction,
+        code=code,
+        fee_mode=fee_mode,
+        entry_granularity=entry_granularity,
+        include_in_gross=include_in_gross,
+        is_builtin=is_builtin,
+    )
     return response_base.success(data=page_data)
 
 

@@ -191,7 +191,11 @@ def _employ_on(history: list[Any], default: str, day: date) -> str:
 
 
 def _is_completed(order: Any) -> bool:
-    return getattr(order, 'status', None) == OrderStatus.completed.value
+    """只结算有配送完成时间、且状态为配送完成的订单。"""
+    return (
+        getattr(order, 'deliver_time', None) is not None
+        and getattr(order, 'status', None) == OrderStatus.completed.value
+    )
 
 
 def _after_leave(leave_date: date | None, day: date) -> bool:
@@ -286,10 +290,6 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             day_per_order = ZERO
             for order in completed:
                 ctx = build_order_context(order, day_ctx)
-                if ctx.pop('_missing_deliver', False):
-                    msg = '字段「配送时长」为空，已按 0 计算'
-                    if msg not in warnings:
-                        warnings.append(msg)
                 for item in _enabled_items(segment, CalcStage.per_order.value):
                     hit, amount, trace = _eval_item(item, ctx, warnings)
                     if not hit:

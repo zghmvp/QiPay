@@ -17,7 +17,8 @@ values
 (2060000000000091011, '薪资日历', 'RiderSalaryCalendar', '/rider-salary/calendar', 11, 'lucide:calendar', 1, '/plugins/rider-salary/views/calendar/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091012, '预支审核', 'RiderSalaryAdvance', '/rider-salary/advance', 12, 'lucide:hand-coins', 1, '/plugins/rider-salary/views/advance/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091013, '站点公告', 'RiderSalaryNotice', '/rider-salary/notice', 13, 'lucide:megaphone', 1, '/plugins/rider-salary/views/notice/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
-(2060000000000091014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 14, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091016, '骑手端', 'RiderSalaryH5Menu', '/rider-salary/h5-menu', 14, 'lucide:smartphone', 1, '/plugins/rider-salary/views/h5-menu/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
+(2060000000000091014, '操作日志', 'RiderSalaryAudit', '/rider-salary/audit', 16, 'lucide:scroll-text', 1, '/plugins/rider-salary/views/audit/index', null, 1, 1, 1, '', null, 2060000000000091000, now(), null),
 (2060000000000091015, '骑手档案', 'RiderSalaryRiderDetail', '/rider-salary/rider/:id', 15, 'lucide:user-round', 1, '/plugins/rider-salary/views/rider/detail', null, 1, 0, 1, '', null, 2060000000000091000, now(), null);
 
 insert into sys_menu (id, title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
@@ -70,7 +71,8 @@ values
 (2060000000000091146, '修改公告', 'RiderSalaryNoticeEdit', null, 0, null, 2, null, 'rs:notice:edit', 1, 0, 1, '', null, 2060000000000091013, now(), null),
 (2060000000000091147, '删除公告', 'RiderSalaryNoticeDel', null, 0, null, 2, null, 'rs:notice:del', 1, 0, 1, '', null, 2060000000000091013, now(), null),
 (2060000000000091148, '查看日志', 'RiderSalaryAuditView', null, 0, null, 2, null, 'rs:audit:view', 1, 0, 1, '', null, 2060000000000091014, now(), null),
-(2060000000000091149, '删除周期', 'RiderSalaryPeriodDelete', null, 0, null, 2, null, 'rs:period:delete', 1, 0, 1, '', null, 2060000000000091010, now(), null);
+(2060000000000091149, '删除周期', 'RiderSalaryPeriodDelete', null, 0, null, 2, null, 'rs:period:delete', 1, 0, 1, '', null, 2060000000000091010, now(), null),
+(2060000000000091150, '管理骑手端', 'RiderSalaryH5MenuEdit', null, 0, null, 2, null, 'rs:h5:menu', 1, 0, 1, '', null, 2060000000000091016, now(), null);
 
 insert into sys_role (id, name, status, is_filter_scopes, remark, created_time, updated_time)
 values
@@ -236,7 +238,13 @@ values
 (2060000000000093153, 2060000000000092003, 2060000000000091149),
 (2060000000000093154, 2060000000000092001, 2060000000000091015),
 (2060000000000093155, 2060000000000092002, 2060000000000091015),
-(2060000000000093156, 2060000000000092003, 2060000000000091015);
+(2060000000000093156, 2060000000000092003, 2060000000000091015),
+(2060000000000093157, 2060000000000092001, 2060000000000091016),
+(2060000000000093158, 2060000000000092002, 2060000000000091016),
+(2060000000000093159, 2060000000000092003, 2060000000000091016),
+(2060000000000093160, 2060000000000092001, 2060000000000091150),
+(2060000000000093161, 2060000000000092002, 2060000000000091150),
+(2060000000000093162, 2060000000000092003, 2060000000000091150);
 
 insert into rs_subject (id, code, name, direction, fee_mode, fixed_amount, include_in_gross, entry_granularity, scope_sites, scope_employ_types, is_builtin, status, sort_order, remark, created_time, updated_time)
 values

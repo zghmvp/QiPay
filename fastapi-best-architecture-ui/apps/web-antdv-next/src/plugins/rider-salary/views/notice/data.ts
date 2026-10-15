@@ -9,6 +9,7 @@ import { useAccess } from '@vben/access';
 
 import SiteSelect from '../../components/SiteSelect.vue';
 import { enumTagOptions, NOTICE_STATUS_OPTIONS } from '../../constants/enums';
+import { dateRangePresets } from '../../utils/date';
 
 export const querySchema: VbenFormSchema[] = [
   {
@@ -31,6 +32,20 @@ export const querySchema: VbenFormSchema[] = [
     },
     fieldName: 'status',
     label: '状态',
+  },
+  {
+    component: 'RangePicker',
+    componentProps: {
+      allowClear: true,
+      format: 'YYYY-MM-DD',
+      placeholder: ['发布开始', '发布结束'],
+      presets: dateRangePresets,
+      style: { width: '100%' },
+      valueFormat: 'YYYY-MM-DD',
+    },
+    fieldName: 'publish_range',
+    formItemClass: 'md:col-span-2',
+    label: '发布时间',
   },
 ];
 

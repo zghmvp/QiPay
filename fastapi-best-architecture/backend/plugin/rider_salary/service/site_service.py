@@ -69,6 +69,7 @@ class SiteService:
         name: str | None,
         code: str | None,
         status: str | None,
+        settle_cycle: str | None = None,
     ) -> dict[str, Any]:
         """
         分页获取站点
@@ -81,7 +82,13 @@ class SiteService:
         :return:
         """
         visible = await SiteService._visible(db, request)
-        stmt = await site_dao.get_select(name=name, code=code, status=status, site_ids=visible)
+        stmt = await site_dao.get_select(
+            name=name,
+            code=code,
+            status=status,
+            site_ids=visible,
+            settle_cycle=settle_cycle,
+        )
         return await paging_data(db, stmt)
 
     @staticmethod

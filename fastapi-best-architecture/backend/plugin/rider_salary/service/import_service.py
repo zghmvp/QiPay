@@ -26,9 +26,11 @@ from backend.plugin.rider_salary.schema.import_batch import (
 )
 from backend.plugin.rider_salary.schema.order import ImportErrorItem, ImportResult
 from backend.plugin.rider_salary.service.order_service import (
+    STATUS_INVALID_MSG,
     compute_biz_date,
     map_order_status,
     rider_employment_error,
+    status_matches_deliver,
 )
 from backend.plugin.rider_salary.utils.audit import audit_service
 from backend.plugin.rider_salary.utils.deps import assert_site_visible, get_visible_site_ids
@@ -58,20 +60,18 @@ def build_import_template() -> bytes:
         '5.00',
         '2026-09-01 12:00:00',
         '2026-09-01 12:25:00',
-        '已完成',
+        '配送完成',
         '25.00',
         '示例数据，导入前请删除',
     ]
     status_rows = [
-        ['已完成', 'completed', '完成'],
-        ['已取消', 'cancelled', '取消'],
-        ['配送异常', 'abnormal', '异常'],
-        ['已退款', 'refunded', '退款'],
+        ['配送完成', 'completed', '已完成、正常'],
+        ['没有配送完成', 'not_completed', '未完成'],
     ]
     help_rows = [
         ['时间格式：YYYY-MM-DD HH:mm:ss，亦支持 YYYY/M/D H:mm 与 Excel 日期。'],
-        ['订单状态请填写：已完成 / 已取消 / 配送异常 / 已退款（可用别名：完成、取消、异常、退款）。'],
-        ['业务日期：有送达时间取送达日期，否则取下单日期；跨午夜按送达日归属。'],
+        ['订单状态请填写：配送完成 / 没有配送完成。有配送完成时间必须填配送完成，否则填没有配送完成。'],
+        ['只结算配送完成的订单。业务日期：有配送完成时间取该日期，否则取下单日期。'],
         ['带 * 的列为必填；配送距离、商品重量须 ≥ 0；订单金额可空。'],
         ['同一订单号不可重复；库内已存在的订单号不会被覆盖。'],
     ]
@@ -118,8 +118,6 @@ def validate_row_format(row: dict[str, Any]) -> str | None:  # ruff:ignore[compl
             deliver_time = parse_cell_datetime(deliver_raw)
         except ValueError:
             return '送达时间格式不正确'
-        if deliver_time < order_time:
-            return '送达时间不能早于下单时间'
     amount_raw = row.get('amount')
     if not _is_blank(amount_raw):
         amount, amount_err = parse_number(amount_raw, '订单金额')
@@ -127,9 +125,10 @@ def validate_row_format(row: dict[str, Any]) -> str | None:  # ruff:ignore[compl
             return amount_err
         if amount is not None and amount < 0:
             return '订单金额不能为负数'
-    if map_order_status(row.get('status')) is None:
-        return '订单状态不合法，请填写已完成/已取消/配送异常/已退款'
-    return None
+    mapped = map_order_status(row.get('status'))
+    if mapped is None:
+        return STATUS_INVALID_MSG
+    return status_matches_deliver(mapped, deliver_time)
 
 
 def cell_text(value: object) -> str:

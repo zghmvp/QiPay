@@ -100,8 +100,11 @@ async def get_sites_paginated(
     name: Annotated[str | None, Query(description='站点名称')] = None,
     code: Annotated[str | None, Query(description='站点编码')] = None,
     status: Annotated[str | None, Query(description='状态')] = None,
+    settle_cycle: Annotated[str | None, Query(description='结算周期')] = None,
 ) -> ResponseSchemaModel[PageData[GetSiteDetail]]:
-    page_data = await site_service.get_list(db=db, request=request, name=name, code=code, status=status)
+    page_data = await site_service.get_list(
+        db=db, request=request, name=name, code=code, status=status, settle_cycle=settle_cycle
+    )
     return response_base.success(data=page_data)
 
 

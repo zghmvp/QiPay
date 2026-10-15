@@ -9,11 +9,12 @@ import MonthGrid from '../views/calendar/components/MonthGrid.vue';
 const props = withDefaults(
   defineProps<{
     days?: CalendarDayItem[];
+    highlightStatus?: string;
     month: string;
     planBands?: CalendarPlanBand[];
     selectedDate?: string;
   }>(),
-  { days: () => [], planBands: () => [], selectedDate: undefined },
+  { days: () => [], highlightStatus: undefined, planBands: () => [], selectedDate: undefined },
 );
 
 const emit = defineEmits<{
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 <template>
   <MonthGrid
     :days="props.days"
+    :highlight-status="props.highlightStatus"
     :month="props.month"
     :plan-bands="props.planBands"
     :selected-date="props.selectedDate"

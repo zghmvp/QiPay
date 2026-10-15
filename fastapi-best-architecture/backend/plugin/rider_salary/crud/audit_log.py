@@ -16,6 +16,7 @@ class CRUDAuditLog(CRUDPlus[RiderSalaryAuditLog]):
         date_to: str | None,
         target_type: str | None,
         keyword: str | None,
+        target: str | None = None,
     ) -> Select:
         """
         操作日志列表查询
@@ -47,6 +48,8 @@ class CRUDAuditLog(CRUDPlus[RiderSalaryAuditLog]):
             filters['target_type'] = target_type
         if keyword:
             filters['description__like'] = f'%{keyword}%'
+        if target:
+            filters['target_label__like'] = f'%{target}%'
         return await self.select_order('operate_time', 'desc', **filters)
 
 

@@ -6,10 +6,7 @@ import { useRouter } from 'vue-router';
 
 import MoneyText from '../../../components/MoneyText.vue';
 import StatusTag from '../../../components/StatusTag.vue';
-import {
-  ORDER_STATUS_OPTIONS,
-  PERIOD_STATUS_OPTIONS,
-} from '../../../constants/enums';
+import { PERIOD_STATUS_OPTIONS } from '../../../constants/enums';
 import { toDateTimeString } from '../../../utils/date';
 
 const props = defineProps<{
@@ -33,13 +30,6 @@ function periodColumns() {
 
 function columns(key: string) {
   switch (key) {
-    case 'abnormal_orders':
-      return [
-        { dataIndex: 'order_no', key: 'order_no', title: '订单号' },
-        { dataIndex: 'rider_name', key: 'rider_name', title: '骑手' },
-        { dataIndex: 'status', key: 'status', title: '状态', width: 100 },
-        { dataIndex: 'duration_min', key: 'duration_min', title: '时长(分)', width: 100 },
-      ];
     case 'due_periods':
       return periodColumns();
     case 'import_gaps':
@@ -96,13 +86,8 @@ function go(link: string) {
         >
           <template #bodyCell="{ column, record }">
             <StatusTag
-              v-if="column.key === 'status' && block.key !== 'abnormal_orders'"
+              v-if="column.key === 'status'"
               :options="PERIOD_STATUS_OPTIONS"
-              :value="String(record.status ?? '')"
-            />
-            <StatusTag
-              v-else-if="column.key === 'status'"
-              :options="ORDER_STATUS_OPTIONS"
               :value="String(record.status ?? '')"
             />
             <MoneyText

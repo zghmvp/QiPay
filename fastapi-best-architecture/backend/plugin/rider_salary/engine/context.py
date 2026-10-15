@@ -60,13 +60,6 @@ def _minutes_of(value: datetime | None) -> float | None:
     return float(value.hour * 60 + value.minute)
 
 
-def _duration_minutes(order_time: datetime | None, deliver_time: datetime | None) -> tuple[float, bool]:
-    if order_time is None or deliver_time is None:
-        return 0.0, True
-    seconds = (deliver_time - order_time).total_seconds()
-    return max(seconds / 60.0, 0.0), False
-
-
 def build_day_context(
     site_id: int,
     biz_date: date,
@@ -92,10 +85,6 @@ def build_day_context(
 
 def build_order_context(order: Any, day_ctx: dict[str, Any], rider_ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     """订单字段 ∪ 日上下文 ∪ 骑手字段"""
-    duration, missing_deliver = _duration_minutes(
-        getattr(order, 'order_time', None),
-        getattr(order, 'deliver_time', None),
-    )
     amount = getattr(order, 'amount', None)
     ctx: dict[str, Any] = {
         **day_ctx,
@@ -103,11 +92,8 @@ def build_order_context(order: Any, day_ctx: dict[str, Any], rider_ctx: dict[str
         '配送距离': float(getattr(order, 'distance_km', 0) or 0),
         '商品重量': float(getattr(order, 'weight_jin', 0) or 0),
         '订单金额': float(amount) if amount is not None else 0.0,
-        '下单时刻': _minutes_of(getattr(order, 'order_time', None)),
         '送达时刻': _minutes_of(getattr(order, 'deliver_time', None)),
-        '配送时长': duration,
         '订单状态': getattr(order, 'status', None) or OrderStatus.completed.value,
-        '_missing_deliver': missing_deliver,
         '_order_no': getattr(order, 'order_no', None),
         '_order_id': getattr(order, 'id', None),
         '_biz_date': getattr(order, 'biz_date', None),

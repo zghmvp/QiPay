@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
@@ -34,6 +34,8 @@ class CRUDAdvance(CRUDPlus[RiderSalaryAdvance]):
         date_from: date | None,
         date_to: date | None,
         site_ids: set[int] | None,
+        deduct_status: str | None = None,
+        reason: str | None = None,
     ) -> Select:
         """
         预支列表查询
@@ -60,6 +62,10 @@ class CRUDAdvance(CRUDPlus[RiderSalaryAdvance]):
         if date_to is not None:
             next_day = date_to + timedelta(days=1)
             filters['submit_time__lt'] = datetime.combine(next_day, datetime.min.time(), tzinfo=timezone.tz_info)
+        if deduct_status:
+            filters['deduct_status'] = deduct_status
+        if reason:
+            filters['reason__like'] = f'%{reason}%'
         return await self.select_order('id', 'desc', **filters)
 
     async def list_in_flight(self, db: AsyncSession, rider_id: int) -> list[RiderSalaryAdvance]:
@@ -78,6 +84,26 @@ class CRUDAdvance(CRUDPlus[RiderSalaryAdvance]):
             )
         )
         return list(rows.all())
+
+    async def count_submitted_since(self, db: AsyncSession, rider_id: int, since: datetime) -> int:
+        """统计某时刻之后计入次数上限的预支（待审核、待发放、已发放）。"""
+        counted = (
+            AdvanceStatus.pending.value,
+            AdvanceStatus.to_pay.value,
+            AdvanceStatus.paid.value,
+        )
+        stamp = func.coalesce(RiderSalaryAdvance.submit_time, RiderSalaryAdvance.created_time)
+        total = await db.scalar(
+            select(func.count())
+            .select_from(RiderSalaryAdvance)
+            .where(
+                RiderSalaryAdvance.rider_id == rider_id,
+                RiderSalaryAdvance.deleted == 0,
+                RiderSalaryAdvance.status.in_(counted),
+                stamp >= since,
+            )
+        )
+        return int(total or 0)
 
     async def list_by_rider(self, db: AsyncSession, rider_id: int) -> list[RiderSalaryAdvance]:
         """

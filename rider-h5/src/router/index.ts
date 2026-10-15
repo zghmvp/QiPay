@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { showToast } from 'vant'
 import { getToken } from '@/utils/storage'
+import { useMenuStore } from '@/stores/menu'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -18,37 +20,37 @@ const router = createRouter({
       path: '/home',
       name: 'home',
       component: () => import('@/views/HomeView.vue'),
-      meta: { tab: 'home', title: '首页' },
+      meta: { tab: 'home', feature: 'home', title: '首页' },
     },
     {
       path: '/day/:date',
       name: 'day',
       component: () => import('@/views/DayView.vue'),
-      meta: { title: '当日明细' },
+      meta: { feature: 'home', title: '当日明细' },
     },
     {
       path: '/adjustments',
       name: 'adjustments',
       component: () => import('@/views/AdjustmentsView.vue'),
-      meta: { tab: 'adjustments', title: '奖惩' },
+      meta: { tab: 'adjustments', feature: 'adjustments', title: '奖惩' },
     },
     {
       path: '/plan',
       name: 'plan',
       component: () => import('@/views/PlanView.vue'),
-      meta: { title: '当前方案' },
+      meta: { feature: 'plan', title: '当前方案' },
     },
     {
       path: '/advance',
       name: 'advance',
       component: () => import('@/views/AdvanceView.vue'),
-      meta: { tab: 'advance', title: '预支' },
+      meta: { tab: 'advance', feature: 'advance', title: '预支' },
     },
     {
       path: '/notices',
       name: 'notices',
       component: () => import('@/views/NoticesView.vue'),
-      meta: { tab: 'notices', title: '公告' },
+      meta: { tab: 'notices', feature: 'notices', title: '公告' },
     },
     {
       path: '/me',
@@ -63,13 +65,29 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const token = getToken()
   if (!to.meta.public && !token) {
     return { path: '/login', replace: true }
   }
+  const menus = useMenuStore()
+  if (token && !menus.loaded && (to.path === '/login' || to.meta.feature)) {
+    try {
+      await menus.load()
+    } catch {
+      menus.loaded = true
+    }
+  }
   if (to.path === '/login' && token) {
-    return { path: '/home', replace: true }
+    return { path: menus.landingPath(), replace: true }
+  }
+  const feature = typeof to.meta.feature === 'string' ? to.meta.feature : ''
+  if (!feature || !token) return true
+  if (!menus.isOpen(feature)) {
+    const target = feature === 'home' || !menus.isOpen('home') ? '/me' : '/home'
+    if (to.path === target) return true
+    showToast('该功能暂未开放')
+    return { path: target, replace: true }
   }
   return true
 })

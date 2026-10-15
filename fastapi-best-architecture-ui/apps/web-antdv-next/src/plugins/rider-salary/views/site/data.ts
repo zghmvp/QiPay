@@ -15,11 +15,13 @@ import { formatCycleSummary } from '../../utils/date';
 export const querySchema: VbenFormSchema[] = [
   {
     component: 'Input',
+    componentProps: { allowClear: true, placeholder: '站点编码' },
     fieldName: 'code',
     label: '站点编码',
   },
   {
     component: 'Input',
+    componentProps: { allowClear: true, placeholder: '站点名称' },
     fieldName: 'name',
     label: '站点名称',
   },
@@ -27,8 +29,18 @@ export const querySchema: VbenFormSchema[] = [
     component: 'Select',
     componentProps: {
       allowClear: true,
+      options: enumTagOptions(CYCLE_TYPE_OPTIONS),
+      placeholder: '全部周期',
+    },
+    fieldName: 'settle_cycle',
+    label: '结算周期',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
       options: enumTagOptions(ENABLE_STATUS_OPTIONS),
-      placeholder: '请选择状态',
+      placeholder: '全部状态',
     },
     fieldName: 'status',
     label: '状态',

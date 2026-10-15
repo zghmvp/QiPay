@@ -705,6 +705,8 @@ importers:
 
   apps/web-antdv-next/src/plugins/oauth2: {}
 
+  apps/web-antdv-next/src/plugins/rider-salary: {}
+
   internal/lint-configs/commitlint-config:
     dependencies:
       '@commitlint/cli':

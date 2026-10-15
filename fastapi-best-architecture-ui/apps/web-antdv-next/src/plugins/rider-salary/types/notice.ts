@@ -19,6 +19,8 @@ export interface NoticeForm {
 
 export interface NoticeQuery {
   page?: number;
+  publish_from?: string;
+  publish_to?: string;
   site_id?: number;
   size?: number;
   status?: string;

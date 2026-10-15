@@ -350,6 +350,11 @@ class RiderService:
         status: str | None,
         employ_type: str | None,
         keyword: str | None,
+        phone: str | None = None,
+        hire_date_from: date | None = None,
+        hire_date_to: date | None = None,
+        account_status: str | None = None,
+        settle_cycle_override: str | None = None,
     ) -> dict[str, Any]:
         """
         分页获取骑手
@@ -360,6 +365,11 @@ class RiderService:
         :param status: 状态
         :param employ_type: 用工类型
         :param keyword: 工号或姓名
+        :param phone: 手机号
+        :param hire_date_from: 入职日期起
+        :param hire_date_to: 入职日期止
+        :param account_status: 账号状态
+        :param settle_cycle_override: 结算周期覆盖
         :return:
         """
         visible = await get_visible_site_ids(request, db)
@@ -369,8 +379,13 @@ class RiderService:
             site_id=site_id,
             status=status,
             employ_type=employ_type,
-            keyword=keyword,
+            keyword=keyword.strip() if keyword else None,
             site_ids=visible,
+            phone=phone.strip() if phone else None,
+            hire_date_from=hire_date_from,
+            hire_date_to=hire_date_to,
+            account_status=account_status or None,
+            settle_cycle_override=settle_cycle_override or None,
         )
         page = await paging_data(db, stmt)
         items = []

@@ -14,11 +14,13 @@ import {
   enumColor,
 } from '@/constants/enums'
 import { useAuthStore } from '@/stores/auth'
+import { useMenuStore } from '@/stores/menu'
 import { currentMonth } from '@/utils/date'
 import type { CalendarMonth, PayrollEstimate } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
+const menus = useMenuStore()
 const month = ref(currentMonth())
 const loading = ref(true)
 const estimate = ref<PayrollEstimate | null>(null)
@@ -45,6 +47,7 @@ async function load() {
       getProfile(),
       getPayrollEstimate(),
       getCalendar(month.value),
+      menus.load().catch(() => undefined),
     ])
     auth.profile = profile
     estimate.value = est
@@ -72,7 +75,7 @@ onMounted(() => {
         <h1>{{ greeting }}</h1>
       </div>
       <Tag
-        v-if="plan?.short_name"
+        v-if="plan?.short_name && menus.flags.show_plan"
         round
         :type="vantTagType(enumColor(PLAN_MODE_TAG_OPTIONS, plan.mode_tag))"
         @click="router.push('/plan')"
@@ -86,7 +89,7 @@ onMounted(() => {
         <section v-if="estimate" class="waybill">
           <span v-if="estimate.is_estimate" class="stamp">预估</span>
           <p class="waybill-kicker">本期预计工资</p>
-          <p class="waybill-amount display-num">
+          <p v-if="menus.flags.show_home_pay" class="waybill-amount display-num">
             <MoneyText :value="estimate.net_estimate" />
           </p>
           <p class="muted">
@@ -101,15 +104,15 @@ onMounted(() => {
               <span class="label">单量</span>
               <span class="value display-num">{{ estimate.order_count }}</span>
             </div>
-            <div>
+            <div v-if="menus.flags.show_home_pay">
               <span class="label">应发</span>
               <span class="value"><MoneyText :value="estimate.gross" /></span>
             </div>
-            <div>
+            <div v-if="menus.flags.show_home_pay">
               <span class="label">代扣</span>
               <span class="value"><MoneyText :value="estimate.deduction_total" /></span>
             </div>
-            <div>
+            <div v-if="menus.flags.show_home_pay">
               <span class="label">预支抵扣</span>
               <span class="value"><MoneyText :value="estimate.advance_deduction_estimate" /></span>
             </div>
@@ -119,7 +122,7 @@ onMounted(() => {
 
       <div class="section-title">
         <span>月历</span>
-        <span class="muted" @click="router.push('/plan')">查看方案</span>
+        <span v-if="menus.flags.show_plan" class="muted" @click="router.push('/plan')">查看方案</span>
       </div>
       <div v-if="calendar?.plan_bands?.length" class="chip-row">
         <Tag

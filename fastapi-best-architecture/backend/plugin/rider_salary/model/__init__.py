@@ -1,7 +1,9 @@
 from backend.plugin.rider_salary.model.adjustment import RiderSalaryAdjustment as RiderSalaryAdjustment
 from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance as RiderSalaryAdvance
+from backend.plugin.rider_salary.model.advance_policy import RiderSalaryAdvancePolicy as RiderSalaryAdvancePolicy
 from backend.plugin.rider_salary.model.audit_log import RiderSalaryAuditLog as RiderSalaryAuditLog
 from backend.plugin.rider_salary.model.day_flag import RiderSalaryDayFlag as RiderSalaryDayFlag
+from backend.plugin.rider_salary.model.h5_menu import RiderSalaryH5Menu as RiderSalaryH5Menu
 from backend.plugin.rider_salary.model.import_batch import RiderSalaryImportBatch as RiderSalaryImportBatch
 from backend.plugin.rider_salary.model.notice import RiderSalaryNotice as RiderSalaryNotice
 from backend.plugin.rider_salary.model.order import RiderSalaryOrder as RiderSalaryOrder

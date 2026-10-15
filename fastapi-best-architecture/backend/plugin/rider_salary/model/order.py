@@ -32,7 +32,7 @@ class RiderSalaryOrder(Base):
         sa.String(20),
         default=OrderStatus.completed.value,
         index=True,
-        comment='订单状态',
+        comment='订单状态：配送完成 / 没有配送完成',
     )
     amount: Mapped[Decimal | None] = mapped_column(sa.Numeric(12, 2), default=None, comment='订单金额')
     source: Mapped[str] = mapped_column(sa.String(20), default=OrderSource.manual.value, comment='来源')

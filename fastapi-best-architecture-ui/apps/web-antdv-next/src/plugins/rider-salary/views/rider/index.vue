@@ -32,6 +32,7 @@ import {
   updateRiderApi,
 } from '../../api/rider';
 import { useReasonModal } from '../../components/use-reason-modal';
+import { toDateString } from '../../utils/date';
 import PageContainer from '../_shared/PageContainer.vue';
 import { querySchema, riderFormSchema, useColumns } from './data';
 
@@ -40,10 +41,11 @@ const route = useRoute();
 const { ReasonModal, prompt } = useReasonModal();
 
 const formOptions: VbenFormProps = {
-  collapsed: true,
+  collapsed: false,
   schema: querySchema,
   showCollapseButton: true,
   submitButtonOptions: { content: '查询' },
+  wrapperClass: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4',
 };
 
 const gridOptions: VxeTableGridOptions<RiderResult> = {
@@ -52,10 +54,15 @@ const gridOptions: VxeTableGridOptions<RiderResult> = {
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
+        const { hire_range, ...rest } = formValues as Record<string, unknown> & {
+          hire_range?: [string, string];
+        };
         return await getRiderListApi({
+          hire_date_from: toDateString(hire_range?.[0]),
+          hire_date_to: toDateString(hire_range?.[1]),
           page: page.currentPage,
           size: page.pageSize,
-          ...formValues,
+          ...rest,
         });
       },
     },

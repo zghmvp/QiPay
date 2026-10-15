@@ -41,9 +41,14 @@ export interface RiderForm {
 }
 
 export interface RiderQuery {
+  account_status?: string;
   employ_type?: string;
+  hire_date_from?: string;
+  hire_date_to?: string;
   keyword?: string;
   page?: number;
+  phone?: string;
+  settle_cycle_override?: string;
   size?: number;
   site_id?: number;
   status?: string;

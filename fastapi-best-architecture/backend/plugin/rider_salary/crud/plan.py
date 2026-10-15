@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
@@ -23,10 +23,16 @@ class CRUDPlan(CRUDPlus[RiderSalaryPlan]):
     async def get_select(self, name: str | None, status: str | None) -> Select:
         """列表查询"""
         filters: dict = {'deleted': 0}
-        if name:
-            filters['name__like'] = f'%{name}%'
         if status:
             filters['status'] = status
+        if name:
+            like = f'%{name}%'
+            return await self.select_order(
+                'id',
+                'desc',
+                or_(self.model.name.like(like), self.model.code.like(like), self.model.short_name.like(like)),
+                **filters,
+            )
         return await self.select_order('id', 'desc', **filters)
 
     async def get_all(self, db: AsyncSession) -> Sequence[RiderSalaryPlan]:

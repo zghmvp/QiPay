@@ -8,11 +8,16 @@ import type {
   MeAdjustmentItem,
   MePlan,
   MeProfile,
+  H5Menus,
   NoticeDetail,
   PayrollEstimate,
 } from '@/types'
 
 const PREFIX = '/api/v1/rider-salary/me'
+
+export function getMenus() {
+  return request<H5Menus>({ url: `${PREFIX}/menus`, method: 'GET' })
+}
 
 export function getProfile() {
   return request<MeProfile>({ url: `${PREFIX}/profile`, method: 'GET' })

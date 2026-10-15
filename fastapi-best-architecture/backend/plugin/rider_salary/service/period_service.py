@@ -352,6 +352,10 @@ class PeriodService:
         rider_id: int | None,
         status: str | None,
         month: str | None,
+        cycle_type: str | None = None,
+        has_stale: bool | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> dict[str, Any]:
         """
         分页周期列表
@@ -379,6 +383,10 @@ class PeriodService:
             month_start=month_start,
             month_end=month_end,
             site_ids=visible,
+            cycle_type=cycle_type,
+            has_stale=has_stale,
+            range_from=date_from,
+            range_to=date_to,
         )
         page = await paging_data(db, stmt)
         items = page.get('items') or []

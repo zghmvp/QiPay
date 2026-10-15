@@ -14,6 +14,7 @@ import {
   enumTagOptions,
   PERIOD_STATUS_OPTIONS,
 } from '../../constants/enums';
+import { dateRangePresets } from '../../utils/date';
 
 export const querySchema: VbenFormSchema[] = [
   {
@@ -40,6 +41,43 @@ export const querySchema: VbenFormSchema[] = [
     },
     fieldName: 'status',
     label: '状态',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: enumTagOptions(CYCLE_TYPE_OPTIONS),
+      placeholder: '全部类型',
+    },
+    fieldName: 'cycle_type',
+    label: '周期类型',
+  },
+  {
+    component: 'RangePicker',
+    componentProps: {
+      allowClear: true,
+      format: 'YYYY-MM-DD',
+      placeholder: ['区间开始', '区间结束'],
+      presets: dateRangePresets,
+      style: { width: '100%' },
+      valueFormat: 'YYYY-MM-DD',
+    },
+    fieldName: 'date_range',
+    formItemClass: 'md:col-span-2',
+    label: '周期区间',
+  },
+  {
+    component: 'Select',
+    componentProps: {
+      allowClear: true,
+      options: [
+        { label: '有需重算', value: true },
+        { label: '无需重算', value: false },
+      ],
+      placeholder: '全部',
+    },
+    fieldName: 'has_stale',
+    label: '需重算',
   },
   {
     component: 'DatePicker',

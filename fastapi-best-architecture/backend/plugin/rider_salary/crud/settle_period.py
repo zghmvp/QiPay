@@ -5,6 +5,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
+from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.model.settle_period import RiderSalarySettlePeriod
 from backend.utils.timezone import timezone
 
@@ -91,6 +92,10 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
         month_start: date | None,
         month_end: date | None,
         site_ids: set[int] | None,
+        cycle_type: str | None = None,
+        has_stale: bool | None = None,
+        range_from: date | None = None,
+        range_to: date | None = None,
     ) -> Select:
         """
         周期列表查询
@@ -110,6 +115,8 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
             filters['rider_id'] = rider_id
         if status:
             filters['status'] = status
+        if cycle_type:
+            filters['cycle_type'] = cycle_type
         if site_ids is not None:
             filters['site_id__in'] = list(site_ids) or [-1]
         stmt = await self.select_order('start_date', 'desc', **filters)
@@ -118,6 +125,18 @@ class CRUDSettlePeriod(CRUDPlus[RiderSalarySettlePeriod]):
                 RiderSalarySettlePeriod.start_date <= month_end,
                 RiderSalarySettlePeriod.end_date >= month_start,
             )
+        if range_from is not None:
+            stmt = stmt.where(RiderSalarySettlePeriod.end_date >= range_from)
+        if range_to is not None:
+            stmt = stmt.where(RiderSalarySettlePeriod.start_date <= range_to)
+        stale_ids = select(RiderSalaryPayroll.period_id).where(
+            RiderSalaryPayroll.stale.is_(True),
+            RiderSalaryPayroll.deleted == 0,
+        )
+        if has_stale is True:
+            stmt = stmt.where(RiderSalarySettlePeriod.id.in_(stale_ids))
+        elif has_stale is False:
+            stmt = stmt.where(RiderSalarySettlePeriod.id.not_in(stale_ids))
         return stmt
 
     async def create(

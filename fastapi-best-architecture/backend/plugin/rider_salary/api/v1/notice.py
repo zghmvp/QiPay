@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request
@@ -48,8 +49,18 @@ async def get_notices_paginated(
     title: Annotated[str | None, Query(description='标题')] = None,
     status: Annotated[str | None, Query(description='状态')] = None,
     site_id: Annotated[int | None, Query(description='站点 ID')] = None,
+    publish_from: Annotated[date | None, Query(description='发布日起')] = None,
+    publish_to: Annotated[date | None, Query(description='发布日止')] = None,
 ) -> ResponseSchemaModel[PageData[GetNoticeDetail]]:
-    page_data = await notice_service.get_list(db=db, request=request, title=title, status=status, site_id=site_id)
+    page_data = await notice_service.get_list(
+        db=db,
+        request=request,
+        title=title,
+        status=status,
+        site_id=site_id,
+        publish_from=publish_from,
+        publish_to=publish_to,
+    )
     return response_base.success(data=page_data)
 
 

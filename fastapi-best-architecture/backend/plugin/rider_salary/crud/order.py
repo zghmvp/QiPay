@@ -63,6 +63,11 @@ class CRUDOrder(CRUDPlus[RiderSalaryOrder]):
         order_no: str | None,
         import_batch_id: int | None,
         is_locked: bool | None,
+        source: str | None = None,
+        distance_min: float | None = None,
+        distance_max: float | None = None,
+        weight_min: float | None = None,
+        weight_max: float | None = None,
     ) -> Select:
         """
         订单分页查询
@@ -76,6 +81,7 @@ class CRUDOrder(CRUDPlus[RiderSalaryOrder]):
         :param order_no: 订单号
         :param import_batch_id: 导入批次
         :param is_locked: 是否锁账
+        :param source: 订单来源
         :return:
         """
         filters: dict = {'deleted': 0}
@@ -97,6 +103,16 @@ class CRUDOrder(CRUDPlus[RiderSalaryOrder]):
             filters['import_batch_id'] = import_batch_id
         if is_locked is not None:
             filters['is_locked'] = is_locked
+        if source:
+            filters['source'] = source
+        if distance_min is not None:
+            filters['distance_km__ge'] = distance_min
+        if distance_max is not None:
+            filters['distance_km__le'] = distance_max
+        if weight_min is not None:
+            filters['weight_jin__ge'] = weight_min
+        if weight_max is not None:
+            filters['weight_jin__le'] = weight_max
         return await self.select_order('id', 'desc', **filters)
 
     async def delete(self, db: AsyncSession, pk: int) -> int:

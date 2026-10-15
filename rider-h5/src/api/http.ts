@@ -31,9 +31,10 @@ async function redirectLogin(message: string, cfg: RequestConfig) {
 }
 
 http.interceptors.request.use((config) => {
+  config.headers = config.headers ?? {}
+  config.headers['Accept-Language'] = 'zh-CN'
   const token = getToken()
   if (token) {
-    config.headers = config.headers ?? {}
     config.headers.Authorization = `Bearer ${token}`
   }
   return config

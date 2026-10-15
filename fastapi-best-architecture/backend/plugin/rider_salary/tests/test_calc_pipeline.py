@@ -163,7 +163,7 @@ def _build_orders() -> list[SimpleNamespace]:
             orders.append(_order(oid, f'A-{oid}', day, night=night, distance=7.2 if night else 3.2))
             oid += 1
     for _ in range(12):
-        orders.append(_order(oid, f'AC-{oid}', date(2026, 9, 1), status=OrderStatus.cancelled.value))
+        orders.append(_order(oid, f'AC-{oid}', date(2026, 9, 1), status=OrderStatus.not_completed.value))
         oid += 1
     remaining = 420
     for index, day in enumerate(b_days):
@@ -174,7 +174,7 @@ def _build_orders() -> list[SimpleNamespace]:
             orders.append(_order(oid, f'B-{oid}', day, distance=4.0))
             oid += 1
     for _ in range(23):
-        orders.append(_order(oid, f'BC-{oid}', date(2026, 9, 15), status=OrderStatus.cancelled.value))
+        orders.append(_order(oid, f'BC-{oid}', date(2026, 9, 15), status=OrderStatus.not_completed.value))
         oid += 1
     return orders
 
