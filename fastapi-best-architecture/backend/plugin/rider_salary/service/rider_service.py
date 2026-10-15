@@ -517,9 +517,7 @@ class RiderService:
             rider.id,
             CreateEmployHistoryParam(employ_type=obj.employ_type, start_date=obj.hire_date, end_date=None),
         )
-        db.add(
-            RiderSalaryRiderSiteHistory(rider_id=rider.id, site_id=rider.site_id, start_date=obj.hire_date)
-        )
+        db.add(RiderSalaryRiderSiteHistory(rider_id=rider.id, site_id=rider.site_id, start_date=obj.hire_date))
         await db.flush()
         await audit_service.record(
             db,
