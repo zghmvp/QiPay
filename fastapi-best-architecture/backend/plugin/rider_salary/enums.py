@@ -300,6 +300,7 @@ class DetailSource(LabeledStrEnum):
     manual = 'manual'
     advance = 'advance'
     reversal = 'reversal'
+    carry = 'carry'
 
 
 _bind_labels(
@@ -309,6 +310,7 @@ _bind_labels(
         DetailSource.manual: '手工',
         DetailSource.advance: '预支抵扣',
         DetailSource.reversal: '反冲',
+        DetailSource.carry: '欠款结转',
     },
 )
 

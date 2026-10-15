@@ -29,8 +29,10 @@ const columns = [
   { dataIndex: 'order_count', title: '单量', width: 70 },
   { dataIndex: 'gross', key: 'gross', title: '应发', width: 100 },
   { dataIndex: 'deduction_total', key: 'deduction', title: '代扣', width: 100 },
+  { dataIndex: 'carry_in', key: 'carry_in', title: '上期欠款', width: 100 },
   { dataIndex: 'advance_deduction', key: 'advance', title: '预支抵扣', width: 110 },
   { dataIndex: 'net', key: 'net', title: '实发', width: 100 },
+  { dataIndex: 'carry_out', key: 'carry_out', title: '结转欠款', width: 100 },
   { dataIndex: 'stale', key: 'stale', title: '需重算', width: 80 },
   { dataIndex: 'calc_time', key: 'calc_time', title: '计算时间', width: 170 },
 ];
@@ -125,11 +127,19 @@ const [Drawer, drawerApi] = useVbenDrawer({
             <template v-else-if="column.key === 'deduction'">
               <MoneyText :value="record.deduction_total" />
             </template>
+            <template v-else-if="column.key === 'carry_in'">
+              <MoneyText :value="record.carry_in" />
+            </template>
             <template v-else-if="column.key === 'advance'">
               <MoneyText :value="record.advance_deduction" />
             </template>
             <template v-else-if="column.key === 'net'">
               <MoneyText :value="record.net" />
+            </template>
+            <template v-else-if="column.key === 'carry_out'">
+              <span :class="Number(record.carry_out) > 0 ? 'font-medium text-red-500' : ''">
+                <MoneyText :value="record.carry_out" />
+              </span>
             </template>
             <template v-else-if="column.key === 'stale'">
               <span :class="record.stale ? 'font-medium text-red-500' : ''">

@@ -73,6 +73,8 @@ class GetPayrollSummary(SchemaBase):
     deduction_total: Decimal = Field(description='代扣合计')
     advance_deduction: Decimal = Field(description='预支抵扣')
     net: Decimal = Field(description='实发')
+    carry_in: Decimal = Field(Decimal('0.00'), description='本期扣回的上期欠款（负数为多扣退回）')
+    carry_out: Decimal = Field(Decimal('0.00'), description='结转下期的欠款')
     plan_version_ids: list[int] | None = Field(None, description='本期方案版本集合')
     reversed_of_id: int | None = Field(None, description='反冲对象 ID')
     calc_time: datetime | None = Field(None, description='计算时间')

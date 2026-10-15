@@ -95,7 +95,7 @@ class GetMeAdvanceLimit(SchemaBase):
     """预支额度"""
 
     limit: Decimal = Field(description='本周期可预支上限')
-    used_pending_amount: Decimal | None = Field(description='在途占用')
+    used_pending_amount: Decimal | None = Field(description='已占用：在途申请 + 已发放尚未扣回')
     available: Decimal = Field(description='当前可申请额度')
     estimate_net: Decimal | None = Field(description='当前周期预估实发')
     order_count: int = Field(description='当前周期完成订单数')

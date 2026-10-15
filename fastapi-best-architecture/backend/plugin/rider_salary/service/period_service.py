@@ -804,6 +804,17 @@ class PeriodService:
         before = snapshot(period, _PERIOD_FIELDS)
         self.transition(period, PeriodStatus.locked.value, request, reason)
         await self._set_locked_flags(db, period, locked=True)
+        finalized_riders = list(
+            (
+                await db.scalars(
+                    select(RiderSalaryPayroll.rider_id).where(
+                        RiderSalaryPayroll.period_id == period.id,
+                        RiderSalaryPayroll.status == PayrollStatus.draft.value,
+                        RiderSalaryPayroll.deleted == 0,
+                    )
+                )
+            ).all()
+        )
         await db.execute(
             update(RiderSalaryPayroll)
             .where(
@@ -813,6 +824,9 @@ class PeriodService:
             )
             .values(status=PayrollStatus.finalized.value)
         )
+        # 本期欠款结转与预支抵扣已定稿，之后周期的草稿需按最新结果重算（纲要 §10 #32/#33）
+        for rider_id in set(finalized_riders):
+            await payroll_service.release_later_drafts(db, rider_id=rider_id, after=period.start_date)
         await self._mark_plan_versions_used(db, period.id)
         await db.flush()
         await audit_service.record(

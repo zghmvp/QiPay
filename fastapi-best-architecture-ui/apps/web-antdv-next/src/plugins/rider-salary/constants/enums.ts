@@ -120,6 +120,7 @@ export const DETAIL_SOURCE_OPTIONS = opts([
   ['manual', '手工', 'gold'],
   ['advance', '预支抵扣', 'orange'],
   ['reversal', '反冲', 'error'],
+  ['carry', '欠款结转', 'warning'],
 ]);
 
 export const DAY_STATUS_OPTIONS = opts([

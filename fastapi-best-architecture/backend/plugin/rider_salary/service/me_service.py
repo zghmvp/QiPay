@@ -32,13 +32,6 @@ from backend.plugin.rider_salary.schema.me import (
 )
 from backend.plugin.rider_salary.schema.notice import GetNoticeDetail
 from backend.plugin.rider_salary.service.advance_service import advance_service, resolve_advance_limit
-from backend.plugin.rider_salary.service.h5_menu import (
-    mask_advance_limit,
-    mask_calendar_month,
-    mask_day_detail,
-    mask_payroll_estimate,
-)
-from backend.plugin.rider_salary.service.h5_menu_service import h5_menu_service
 from backend.plugin.rider_salary.service.calc_service import calculate_rider_period
 from backend.plugin.rider_salary.service.calendar_service import (
     calendar_service,
@@ -47,6 +40,13 @@ from backend.plugin.rider_salary.service.calendar_service import (
     pick_effective_payroll,
     resolve_period,
 )
+from backend.plugin.rider_salary.service.h5_menu import (
+    mask_advance_limit,
+    mask_calendar_month,
+    mask_day_detail,
+    mask_payroll_estimate,
+)
+from backend.plugin.rider_salary.service.h5_menu_service import h5_menu_service
 from backend.plugin.rider_salary.service.rider_service import resolve_effective_plans
 from backend.plugin.rider_salary.utils.money import q2
 from backend.utils.timezone import timezone
@@ -166,7 +166,7 @@ class MeService:
                 gross=q2(result.gross),
                 deduction_total=q2(result.deduction_total),
                 advance_deduction_estimate=q2(result.advance_deductible),
-                net_estimate=q2(result.net),
+                net_estimate=q2(result.net - result.advance_deductible),
                 is_estimate=True,
                 updated_at=timezone.now(),
             ),

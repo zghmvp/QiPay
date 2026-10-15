@@ -43,6 +43,10 @@ class RiderSalaryPayroll(Base):
     deduction_total: Mapped[Decimal] = mapped_column(sa.Numeric(12, 2), default=Decimal('0.00'), comment='代扣合计')
     advance_deduction: Mapped[Decimal] = mapped_column(sa.Numeric(12, 2), default=Decimal('0.00'), comment='预支抵扣')
     net: Mapped[Decimal] = mapped_column(sa.Numeric(12, 2), default=Decimal('0.00'), comment='实发')
+    carry_in: Mapped[Decimal] = mapped_column(
+        sa.Numeric(12, 2), default=Decimal('0.00'), comment='本期扣回的上期欠款（负数为多扣退回）'
+    )
+    carry_out: Mapped[Decimal] = mapped_column(sa.Numeric(12, 2), default=Decimal('0.00'), comment='结转下期的欠款')
     plan_version_ids: Mapped[list | None] = mapped_column(sa.JSON(), default=None, comment='本期方案版本集合')
     reversed_of_id: Mapped[int | None] = mapped_column(sa.BigInteger, default=None, comment='反冲对象 ID')
     calc_time: Mapped[datetime | None] = mapped_column(TimeZone, default=None, comment='计算时间')

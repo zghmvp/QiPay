@@ -1,6 +1,6 @@
 """FIN-1 结算链路回归（A1 二次反冲、A2 锁账漏算、A6 回退归还预支）"""
 
-from datetime import date
+from datetime import date, datetime, time
 from decimal import Decimal
 
 import pytest
@@ -14,6 +14,7 @@ from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.service.calc_service import calculate_period
 from backend.plugin.rider_salary.service.period_service import period_service
 from backend.plugin.rider_salary.tests.integration.harness import Seed, admin_request, run_db
+from backend.utils.timezone import timezone
 
 SEP1, SEP30 = date(2026, 9, 1), date(2026, 9, 30)
 
@@ -97,7 +98,9 @@ def test_a6_rollback_void_draft_restores_advance() -> None:
         await seed.bind(rider, version, SEP1)
         period = await seed.period(site, SEP1, SEP30)
         await seed.orders(rider, date(2026, 9, 3), 10)
-        advance = await seed.paid_advance(rider, '30.00')
+        advance = await seed.paid_advance(
+            rider, '30.00', paid_time=datetime.combine(date(2026, 9, 10), time(12), tzinfo=timezone.tz_info)
+        )
         await calculate_period(db, period_id=period.id, operator=req)
         await db.refresh(advance)
         assert advance.remaining_amount == Decimal('0.00')

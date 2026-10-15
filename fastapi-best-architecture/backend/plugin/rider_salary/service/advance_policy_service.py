@@ -2,14 +2,15 @@ from dataclasses import asdict
 from decimal import Decimal
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
 from backend.plugin.rider_salary.crud.advance import advance_dao
 from backend.plugin.rider_salary.crud.advance_policy import advance_policy_dao
 from backend.plugin.rider_salary.crud.site import site_dao
-from backend.plugin.rider_salary.enums import PayrollStatus, RiderStatus
+from backend.plugin.rider_salary.enums import AdvanceStatus, PayrollStatus, RiderStatus
+from backend.plugin.rider_salary.model.advance import RiderSalaryAdvance
 from backend.plugin.rider_salary.model.advance_policy import GLOBAL_POLICY_SITE_ID, RiderSalaryAdvancePolicy
 from backend.plugin.rider_salary.model.payroll import RiderSalaryPayroll
 from backend.plugin.rider_salary.schema.advance import GetAdvancePolicy, SaveAdvancePolicyParam
@@ -146,17 +147,18 @@ class AdvancePolicyService:
 
     async def evaluate(self, db: AsyncSession, rider: object) -> AdvanceQuote:
         """按骑手当前周期预估实发和规则计算可预支额度。"""
-        site_id = int(getattr(rider, 'site_id'))
+        site_id = int(rider.site_id)
         rule, _source, _owner = await self.resolve_rule(db, site_id)
         today = timezone.now().date()
-        period = await resolve_period(db, site_id, int(getattr(rider, 'id')), today)
+        period = await resolve_period(db, site_id, int(rider.id), today)
         estimate_net, order_count = await self._estimate(db, rider, period)
+        undeducted = await self._undeducted(db, int(rider.id))
         site = await site_dao.get(db, site_id)
         now = timezone.now()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        in_flight = await advance_dao.list_in_flight(db, int(getattr(rider, 'id')))
-        used = q2(sum((row.amount for row in in_flight), Decimal('0')))
-        monthly_count = await advance_dao.count_submitted_since(db, int(getattr(rider, 'id')), month_start)
+        in_flight = await advance_dao.list_in_flight(db, int(rider.id))
+        used = q2(sum((row.amount for row in in_flight), Decimal(0)))
+        monthly_count = await advance_dao.count_submitted_since(db, int(rider.id), month_start)
         return quote_advance(
             rule=rule,
             estimate_net=estimate_net,
@@ -171,10 +173,30 @@ class AdvancePolicyService:
             in_flight_amount=used,
             in_flight_count=len(in_flight),
             monthly_count=monthly_count,
+            undeducted_amount=undeducted,
         )
 
+    @staticmethod
+    async def _undeducted(db: AsyncSession, rider_id: int) -> Decimal:
+        """已发放、尚未被定稿薪资扣回的预支：余额 + 草稿里暂扣的部分"""
+        remaining = await db.scalar(
+            select(func.coalesce(func.sum(RiderSalaryAdvance.remaining_amount), 0)).where(
+                RiderSalaryAdvance.rider_id == rider_id,
+                RiderSalaryAdvance.status == AdvanceStatus.paid.value,
+                RiderSalaryAdvance.deleted == 0,
+            )
+        )
+        held = await db.scalar(
+            select(func.coalesce(func.sum(RiderSalaryPayroll.advance_deduction), 0)).where(
+                RiderSalaryPayroll.rider_id == rider_id,
+                RiderSalaryPayroll.status == PayrollStatus.draft.value,
+                RiderSalaryPayroll.deleted == 0,
+            )
+        )
+        return q2(Decimal(remaining or 0) + Decimal(held or 0))
+
     async def _estimate(self, db: AsyncSession, rider: object, period: object) -> tuple[Decimal, int]:
-        rider_id = int(getattr(rider, 'id'))
+        rider_id = int(rider.id)
         stored = None
         period_id = getattr(period, 'id', None)
         if period_id:
@@ -193,8 +215,9 @@ class AdvancePolicyService:
             stale_draft = any(row.status == PayrollStatus.draft.value and row.stale for row in rows)
             if stale_draft or (stored is not None and stored.status not in _STORED):
                 stored = None
+        # 额度按扣预支前的实发计算；已占用的预支另行从额度中扣除
         if stored is not None:
-            return q2(stored.net), int(stored.order_count)
+            return q2(stored.net + stored.advance_deduction), int(stored.order_count)
         result = await calculate_rider_period(db, rider_id=rider_id, period=period, persist=False)
         return q2(result.net), int(result.order_count)
 

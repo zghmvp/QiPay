@@ -18,7 +18,7 @@ def _quote(**overrides: object):
         'on_job': True,
         'rider_limit': None,
         'site_limit': None,
-        'in_flight_amount': Decimal('0'),
+        'in_flight_amount': Decimal(0),
         'in_flight_count': 0,
         'monthly_count': 0,
     }
@@ -41,6 +41,13 @@ def test_in_flight_reduces_available_but_does_not_hide_remainder() -> None:
     assert quote.reasons
 
 
+def test_paid_but_undeducted_advance_reduces_available() -> None:
+    quote = _quote(undeducted_amount=Decimal('600.00'))
+    assert quote.used_pending_amount == Decimal('600.00')
+    assert quote.available == Decimal('400.00')
+    assert quote.eligible is True
+
+
 def test_fixed_amount_is_capped_by_rider_limit() -> None:
     rule = builtin_rule()
     rule = type(rule)(
@@ -53,7 +60,7 @@ def test_fixed_amount_is_capped_by_rider_limit() -> None:
         min_completed_orders=rule.min_completed_orders,
         min_amount=rule.min_amount,
     )
-    quote = _quote(rule=rule, rider_limit=Decimal('500'))
+    quote = _quote(rule=rule, rider_limit=Decimal(500))
     assert quote.limit == Decimal('500.00')
     assert quote.eligible is True
 

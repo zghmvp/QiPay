@@ -122,6 +122,8 @@ class CalcResult:
     dailies: list[CalcDaily]
     calc_version: int = 0
     stale: bool = False
+    carry_in: Decimal = ZERO
+    carry_out: Decimal = ZERO
 
 
 @dataclass
@@ -147,6 +149,9 @@ class CalcInput:
     period_id: int | None = None
     # 站点级周期中已被骑手级周期覆盖的日期：不取数、不计薪
     excluded_dates: set[date] = field(default_factory=set)
+    # 此前周期结转的欠款（负数为多扣退回）；更早周期仍有草稿时本期不处理欠款与预支
+    carry_debt: Decimal = ZERO
+    defer_settlement: bool = False
 
 
 def _json_safe(value: Any) -> Any:
@@ -435,13 +440,38 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                 for row in details
                 if (not row.include_in_gross)
                 and row.direction == SubjectDirection.penalty.value
-                and row.source != DetailSource.advance.value
+                and row.source not in {DetailSource.advance.value, DetailSource.carry.value}
             ),
             ZERO,
         )
     )
-    cap = q2(max(gross - deduction_total, ZERO))
-    deductible, lines = compute_advance_deduction(data.advances, cap, persist=data.persist_advance)
+    carry_in = ZERO if data.defer_settlement else q2(data.carry_debt)
+    if carry_in != ZERO:
+        details.append(
+            CalcDetail(
+                rider_id=rider_id,
+                subject_id=ADVANCE_SUBJECT_ID,
+                amount=q2(-carry_in),
+                stage=CalcStage.period.value,
+                include_in_gross=False,
+                source=DetailSource.carry.value,
+                calc_trace={'公式': '上期欠款结转', '变量': {'欠款': float(carry_in)}, '结果': float(-carry_in)},
+                direction=SubjectDirection.penalty.value if carry_in > 0 else SubjectDirection.bonus.value,
+                name='上期欠款扣回' if carry_in > 0 else '上期多扣退回',
+            )
+        )
+    available = q2(gross - deduction_total - carry_in)
+    # 实发最低为 0，差额作为欠款结转下期（纲要 §10 #32）
+    carry_out = q2(max(-available, ZERO))
+    if carry_out > 0:
+        warnings.append(f'本期应发不足以覆盖扣款，实发记为 0，欠款 {carry_out} 元结转下期扣回')
+    cap = q2(max(available, ZERO))
+    if data.defer_settlement:
+        deductible, lines = ZERO, []
+        if data.advances or data.carry_debt != ZERO:
+            warnings.append('该骑手更早的结算周期尚未锁账，预支抵扣与上期欠款待其锁账后重算本期时处理')
+    else:
+        deductible, lines = compute_advance_deduction(data.advances, cap, persist=data.persist_advance)
     advance_deduction = ZERO
     if data.persist_advance:
         advance_deduction = deductible
@@ -460,7 +490,7 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
             for line in lines
         )
 
-    net = q2(gross - deduction_total - advance_deduction)
+    net = q2(max(available, ZERO) - advance_deduction)
     bonus_total = q2(
         sum(
             (
@@ -573,6 +603,8 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         warnings=warnings,
         details=details,
         dailies=dailies,
+        carry_in=carry_in,
+        carry_out=carry_out,
     )
 
 
@@ -632,6 +664,7 @@ async def _load_calc_input(
     forced_plan_version: RiderSalaryPlanVersion | None,
     persist_advance: bool,
     excluded_dates: set[date] | None = None,
+    advances: list[Any] | None = None,
 ) -> CalcInput:
     start, end = period.start_date, period.end_date
     excluded = set(excluded_dates or ())
@@ -732,7 +765,10 @@ async def _load_calc_input(
             )
         ).all()
     )
-    advances = await payroll_service.load_paid_advances(db, rider.id)
+    if advances is None:
+        advances = await payroll_service.load_paid_advances(db, rider.id)
+    # 预支只在发放日所在周期及之后抵扣（纲要 §10 #33）
+    advances = [row for row in advances if _paid_on(row) is None or _paid_on(row) <= end]
     return CalcInput(
         rider_id=rider.id,
         site_id=site_id,
@@ -753,6 +789,15 @@ async def _load_calc_input(
         period_id=period.id,
         excluded_dates=excluded,
     )
+
+
+def _paid_on(advance: Any) -> date | None:
+    paid_time = getattr(advance, 'paid_time', None)
+    if paid_time is None:
+        return None
+    if paid_time.tzinfo is not None:
+        paid_time = paid_time.astimezone(timezone.tz_info)
+    return paid_time.date()
 
 
 async def _persist_result(
@@ -831,6 +876,8 @@ async def _persist_result(
     payroll.deduction_total = result.deduction_total
     payroll.advance_deduction = result.advance_deduction
     payroll.net = result.net
+    payroll.carry_in = result.carry_in
+    payroll.carry_out = result.carry_out
     payroll.plan_version_ids = result.plan_version_ids
     payroll.calc_time = timezone.now()
     payroll.calc_by = int(getattr(getattr(operator, 'user', None), 'id', 0) or 0) if operator else None
@@ -893,8 +940,19 @@ async def _calculate_rider_period_inner(
     forced_plan_version: RiderSalaryPlanVersion | None,
     operator: Request | None,
 ) -> CalcResult:
+    current = None
+    if period.id:
+        kind = (
+            PayrollKind.supplement.value if period.status == PeriodStatus.reopened.value else PayrollKind.normal.value
+        )
+        current = await payroll_dao.get_current(db, period.id, rider.id, kind)
+    advances = None
     if persist:
         await _restore_draft_advances(db, rider_id=rider.id, period=period)
+        # 本期是更早的周期：之后周期草稿占用的预支先还回来，由本期优先抵扣
+        await payroll_service.release_later_drafts(db, rider_id=rider.id, after=period.start_date)
+    else:
+        advances = await payroll_service.advances_for_estimate(db, rider_id=rider.id, draft=current)
     excluded: set[date] = set()
     if not period.rider_id or period.rider_id == SITE_LEVEL_RIDER_ID:
         covered = await rider_level_covered_dates(
@@ -912,7 +970,10 @@ async def _calculate_rider_period_inner(
         forced_plan_version=forced_plan_version,
         persist_advance=persist,
         excluded_dates=excluded,
+        advances=advances,
     )
+    data.carry_debt = await payroll_service.outstanding_debt(db, rider_id=rider.id, before=period.start_date)
+    data.defer_settlement = await payroll_service.has_earlier_draft(db, rider_id=rider.id, before=period.start_date)
     result = run_calc_pipeline(data)
     if persist:
         _backfill_adjustments(period=period, adjustments=data.adjustments)

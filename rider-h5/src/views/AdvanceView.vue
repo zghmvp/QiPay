@@ -117,7 +117,7 @@ onMounted(() => {
             <span class="value">{{ limit.monthly_used_count }} / {{ limit.monthly_max_count }}</span>
           </div>
           <div v-if="menus.flags.show_advance_inflight">
-            <span class="label">在途占用</span>
+            <span class="label">已占用（含未扣回）</span>
             <span class="value"><MoneyText :value="limit.used_pending_amount" /></span>
           </div>
         </div>

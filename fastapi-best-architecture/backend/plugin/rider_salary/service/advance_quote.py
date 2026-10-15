@@ -34,7 +34,7 @@ def builtin_rule() -> AdvanceRule:
     """未配置时的默认规则：按预估实发 50%，每月最多 2 次。"""
     return AdvanceRule(
         amount_mode='percent',
-        percent=Decimal('50'),
+        percent=Decimal(50),
         fixed_amount=Decimal('3000.00'),
         max_amount=None,
         monthly_max_count=2,
@@ -80,12 +80,13 @@ def quote_advance(
     in_flight_amount: Decimal,
     in_flight_count: int,
     monthly_count: int,
+    undeducted_amount: Decimal = ZERO,
 ) -> AdvanceQuote:
     """
     计算可预支额度。
 
     百分比模式按当前周期预估实发计算。固定额度、规则封顶、骑手上限、站点上限同时存在时取更小值。
-    在途金额从额度中扣除。资格不满足时可用额度为 0。
+    在途金额与已发放尚未扣回的金额都从额度中扣除。资格不满足时可用额度为 0。
     """
     net = q2(estimate_net)
     reasons: list[str] = []
@@ -119,7 +120,7 @@ def quote_advance(
     if site_limit is not None:
         quota = min(quota, q2(site_limit))
     quota = q2(max(quota, ZERO))
-    used = q2(in_flight_amount)
+    used = q2(in_flight_amount + undeducted_amount)
     available = q2(max(quota - used, ZERO))
 
     hard = list(reasons)
