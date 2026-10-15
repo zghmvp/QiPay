@@ -1,6 +1,5 @@
 from datetime import date
-
-import pytest
+from decimal import Decimal
 
 from backend.plugin.rider_salary.engine.compiler import compile_condition, compile_formula
 from backend.plugin.rider_salary.engine.evaluator import evaluate, evaluate_amount, evaluate_condition
@@ -200,7 +199,9 @@ def test_formula_ladder_compile() -> None:
     }
     expr = compile_formula(formula, CalcStage.period.value)
     assert expr.startswith('阶梯(周期单量')
-    assert evaluate(expr, {'周期单量': 420}) == pytest.approx(420 * 5.5)
+    result = evaluate(expr, {'周期单量': 420})
+    assert isinstance(result, Decimal)
+    assert result == Decimal(420) * Decimal('5.5')
 
 
 def test_formula_expression() -> None:

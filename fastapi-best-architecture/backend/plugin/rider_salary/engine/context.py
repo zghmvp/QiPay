@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -6,9 +6,9 @@ from chinese_calendar import is_holiday
 
 from backend.plugin.rider_salary.engine.fields import ALL_FIELD_NAMES, NUMBER_FIELDS, get_field
 from backend.plugin.rider_salary.engine.functions import to_minutes
+from backend.plugin.rider_salary.engine.ladder import to_decimal_or_zero
 from backend.plugin.rider_salary.enums import EmployType, OrderStatus
 from backend.plugin.rider_salary.utils.money import q2
-from backend.utils.timezone import timezone
 
 WEEKDAY_MONDAY_ONE = 1
 
@@ -52,14 +52,6 @@ def tenure_days(hire_date: date | None, period_end: date) -> int:
     return (period_end - hire_date).days + 1
 
 
-def _minutes_of(value: datetime | None) -> float | None:
-    if value is None:
-        return None
-    if value.tzinfo is not None:
-        value = timezone.from_datetime(value)
-    return float(value.hour * 60 + value.minute)
-
-
 def build_day_context(
     site_id: int,
     biz_date: date,
@@ -85,14 +77,13 @@ def build_day_context(
 
 def build_order_context(order: Any, day_ctx: dict[str, Any], rider_ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     """订单字段 ∪ 日上下文 ∪ 骑手字段"""
-    amount = getattr(order, 'amount', None)
     ctx: dict[str, Any] = {
         **day_ctx,
         **(rider_ctx or {}),
-        '配送距离': float(getattr(order, 'distance_km', 0) or 0),
-        '商品重量': float(getattr(order, 'weight_jin', 0) or 0),
-        '订单金额': float(amount) if amount is not None else 0.0,
-        '送达时刻': _minutes_of(getattr(order, 'deliver_time', None)),
+        '配送距离': to_decimal_or_zero(getattr(order, 'distance_km', None)),
+        '商品重量': to_decimal_or_zero(getattr(order, 'weight_jin', None)),
+        '订单金额': to_decimal_or_zero(getattr(order, 'amount', None)),
+        '送达时刻': to_minutes(getattr(order, 'deliver_time', None)),
         '订单状态': getattr(order, 'status', None) or OrderStatus.completed.value,
         '_order_no': getattr(order, 'order_no', None),
         '_order_id': getattr(order, 'id', None),
@@ -116,23 +107,23 @@ def build_period_context(
 ) -> dict[str, Any]:
     """周期聚合上下文（跨段不重置的部分）"""
     ctx: dict[str, Any] = {
-        '周期单量': float(valid_order_count),
-        '周期有效单量': float(valid_order_count),
-        '周期总单量': float(order_count),
-        '周期天数': float(period_days),
-        '出勤天数': float(attendance_days),
-        '工龄月数': float(tenure_months(hire_date, period_end)),
-        '入职天数': float(tenure_days(hire_date, period_end)),
-        '本期手工奖': float(q2(manual_bonus)),
-        '本期手工惩': float(q2(manual_penalty)),
+        '周期单量': to_decimal_or_zero(valid_order_count),
+        '周期有效单量': to_decimal_or_zero(valid_order_count),
+        '周期总单量': to_decimal_or_zero(order_count),
+        '周期天数': to_decimal_or_zero(period_days),
+        '出勤天数': to_decimal_or_zero(attendance_days),
+        '工龄月数': to_decimal_or_zero(tenure_months(hire_date, period_end)),
+        '入职天数': to_decimal_or_zero(tenure_days(hire_date, period_end)),
+        '本期手工奖': q2(manual_bonus),
+        '本期手工惩': q2(manual_penalty),
         '用工类型': employ_type,
-        '日单量': 0.0,
-        '日总单量': 0.0,
-        '日有效单量': 0.0,
-        '本期已计金额': 0.0,
-        '本期逐单金额': 0.0,
-        '方案期内单量': 0.0,
-        '方案生效天数': 0.0,
+        '日单量': Decimal(0),
+        '日总单量': Decimal(0),
+        '日有效单量': Decimal(0),
+        '本期已计金额': Decimal(0),
+        '本期逐单金额': Decimal(0),
+        '方案期内单量': Decimal(0),
+        '方案生效天数': Decimal(0),
     }
     if biz_date is not None:
         ctx['日期'] = biz_date.isoformat()
@@ -149,10 +140,10 @@ def build_segment_context(
 ) -> dict[str, Any]:
     """段上下文 = 周期上下文 ∪ 段内变量"""
     ctx = dict(period_ctx)
-    ctx['方案期内单量'] = float(plan_order_count)
-    ctx['方案生效天数'] = float(segment_days)
-    ctx['本期已计金额'] = float(q2(accrued_gross))
-    ctx['本期逐单金额'] = float(q2(per_order_total))
+    ctx['方案期内单量'] = to_decimal_or_zero(plan_order_count)
+    ctx['方案生效天数'] = to_decimal_or_zero(segment_days)
+    ctx['本期已计金额'] = q2(accrued_gross)
+    ctx['本期逐单金额'] = q2(per_order_total)
     return ctx
 
 
@@ -170,6 +161,8 @@ def trace_variables(expr: str, names: dict[str, Any]) -> dict[str, Any]:
                 else:
                     total = int(minutes)
                     used[name] = f'{total // 60:02d}:{total % 60:02d}'
+            elif name in NUMBER_FIELDS and isinstance(value, Decimal):
+                used[name] = value
             elif name in NUMBER_FIELDS and isinstance(value, float):
                 used[name] = round(value, 4)
             else:

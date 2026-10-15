@@ -21,7 +21,11 @@ from backend.plugin.rider_salary.engine.context import (
     iter_dates,
     trace_variables,
 )
-from backend.plugin.rider_salary.engine.evaluator import EvalError, evaluate_amount, evaluate_condition
+from backend.plugin.rider_salary.engine.evaluator import (
+    EvalError,
+    evaluate_amount_strict,
+    evaluate_condition_strict,
+)
 from backend.plugin.rider_salary.engine.segments import PlanItemView, Segment, resolve_segments
 from backend.plugin.rider_salary.enums import (
     CalcStage,
@@ -226,13 +230,17 @@ def _eval_item(
 ) -> tuple[bool, Decimal, dict[str, Any]]:
     condition_expr = item.condition_expr or 'True'
     formula_expr = item.formula_expr or '0'
-    hit = evaluate_condition(condition_expr, names)
+    try:
+        hit = evaluate_condition_strict(condition_expr, names)
+    except EvalError as exc:
+        warnings.append(f'方案项「{item.name}」条件求值失败（{exc}），已按未命中处理')
+        return False, ZERO, _trace(condition_expr, formula_expr, names, ZERO, hit=False)
     if not hit:
         return False, ZERO, _trace(condition_expr, formula_expr, names, ZERO, hit=False)
     try:
-        unsigned = evaluate_amount(formula_expr, names)
-    except EvalError:
-        warnings.append(f'方案项「{item.name}」公式求值失败，已按 0 计算')
+        unsigned = evaluate_amount_strict(formula_expr, names)
+    except EvalError as exc:
+        warnings.append(f'方案项「{item.name}」公式求值失败（{exc}），已按 0 计算')
         unsigned = ZERO
     signed = q2(unsigned * _sign(item.direction))
     return True, signed, _trace(condition_expr, formula_expr, names, unsigned, hit=True)
@@ -356,10 +364,10 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
                         per_order_total += amount
             day_agg = {
                 **day_ctx,
-                '日单量': float(len(completed)),
-                '日有效单量': float(len(completed)),
-                '日总单量': float(len(day_orders)),
-                '日逐单金额': float(q2(day_per_order)),
+                '日单量': Decimal(len(completed)),
+                '日有效单量': Decimal(len(completed)),
+                '日总单量': Decimal(len(day_orders)),
+                '日逐单金额': q2(day_per_order),
                 '用工类型': employ,
             }
             for item in _enabled_items(segment, CalcStage.daily.value):
@@ -397,8 +405,8 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         for item in _enabled_items(segment, CalcStage.period.value):
             if multi and not _segment_scoped(item):
                 continue
-            seg_ctx['本期已计金额'] = float(q2(accrued))
-            seg_ctx['本期逐单金额'] = float(q2(per_order_total))
+            seg_ctx['本期已计金额'] = q2(accrued)
+            seg_ctx['本期逐单金额'] = q2(per_order_total)
             hit, amount, trace = _eval_item(item, seg_ctx, warnings)
             if not hit:
                 continue
@@ -446,8 +454,8 @@ def run_calc_pipeline(data: CalcInput) -> CalcResult:  # ruff: ignore[complex-st
         # 保底放最后，按整期已计金额评估
         whole_items.sort(key=_is_guarantee)
         for item in whole_items:
-            whole_ctx['本期已计金额'] = float(q2(accrued))
-            whole_ctx['本期逐单金额'] = float(q2(per_order_total))
+            whole_ctx['本期已计金额'] = q2(accrued)
+            whole_ctx['本期逐单金额'] = q2(per_order_total)
             hit, amount, trace = _eval_item(item, whole_ctx, warnings)
             if not hit:
                 continue

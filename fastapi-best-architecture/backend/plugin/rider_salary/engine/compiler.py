@@ -16,7 +16,13 @@ from backend.plugin.rider_salary.engine.fields import (
     get_field,
 )
 from backend.plugin.rider_salary.engine.functions import WHITELIST_FUNCTION_NAMES, to_minutes
-from backend.plugin.rider_salary.engine.ladder import MODE_FULL, MODE_PROGRESSIVE, PRICING_FIXED, PRICING_UNIT
+from backend.plugin.rider_salary.engine.ladder import (
+    MODE_FULL,
+    MODE_PROGRESSIVE,
+    PRICING_FIXED,
+    PRICING_UNIT,
+    to_decimal,
+)
 from backend.plugin.rider_salary.engine.operators import (
     COMPARE_PYTHON,
     OP_EQ,
@@ -280,17 +286,17 @@ def _compile_ladder(formula: dict[str, Any], stage: str | None, errors: list[str
     if not isinstance(tiers, list) or not tiers:
         errors.append('阶梯至少需要 1 档')
         return '0'
-    parsed: list[tuple[float, float | None, float]] = []
+    parsed: list[tuple[Decimal, Decimal | None, Decimal]] = []
     for index, raw in enumerate(tiers):
         if not isinstance(raw, dict):
             errors.append(f'第 {index + 1} 档格式无效')
             continue
         try:
-            low = float(raw['下限'])
+            low = to_decimal(raw['下限'])
             raw_high = raw.get('上限')
-            high = None if raw_high is None else float(raw_high)
-            rate = float(raw['值'])
-        except (KeyError, TypeError, ValueError):
+            high = None if raw_high is None else to_decimal(raw_high)
+            rate = to_decimal(raw['值'])
+        except (KeyError, TypeError, ValueError, ArithmeticError):
             errors.append(f'第 {index + 1} 档上下限或值无效')
             continue
         parsed.append((low, high, rate))
